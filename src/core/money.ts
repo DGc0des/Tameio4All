@@ -55,10 +55,12 @@ export function formatCents(c: Cents): string {
   return `${sign}${Math.floor(a / 100)}.${String(a % 100).padStart(2, '0')}€`;
 }
 
-/** Non-negative cents → shortest plain decimal for refilling an input: 1250 → "12.5". */
+/** Cents → shortest plain decimal for refilling an input: 1250 → "12.5", -1250 → "-12.5". */
 export function centsToPlain(c: Cents): string {
-  const whole = Math.floor(c / 100);
-  const frac = c % 100;
-  if (frac === 0) return String(whole);
-  return `${whole}.${String(frac).padStart(2, '0').replace(/0$/, '')}`;
+  const sign = c < 0 ? '-' : '';
+  const a = Math.abs(c);
+  const whole = Math.floor(a / 100);
+  const frac = a % 100;
+  if (frac === 0) return `${sign}${whole}`;
+  return `${sign}${whole}.${String(frac).padStart(2, '0').replace(/0$/, '')}`;
 }
