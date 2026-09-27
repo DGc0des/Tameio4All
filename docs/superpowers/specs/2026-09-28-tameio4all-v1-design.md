@@ -45,7 +45,7 @@ supabase/migrations/  schema, RLS, RPCs;  supabase/tests/ RLS tests
 ## Core model (`src/core`)
 
 **ShopConfig** (jsonb, versioned):
-- `floatCents`, `denominations` (enabled subset of 500…0.05), `staff` shown by name only
+- `floatCents`, `denominations` (enabled subset of 500…0.05). Staff are NOT in the config — they live in the `staff` table (PINs must stay server-side)
 - `channels: {id, label, type}` where type ∈ `card | delivery | noncash_other | cash_extra`
   (ΚΕΡΜΑΤΑ = `cash_extra`; WOLT = `delivery`; myPos = `card`)
 - `totals: {id, label, terms: {sign: +1|-1, ref}[], showInSummary, showInShare}`
