@@ -7,4 +7,4 @@ get the envelope (Φάκελος) breakdown and a shareable end-of-day summary.
     npm install
     npm test          # unit tests (pure core)
     npm run typecheck
-Requires Node ≥ 20. Copy `.env.example` to `.env` once Supabase is wired (Plan 3).
+Requires Node 22.12+ (or 24+). Copy `.env.example` to `.env` once Supabase is wired (Plan 3).

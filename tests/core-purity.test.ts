@@ -1,26 +1,39 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const CORE_DIR = fileURLToPath(new URL('../src/core', import.meta.url));
-const coreFiles = readdirSync(CORE_DIR).filter((f) => f.endsWith('.ts'));
+const coreFiles = existsSync(CORE_DIR)
+  ? (readdirSync(CORE_DIR, { recursive: true, encoding: 'utf8' }) as string[])
+      .filter((f) => f.endsWith('.ts'))
+  : [];
 
 describe('src/core purity', () => {
   it('scans the real core directory', () => {
     // If src/core moves, this fails instead of the purity checks silently scanning nothing.
-    expect(existsSync(join(CORE_DIR, '..', 'core'))).toBe(true);
+    expect(existsSync(CORE_DIR)).toBe(true);
   });
 
   for (const file of coreFiles) {
-    const source = readFileSync(join(CORE_DIR, file), 'utf8');
+    const filePath = join(CORE_DIR, file);
+    const source = readFileSync(filePath, 'utf8');
 
-    it(`${file} imports only relative ./ modules`, () => {
+    it(`${file} imports only modules inside src/core`, () => {
       const specifiers = [
         ...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g),
         ...source.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]/g),
-      ].map((m) => m[1]);
-      for (const spec of specifiers) expect(spec, `${file}: ${spec}`).toMatch(/^\.\//);
+      ]
+        .map((m) => m[1])
+        .filter((s): s is string => s !== undefined);
+      const coreDirResolved: string = resolve(CORE_DIR);
+      for (const spec of specifiers) {
+        expect(spec, `${file}: ${spec}`).toMatch(/^\.\.?\//);
+        const resolved: string = resolve(dirname(filePath), spec);
+        expect(resolved, `${file}: ${spec} escapes src/core`).toMatch(
+          new RegExp(`^${coreDirResolved.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+        );
+      }
     });
 
     it(`${file} uses no browser globals`, () => {
