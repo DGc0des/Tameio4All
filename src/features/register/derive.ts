@@ -55,10 +55,18 @@ export function deriveClosing(config: ShopConfig, draft: Draft): Derived {
       continue;
     }
     if (r.count === 0) continue;
+    const cents = r.count * d;
+    // A huge but individually "valid" count (e.g. typed as digits, safe on its own) can still
+    // overflow Number's safe-integer range once multiplied by the denomination — silently
+    // corrupting the total instead of erroring, since IEEE-754 doubles round past 2^53.
+    if (!Number.isSafeInteger(cents)) {
+      errors.push({ field: fieldId.denom(d), label: denomLabel(d), message: message('invalid') });
+      continue;
+    }
     counts[key] = r.count;
-    rowCents[key] = r.count * d;
-    if (isBill(d)) billsCents += r.count * d;
-    else coinsCents += r.count * d;
+    rowCents[key] = cents;
+    if (isBill(d)) billsCents += cents;
+    else coinsCents += cents;
   }
 
   const channelCents: Record<string, Cents> = {};

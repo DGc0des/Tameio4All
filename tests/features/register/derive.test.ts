@@ -75,6 +75,13 @@ describe('deriveClosing', () => {
     expect(d.errors).toEqual([{ field: 'expense:c', label: 'Έξοδο 3', message: 'πολλά δεκαδικά' }]);
   });
 
+  it('rejects a count whose euro value overflows safe-integer math instead of miscalculating silently', () => {
+    const d = derive(draft({ mode: 'count', entries: { '10000': '99999999999999' } }));
+    expect(d.errors).toEqual([{ field: 'denom:10000', label: '100€', message: 'μη έγκυρη τιμή' }]);
+    expect(d.inputs.counts).toEqual({});
+    expect(d.rowCents['10000']).toBeUndefined();
+  });
+
   it('ignores entries for denominations the shop has not enabled', () => {
     const d = derive(draft({ entries: { '50000': '1000' } }));
     expect(d.inputs.counts).toEqual({});
