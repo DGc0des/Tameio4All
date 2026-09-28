@@ -1,0 +1,31 @@
+import { toBlob } from 'html-to-image';
+
+export type ShareOutcome = 'shared' | 'downloaded' | 'cancelled' | 'failed';
+export type ShareFn = (card: HTMLElement, photo: File | null) => Promise<ShareOutcome>;
+
+/**
+ * Renders the summary card to a PNG and shares it (plus the optional Z photo) through the phone's
+ * share sheet. Falls back to downloading the image where Web Share with files is unsupported.
+ * Nothing is stored.
+ */
+export const shareCard: ShareFn = async (card, photo) => {
+  try {
+    const blob = await toBlob(card, { pixelRatio: 2, backgroundColor: getComputedStyle(card).backgroundColor });
+    if (!blob) return 'failed';
+    const image = new File([blob], 'tameio.png', { type: 'image/png' });
+    const files = photo ? [image, photo] : [image];
+    if (typeof navigator.canShare === 'function' && navigator.canShare({ files })) {
+      await navigator.share({ files });
+      return 'shared';
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'tameio.png';
+    link.click();
+    URL.revokeObjectURL(url);
+    return 'downloaded';
+  } catch (e) {
+    return e instanceof DOMException && e.name === 'AbortError' ? 'cancelled' : 'failed';
+  }
+};
