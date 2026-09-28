@@ -79,6 +79,13 @@ do $$ begin
   begin perform public.create_pairing_code(current_setting('t.shop_a')::uuid);
   exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7 code wrong error: %', sqlerrm; end if; end;
 end $$;
+
+-- T7b set_staff_pin on a non-existent staff id also raises not_owner (never reveals existence)
+do $$ begin
+  begin perform public.set_staff_pin('00000000-0000-0000-0000-00000000dead', '1111');
+  exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7b wrong error: %', sqlerrm; end if; return; end;
+  raise exception 'T7b expected not_owner';
+end $$;
 reset role;
 do $$ begin
   if (select count(*) from public.shop_configs where shop_id = current_setting('t.shop_a')::uuid) <> 2 then raise exception 'T7 B published into A'; end if;
@@ -112,6 +119,15 @@ set local role anon;
 do $$ begin
   begin perform public.create_shop('X', '{"schema":1}'); exception when insufficient_privilege then return; end;
   raise exception 'T10 anon can execute create_shop';
+end $$;
+reset role;
+
+-- T11 owner A cannot execute the private helper directly — proves EXECUTE was revoked from authenticated
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$ begin
+  begin perform private.check_pin('1234'); exception when insufficient_privilege then return; end;
+  raise exception 'T11 owner A can execute private.check_pin';
 end $$;
 reset role;
 
