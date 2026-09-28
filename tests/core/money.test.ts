@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   centsToPlain,
   formatCents,
+  formatEuro,
   parseAmount,
   parseCount,
   parseDecimal,
@@ -100,5 +101,19 @@ describe('centsToPlain', () => {
     [-1200, '-12'],
   ])('%i → %s', (c, out) => {
     expect(centsToPlain(c)).toBe(out);
+  });
+});
+
+describe('formatEuro', () => {
+  it.each([
+    [185520, '1.855,20€'],
+    [5, '0,05€'],
+    [0, '0,00€'],
+    [-100000, '-1.000,00€'],
+    [123456789, '1.234.567,89€'],
+    [99999, '999,99€'],
+    [-5, '-0,05€'],
+  ])('%i → %s', (c, out) => {
+    expect(formatEuro(c)).toBe(out);
   });
 });

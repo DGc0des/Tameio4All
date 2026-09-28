@@ -64,3 +64,11 @@ export function centsToPlain(c: Cents): string {
   if (frac === 0) return `${sign}${whole}`;
   return `${sign}${whole}.${String(frac).padStart(2, '0').replace(/0$/, '')}`;
 }
+
+/** Greek display format: 185520 → "1.855,20€" (dot thousands, comma decimals). */
+export function formatEuro(c: Cents): string {
+  const sign = c < 0 ? '-' : '';
+  const a = Math.abs(c);
+  const whole = String(Math.floor(a / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${sign}${whole},${String(a % 100).padStart(2, '0')}€`;
+}
