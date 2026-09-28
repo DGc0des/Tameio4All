@@ -93,6 +93,23 @@ describe('submissions', () => {
     expect(saveSubmission(throwing, sub('a'))).toBe('failed');
   });
 
+  it('reports duplicate only when the same id carries the same inputs', () => {
+    const s = memoryStore();
+    expect(saveSubmission(s, sub('a'))).toBe('saved');
+    expect(saveSubmission(s, sub('a'))).toBe('duplicate');
+    expect(loadSubmissions(s, 'local')).toHaveLength(1);
+  });
+
+  it('reports conflict and keeps the stored record when the same id carries different inputs', () => {
+    const s = memoryStore();
+    expect(saveSubmission(s, sub('a'))).toBe('saved');
+    const changed = { ...sub('a', [{ description: 'X', cents: 500 }]) };
+    expect(saveSubmission(s, changed)).toBe('conflict');
+    const stored = loadSubmissions(s, 'local');
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.inputs.expenses).toEqual([]);
+  });
+
   it('skips malformed records', () => {
     const s = memoryStore();
     s.setItem(shopKey('local', 'submissions'), JSON.stringify([sub('a'), { id: 1 }, null, { ...sub('b'), inputs: 3 }]));

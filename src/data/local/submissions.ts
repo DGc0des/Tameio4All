@@ -12,7 +12,7 @@ export interface Submission {
   inputs: ClosingInputs;
 }
 
-export type SaveResult = 'saved' | 'duplicate' | 'failed';
+export type SaveResult = 'saved' | 'duplicate' | 'conflict' | 'failed';
 
 /** localStorage is ~5 MB; ~1 KB per closing, so the newest 500 are plenty for suggestions. */
 export const MAX_SUBMISSIONS = 500;
@@ -38,10 +38,18 @@ export function loadSubmissions(store: KeyValueStore, shopId: string): Submissio
   return Array.isArray(raw) ? raw.filter(isSubmission) : [];
 }
 
-/** Idempotent by id: a double tap or retry stores the closing once. */
+/**
+ * Idempotent by id: a double tap or retry stores the closing once. If the id is already taken
+ * by a *different* closing (e.g. a stale draft id reused after storage was cleared elsewhere),
+ * that would silently discard the new data — so it is reported as 'conflict' and nothing is
+ * written, instead of being reported as 'duplicate'.
+ */
 export function saveSubmission(store: KeyValueStore, submission: Submission): SaveResult {
   const list = loadSubmissions(store, submission.shopId);
-  if (list.some((s) => s.id === submission.id)) return 'duplicate';
+  const existing = list.find((s) => s.id === submission.id);
+  if (existing !== undefined) {
+    return JSON.stringify(existing.inputs) === JSON.stringify(submission.inputs) ? 'duplicate' : 'conflict';
+  }
   const next = [...list, submission].slice(-MAX_SUBMISSIONS);
   return writeJson(store, shopKey(submission.shopId, 'submissions'), next) ? 'saved' : 'failed';
 }

@@ -75,14 +75,18 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
   const calcChannel = config.channels.find((c) => c.id === calcFor);
 
   const save = (): SaveResult => {
-    const result = saveSubmission(store, {
+    const submission = {
       id: draft.id,
       shopId: shop.id,
       staffName: draft.staffName,
       businessDate: draft.businessDate,
       submittedAt: now().toISOString(),
       inputs: derived.inputs,
-    });
+    };
+    let result = saveSubmission(store, submission);
+    // The draft id collided with a *different* stored closing (not a duplicate submit) — retry
+    // once under a fresh id so the typed closing is never silently dropped.
+    if (result === 'conflict') result = saveSubmission(store, { ...submission, id: newId() });
     if (result !== 'failed') {
       setSubmissions(loadSubmissions(store, shop.id));
       // Reset right away (new draft id): if the person leaves or reloads instead of tapping

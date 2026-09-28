@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/app/App';
 import { loadStaff, saveStaff } from '../../src/data/local/staff';
 import { memoryStore, shopKey, type KeyValueStore } from '../../src/data/local/storage';
-import { loadSubmissions } from '../../src/data/local/submissions';
+import { loadSubmissions, saveSubmission, type Submission } from '../../src/data/local/submissions';
 import type { ShareFn } from '../../src/features/register/share';
 
 const NOW = () => new Date(2026, 8, 28, 22, 0);
@@ -143,6 +143,33 @@ describe('register flows', () => {
     expect(screen.queryByText('Το κλείσιμο αποθηκεύτηκε')).toBeNull();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('1500');
+  });
+
+  it('never drops a closing when the fresh draft id collides with an unrelated stored one', () => {
+    const store = memoryStore();
+    saveStaff(store, 'local', ['ΓΚΡΕΖΙΟΣ']);
+    // The very first id a fresh draft gets is 'id-1' (see newId() above) — pre-occupy it with an
+    // unrelated closing so the register's own submission collides with it under a different id.
+    const stale: Submission = {
+      id: 'id-1', shopId: 'local', staffName: 'ΝΙΚΟΣ', businessDate: '2026-09-27',
+      submittedAt: '2026-09-27T21:00:00.000Z',
+      inputs: { schema: 1, counts: { '10000': 3 }, channelCents: {}, expenses: [] },
+    };
+    expect(saveSubmission(store, stale)).toBe('saved');
+
+    start(store);
+    fireEvent.click(screen.getByRole('button', { name: /Διάλεξε όνομα/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'ΓΚΡΕΖΙΟΣ' }));
+    fireEvent.click(button('Εντάξει'));
+    type('100€', '1500');
+    fireEvent.click(button('Υποβολή'));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
+
+    const subs = loadSubmissions(store, 'local');
+    expect(subs).toHaveLength(2);
+    expect(subs[0]).toEqual(stale);
+    const fresh = subs.find((s) => s.id !== 'id-1');
+    expect(fresh?.inputs.counts['10000']).toBe(15);
   });
 });
 
