@@ -77,6 +77,18 @@ describe('SubmitSheet', () => {
     expect(onClose).toHaveBeenCalledWith(false);
   });
 
+  it('keeps the photo picker keyboard-reachable instead of removing it from the tab order', () => {
+    setup();
+    const fileInput = screen.getByLabelText('Φωτογραφία Ζ') as HTMLInputElement;
+    // `hidden` drops the control from the accessibility tree and tab order entirely; a visually
+    // hidden class keeps it focusable/reachable while off-screen.
+    expect(fileInput.hidden).toBe(false);
+    expect(fileInput.className).toContain('sr-only');
+    // The accessible name must come from the label text (which flips to '✓ …'), not a fixed
+    // aria-label that would go stale once a photo is picked.
+    expect(fileInput.getAttribute('aria-label')).toBeNull();
+  });
+
   it('shares the card with the picked Z photo (never stored by the sheet)', async () => {
     const onShare = vi.fn<ShareFn>(async () => 'shared');
     setup(undefined, onShare);

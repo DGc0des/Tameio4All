@@ -58,7 +58,7 @@ export function SubmitSheet({ config, draft, derived, onSave, onShare, onClose }
       <div className="sheet-actions">
         <label className="btn btn-text">
           {photo ? '✓ Φωτογραφία Ζ' : 'Φωτογραφία Ζ'}
-          <input type="file" accept="image/*" aria-label="Φωτογραφία Ζ" hidden onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
+          <input type="file" accept="image/*" className="sr-only" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
         </label>
         {saved ? (
           <>
