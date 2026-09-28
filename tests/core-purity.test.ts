@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const CORE_DIR = fileURLToPath(new URL('../src/core', import.meta.url));
@@ -23,6 +23,8 @@ describe('src/core purity', () => {
       const specifiers = [
         ...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g),
         ...source.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]/g),
+        ...source.matchAll(/\bimport\s+['"]([^'"]+)['"]/g),
+        ...source.matchAll(/\brequire\s*\(\s*['"]([^'"]+)['"]/g),
       ]
         .map((m) => m[1])
         .filter((s): s is string => s !== undefined);
@@ -30,9 +32,11 @@ describe('src/core purity', () => {
       for (const spec of specifiers) {
         expect(spec, `${file}: ${spec}`).toMatch(/^\.\.?\//);
         const resolved: string = resolve(dirname(filePath), spec);
-        expect(resolved, `${file}: ${spec} escapes src/core`).toMatch(
-          new RegExp(`^${coreDirResolved.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
-        );
+        const rel = relative(coreDirResolved, resolved);
+        expect(
+          rel.startsWith('..') || isAbsolute(rel),
+          `${file}: ${spec} escapes src/core`,
+        ).toBe(false);
       }
     });
 
