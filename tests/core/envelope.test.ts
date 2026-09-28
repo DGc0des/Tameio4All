@@ -69,4 +69,45 @@ describe('planEnvelope', () => {
     const p = planEnvelope(1000, { '1000': 1, '50000': 3 }, [1000]);
     expect(p.remaining).toEqual({ '1000': 0 });
   });
+
+  it('treats a non-safe-integer count (NaN) as 0, never producing NaN', () => {
+    const p = planEnvelope(1000, { '1000': NaN, '500': 2 }, [1000, 500]);
+    expect(p.put).toEqual({ '500': 2 });
+    expect(p.shortCents).toBe(0);
+    for (const v of [p.putCents, p.shortCents, ...Object.values(p.put), ...Object.values(p.remaining)]) {
+      expect(Number.isNaN(v)).toBe(false);
+    }
+  });
+
+  it('treats negative and fractional counts as 0 as well', () => {
+    const p = planEnvelope(500, { '1000': -1, '500': 1.5 }, [1000, 500]);
+    expect(p.put).toEqual({});
+    expect(p.shortCents).toBe(500);
+  });
+
+  describe('bounded search above MAX_UNITS (≈20 000€ at 5c units)', () => {
+    it('stays fast and exact for a 10 000×100€ till against an odd-cent near-full target', () => {
+      const denoms = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5];
+      const start = performance.now();
+      const p = planEnvelope(99_999_995, { '10000': 10000 }, denoms);
+      expect(performance.now() - start).toBeLessThan(1000);
+      expect(p.putCents).toBeLessThanOrEqual(99_999_995);
+      expect(p.shortCents).toBe(99_999_995 - p.putCents);
+      expect(Number.isNaN(p.putCents)).toBe(false);
+      expect(Number.isNaN(p.shortCents)).toBe(false);
+    });
+
+    it('stays fast and bounded for a 50 000×100€ till + coins against a 5 000 000€ target', () => {
+      const denoms = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5];
+      const counts = { '10000': 50000, '500': 2000, '50': 500, '5': 100 };
+      const start = performance.now();
+      const p = planEnvelope(500_000_000, counts, denoms);
+      expect(performance.now() - start).toBeLessThan(1000);
+      expect(p.putCents).toBeLessThanOrEqual(500_000_000);
+      expect(p.shortCents).toBe(500_000_000 - p.putCents);
+      expect(Number.isNaN(p.putCents)).toBe(false);
+      expect(Number.isNaN(p.shortCents)).toBe(false);
+      for (const v of Object.values(p.remaining)) expect(Number.isNaN(v)).toBe(false);
+    });
+  });
 });
