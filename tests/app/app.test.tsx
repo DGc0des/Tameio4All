@@ -194,4 +194,21 @@ describe('navigation', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Αποβάρα' }));
     expect(screen.getByRole('heading', { name: 'Αποβάρα' })).toBeTruthy();
   });
+
+  it('closes an open sheet when leaving the register via the URL (phone Back)', () => {
+    start();
+    fireEvent.click(screen.getByRole('button', { name: /Διάλεξε όνομα/ }));
+    expect(screen.getByRole('dialog', { name: 'Ποιος κλείνει;' })).toBeTruthy();
+    act(() => {
+      window.location.hash = '#/staff';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    act(() => {
+      window.location.hash = '#/';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Κλείσιμο ταμείου' })).toBeTruthy();
+  });
 });

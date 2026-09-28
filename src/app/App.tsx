@@ -54,6 +54,7 @@ export function App({ appStore, shop = LOCAL_SHOP, now = systemNow, newId = rand
           share={share}
           staff={staff}
           themePref={themePref}
+          active={route === 'register'}
           onTheme={cycleTheme}
           onNavigate={navigate}
         />

@@ -32,13 +32,14 @@ export interface RegisterProps {
   share: ShareFn;
   staff: readonly string[];
   themePref: ThemePref;
+  active: boolean;
   onTheme: () => void;
   onNavigate: (route: Route) => void;
 }
 
 type SheetName = 'envelope' | 'submit' | 'people';
 
-export function RegisterScreen({ shop, store, now, newId, share, staff, themePref, onTheme, onNavigate }: RegisterProps) {
+export function RegisterScreen({ shop, store, now, newId, share, staff, themePref, active, onTheme, onNavigate }: RegisterProps) {
   const { config } = shop;
   const [draft, dispatch] = useReducer(
     draftReducer,
@@ -58,6 +59,15 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
     const timer = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  // Leaving the register (e.g. phone Back to #/staff) must not leave a sheet mounted-but-hidden
+  // with its listeners (Escape, outside click) still live.
+  useEffect(() => {
+    if (!active) {
+      setSheet(null);
+      setCalcFor(null);
+    }
+  }, [active]);
 
   const bills = config.denominations.filter(isBill);
   const coins = config.denominations.filter((d) => !isBill(d));
@@ -93,7 +103,7 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
             {formatDayEl(draft.businessDate)} · {draft.staffName || 'Διάλεξε όνομα'}
           </button>
         </div>
-        <HeaderMenu hasTare={config.tareItems.length > 0} themePref={themePref} onNavigate={onNavigate} onTheme={onTheme} />
+        {active && <HeaderMenu hasTare={config.tareItems.length > 0} themePref={themePref} onNavigate={onNavigate} onTheme={onTheme} />}
       </header>
       <main className="page">
         <ModeSwitch mode={draft.mode} onChange={(mode) => dispatch({ type: 'setMode', mode, denominations: config.denominations })} />
@@ -111,9 +121,13 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
         onEnvelope={() => setSheet('envelope')}
         onSubmit={() => setSheet('submit')}
       />
-      {sheet === 'envelope' && <EnvelopeSheet denominations={config.denominations} envelope={derived.envelope} onClose={() => setSheet(null)} />}
-      {sheet === 'submit' && <SubmitSheet config={config} draft={draft} derived={derived} onSave={save} onShare={share} onClose={closeSubmit} />}
-      {sheet === 'people' && (
+      {active && sheet === 'envelope' && (
+        <EnvelopeSheet denominations={config.denominations} envelope={derived.envelope} onClose={() => setSheet(null)} />
+      )}
+      {active && sheet === 'submit' && (
+        <SubmitSheet config={config} draft={draft} derived={derived} onSave={save} onShare={share} onClose={closeSubmit} />
+      )}
+      {active && sheet === 'people' && (
         <PeopleSheet
           staff={staff}
           staffName={draft.staffName}
@@ -127,7 +141,7 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
           onClose={() => setSheet(null)}
         />
       )}
-      {calcChannel !== undefined && (
+      {active && calcChannel !== undefined && (
         <CoinCalcSheet
           label={calcChannel.label}
           onApply={(text) => {
