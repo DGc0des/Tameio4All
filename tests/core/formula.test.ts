@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { newShopConfig, plus, type ShopConfig } from '../../src/core/config';
 import {
+  ClosingInputsInvalidError,
   ConfigInvalidError,
   countedCents,
   evaluateTotals,
   expensesCents,
+  validateClosingInputs,
   type ClosingInputs,
 } from '../../src/core/formula';
 
@@ -71,6 +73,74 @@ describe('evaluateTotals', () => {
       evaluateTotals(broken, inputs);
     } catch (e) {
       expect((e as ConfigInvalidError).errors.map((x) => x.code)).toEqual(['unknown_channel']);
+    }
+  });
+});
+
+describe('validateClosingInputs', () => {
+  const codesOf = (i: unknown): string[] => {
+    let result: string[] = [];
+    expect(() => {
+      result = validateClosingInputs(shop, i).map((e) => e.code);
+    }).not.toThrow();
+    return result;
+  };
+
+  it('accepts stale keys not present in the config (denominations/channels)', () => {
+    expect(
+      codesOf({ schema: 1, counts: { '50000': 1 }, channelCents: { deleted: 99999 }, expenses: [] }),
+    ).toEqual([]);
+  });
+
+  it('rejects a negative count (bad_count)', () => {
+    expect(codesOf({ schema: 1, counts: { '10000': -3 }, channelCents: {}, expenses: [] })).toContain(
+      'bad_count',
+    );
+  });
+
+  it('rejects a fractional count (bad_count)', () => {
+    expect(codesOf({ schema: 1, counts: { '10000': 0.5 }, channelCents: {}, expenses: [] })).toContain(
+      'bad_count',
+    );
+  });
+
+  it('rejects a NaN count (bad_count)', () => {
+    expect(codesOf({ schema: 1, counts: { '10000': NaN }, channelCents: {}, expenses: [] })).toContain(
+      'bad_count',
+    );
+  });
+
+  it('rejects a string expense amount (bad_amount)', () => {
+    expect(
+      codesOf({ schema: 1, counts: {}, channelCents: {}, expenses: [{ description: 'x', cents: '500' }] }),
+    ).toContain('bad_amount');
+  });
+
+  it('rejects more expenses than maxExpenses (too_many_expenses)', () => {
+    const many = Array.from({ length: shop.maxExpenses + 1 }, () => ({ description: 'x', cents: 100 }));
+    expect(codesOf({ schema: 1, counts: {}, channelCents: {}, expenses: many })).toContain(
+      'too_many_expenses',
+    );
+  });
+
+  it('rejects a missing expenses array (bad_shape)', () => {
+    expect(codesOf({ schema: 1, counts: {}, channelCents: {} })).toContain('bad_shape');
+  });
+
+  it('never throws on completely foreign input', () => {
+    expect(codesOf(null)).toContain('bad_shape');
+    expect(codesOf('nope')).toContain('bad_shape');
+  });
+});
+
+describe('evaluateTotals throws ClosingInputsInvalidError for bad closing inputs', () => {
+  it('throws with bad_count for a negative count', () => {
+    const bad = { schema: 1, counts: { '10000': -3 }, channelCents: {}, expenses: [] } as unknown as ClosingInputs;
+    expect(() => evaluateTotals(shop, bad)).toThrow(ClosingInputsInvalidError);
+    try {
+      evaluateTotals(shop, bad);
+    } catch (e) {
+      expect((e as ClosingInputsInvalidError).errors.map((x) => x.code)).toContain('bad_count');
     }
   });
 });

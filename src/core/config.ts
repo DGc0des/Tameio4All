@@ -56,10 +56,12 @@ export interface ShopConfig {
 }
 
 export type ConfigErrorCode =
+  | 'bad_shape'
   | 'bad_float'
   | 'bad_denomination'
   | 'bad_max_expenses'
   | 'bad_id'
+  | 'bad_label'
   | 'duplicate_id'
   | 'unknown_channel'
   | 'unknown_total'
@@ -163,61 +165,200 @@ export function totalOrder(
   return { ok: true, order };
 }
 
+/** Ids must be lowercase/digits/underscore and never an Object.prototype property name
+ * (constructor, toString, __proto__, …) — a JSON-parsed config could otherwise pollute lookups. */
+const ID_RE = /^[a-z0-9_]{1,40}$/;
+const isValidIdContent = (id: string): boolean => ID_RE.test(id) && !(id in Object.prototype);
+
 function checkIds(ids: string[], what: string, errors: ConfigError[]): Set<string> {
   const seen = new Set<string>();
   for (const id of ids) {
-    if (id.trim() === '') errors.push({ code: 'bad_id', detail: `${what}: empty id` });
+    if (!isValidIdContent(id)) errors.push({ code: 'bad_id', detail: `${what}: ${id}` });
     else if (seen.has(id)) errors.push({ code: 'duplicate_id', detail: `${what}: ${id}` });
     seen.add(id);
   }
   return seen;
 }
 
-export function validateConfig(config: ShopConfig): ConfigError[] {
+type Obj = Record<string, unknown>;
+const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
+const isSafeNonNegInt = (x: unknown): x is number =>
+  typeof x === 'number' && Number.isSafeInteger(x) && x >= 0;
+
+/**
+ * Validates a config of unknown origin (e.g. jsonb read back from storage). Structural problems
+ * (wrong shape, wrong primitive type, missing arrays) are reported as `bad_shape` and never throw,
+ * even for completely foreign input; content problems keep their specific codes.
+ */
+export function validateConfig(config: unknown): ConfigError[] {
   const errors: ConfigError[] = [];
 
-  if (!Number.isSafeInteger(config.floatCents) || config.floatCents < 0) {
-    errors.push({ code: 'bad_float', detail: String(config.floatCents) });
+  if (!isObj(config)) {
+    errors.push({ code: 'bad_shape', detail: 'config is not an object' });
+    return errors;
   }
+  const c = config;
 
-  const seenDenoms = new Set<number>();
-  for (const d of config.denominations) {
-    if (!EUR_DENOMINATIONS.includes(d) || seenDenoms.has(d)) {
-      errors.push({ code: 'bad_denomination', detail: String(d) });
-    }
-    seenDenoms.add(d);
-  }
+  if (c.schema !== 1) errors.push({ code: 'bad_shape', detail: 'schema' });
 
-  if (!Number.isInteger(config.maxExpenses) || config.maxExpenses < 0 || config.maxExpenses > 30) {
-    errors.push({ code: 'bad_max_expenses', detail: String(config.maxExpenses) });
-  }
+  const floatOk = typeof c.floatCents === 'number' && Number.isSafeInteger(c.floatCents) && c.floatCents >= 0;
+  if (!floatOk) errors.push({ code: 'bad_float', detail: String(c.floatCents) });
 
-  const channelIds = checkIds(config.channels.map((c) => c.id), 'channel', errors);
-  const totalIds = checkIds(config.totals.map((t) => t.id), 'total', errors);
-
-  for (const t of config.totals) {
-    for (const { ref } of t.terms) {
-      if (ref.kind === 'channel' && !channelIds.has(ref.id)) {
-        errors.push({ code: 'unknown_channel', detail: `${t.id} → ${ref.id}` });
+  if (!Array.isArray(c.denominations)) {
+    errors.push({ code: 'bad_shape', detail: 'denominations' });
+  } else {
+    const seenDenoms = new Set<unknown>();
+    for (const d of c.denominations) {
+      if (typeof d !== 'number' || !EUR_DENOMINATIONS.includes(d) || seenDenoms.has(d)) {
+        errors.push({ code: 'bad_denomination', detail: String(d) });
       }
-      if (ref.kind === 'total' && !totalIds.has(ref.id)) {
-        errors.push({ code: 'unknown_total', detail: `${t.id} → ${ref.id}` });
-      }
+      seenDenoms.add(d);
     }
   }
 
-  const order = totalOrder(config.totals);
-  if (!order.ok) errors.push({ code: 'cycle', detail: order.cycle.join(' → ') });
+  const maxExpensesOk =
+    typeof c.maxExpenses === 'number' &&
+    Number.isInteger(c.maxExpenses) &&
+    c.maxExpenses >= 0 &&
+    c.maxExpenses <= 30;
+  if (!maxExpensesOk) errors.push({ code: 'bad_max_expenses', detail: String(c.maxExpenses) });
 
-  if (!totalIds.has(config.envelopeTotalId)) {
-    errors.push({ code: 'missing_envelope_total', detail: config.envelopeTotalId });
+  // channels
+  let channelIds = new Set<string>();
+  if (!Array.isArray(c.channels)) {
+    errors.push({ code: 'bad_shape', detail: 'channels' });
+  } else {
+    const idList: string[] = [];
+    for (const item of c.channels) {
+      if (
+        !isObj(item) ||
+        typeof item.id !== 'string' ||
+        typeof item.label !== 'string' ||
+        typeof item.type !== 'string' ||
+        !CHANNEL_TYPES.includes(item.type as ChannelType)
+      ) {
+        errors.push({ code: 'bad_shape', detail: 'channel' });
+        continue;
+      }
+      idList.push(item.id);
+      if (item.label.trim() === '') errors.push({ code: 'bad_label', detail: `channel: ${item.id}` });
+    }
+    channelIds = checkIds(idList, 'channel', errors);
   }
 
-  for (const item of config.tareItems) {
-    if (item.name.trim() === '' || !Number.isSafeInteger(item.tareGrams) || item.tareGrams < 0) {
-      errors.push({ code: 'bad_tare', detail: item.name || '(empty name)' });
+  // totals
+  let totalIds = new Set<string>();
+  let totalsShapeOk = Array.isArray(c.totals);
+  const channelRefs: { totalId: string; id: string }[] = [];
+  const totalRefs: { totalId: string; id: string }[] = [];
+
+  if (!Array.isArray(c.totals)) {
+    errors.push({ code: 'bad_shape', detail: 'totals' });
+  } else {
+    const idList: string[] = [];
+    for (const item of c.totals) {
+      if (
+        !isObj(item) ||
+        typeof item.id !== 'string' ||
+        typeof item.label !== 'string' ||
+        !Array.isArray(item.terms) ||
+        typeof item.showInSummary !== 'boolean' ||
+        typeof item.showInShare !== 'boolean'
+      ) {
+        errors.push({ code: 'bad_shape', detail: 'total' });
+        totalsShapeOk = false;
+        continue;
+      }
+      idList.push(item.id);
+      if (item.label.trim() === '') errors.push({ code: 'bad_label', detail: `total: ${item.id}` });
+
+      for (const term of item.terms) {
+        if (!isObj(term) || (term.sign !== 1 && term.sign !== -1) || !isObj(term.ref)) {
+          errors.push({ code: 'bad_shape', detail: `total ${item.id}: term` });
+          totalsShapeOk = false;
+          continue;
+        }
+        const ref = term.ref;
+        switch (ref.kind) {
+          case 'counted':
+          case 'float':
+          case 'expenses':
+            break;
+          case 'channel':
+            if (typeof ref.id !== 'string') {
+              errors.push({ code: 'bad_shape', detail: `total ${item.id}: channel ref` });
+              totalsShapeOk = false;
+            } else {
+              channelRefs.push({ totalId: item.id, id: ref.id });
+            }
+            break;
+          case 'total':
+            if (typeof ref.id !== 'string') {
+              errors.push({ code: 'bad_shape', detail: `total ${item.id}: total ref` });
+              totalsShapeOk = false;
+            } else {
+              totalRefs.push({ totalId: item.id, id: ref.id });
+            }
+            break;
+          case 'type':
+            if (typeof ref.type !== 'string' || !CHANNEL_TYPES.includes(ref.type as ChannelType)) {
+              errors.push({ code: 'bad_shape', detail: `total ${item.id}: type ref` });
+              totalsShapeOk = false;
+            }
+            break;
+          default:
+            errors.push({ code: 'bad_shape', detail: `total ${item.id}: ref kind` });
+            totalsShapeOk = false;
+        }
+      }
+    }
+    totalIds = checkIds(idList, 'total', errors);
+  }
+
+  for (const r of channelRefs) {
+    if (!channelIds.has(r.id)) errors.push({ code: 'unknown_channel', detail: `${r.totalId} → ${r.id}` });
+  }
+  for (const r of totalRefs) {
+    if (!totalIds.has(r.id)) errors.push({ code: 'unknown_total', detail: `${r.totalId} → ${r.id}` });
+  }
+
+  if (totalsShapeOk) {
+    const order = totalOrder(c.totals as TotalDef[]);
+    if (!order.ok) errors.push({ code: 'cycle', detail: order.cycle.join(' → ') });
+  }
+
+  if (!totalIds.has(c.envelopeTotalId as string)) {
+    errors.push({ code: 'missing_envelope_total', detail: String(c.envelopeTotalId) });
+  }
+
+  if (!Array.isArray(c.tareItems)) {
+    errors.push({ code: 'bad_shape', detail: 'tareItems' });
+  } else {
+    for (const item of c.tareItems) {
+      if (!isObj(item) || typeof item.name !== 'string' || typeof item.tareGrams !== 'number') {
+        errors.push({ code: 'bad_shape', detail: 'tareItems' });
+        continue;
+      }
+      if (item.name.trim() === '' || !Number.isSafeInteger(item.tareGrams) || item.tareGrams < 0) {
+        errors.push({ code: 'bad_tare', detail: item.name || '(empty name)' });
+      }
+    }
+  }
+
+  if (!isObj(c.seedSuppliers)) {
+    errors.push({ code: 'bad_shape', detail: 'seedSuppliers' });
+  } else {
+    for (const [name, values] of Object.entries(c.seedSuppliers)) {
+      if (!Array.isArray(values) || !values.every(isSafeNonNegInt)) {
+        errors.push({ code: 'bad_shape', detail: `seedSuppliers: ${name}` });
+      }
     }
   }
 
   return errors;
+}
+
+/** True iff `x` is a `ShopConfig` with no validation errors. */
+export function isShopConfig(x: unknown): x is ShopConfig {
+  return validateConfig(x).length === 0;
 }
