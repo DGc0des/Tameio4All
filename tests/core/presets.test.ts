@@ -49,4 +49,19 @@ describe('joinJuicePreset', () => {
     expect(joinJuicePreset.seedSuppliers['Ντόντης']).toEqual([1800, 2400]);
     expect(joinJuicePreset.seedSuppliers['Μεβγάλ']).toContain(2964);
   });
+
+  it('is deeply frozen so consumers cannot mutate the shared preset', () => {
+    expect(Object.isFrozen(joinJuicePreset)).toBe(true);
+    expect(Object.isFrozen(joinJuicePreset.channels[0])).toBe(true);
+    expect(Object.isFrozen(joinJuicePreset.totals[0])).toBe(true);
+    expect(Object.isFrozen(joinJuicePreset.tareItems[0])).toBe(true);
+    expect(Object.isFrozen(joinJuicePreset.seedSuppliers['Ντόντης'])).toBe(true);
+
+    expect(() => {
+      joinJuicePreset.floatCents = 0;
+    }).toThrow();
+    expect(() => {
+      joinJuicePreset.channels[0]!.label = 'mutated';
+    }).toThrow();
+  });
 });

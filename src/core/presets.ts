@@ -5,8 +5,17 @@ import type { Cents } from './money';
 // Converts the euro literals copied from tameioV2 once, at load time.
 const euros = (values: number[]): Cents[] => values.map((v) => Math.round(v * 100));
 
+/** Recursively freezes an object/array so shared presets can't be mutated by a consumer. */
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.values(value).forEach(deepFreeze);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 /** Join Juice Bars, Thessaloniki — reproduces tameioV2 exactly. First real shop and parity test. */
-export const joinJuicePreset: ShopConfig = {
+export const joinJuicePreset: ShopConfig = deepFreeze({
   schema: 1,
   floatCents: 100000,
   denominations: EUR_DENOMINATIONS.filter((d) => d <= 10000),
@@ -77,4 +86,4 @@ export const joinJuicePreset: ShopConfig = {
     'Mega light': euros([37.2]),
     'Γράσο πορτοκαλιού': euros([6]),
   },
-};
+});
