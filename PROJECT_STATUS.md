@@ -19,7 +19,7 @@
 
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
-money, denominations, config (validation, cycles, defaults), formula (evaluation, stale inputs,
+money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults), formula (evaluation, stale inputs,
 invalid config), presets (V2 parity), envelope (greedy trap, shortfall, non-5c targets, 20 000€
 timing), suggestions, tare, core purity.
 
@@ -29,4 +29,3 @@ timing), suggestions, tare, core purity.
 - CI workflow is written but has not run: the repo has no GitHub remote yet.
 - Core purity rule was widened: core imports must be relative and resolve inside `src/core` (recursive scan), not only `./`.
 - Dev dependencies are on new majors (TypeScript 7, Vitest 5); Node 22.12+ required.
-- `centsToPlain` handles negatives.
