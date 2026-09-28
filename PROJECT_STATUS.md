@@ -55,6 +55,7 @@ Whole-branch review after all 14 Plan 2 tasks landed. Continues the severity sch
 | L15 | F5 also proposed pre-rendering the share image ahead of time to reduce iOS share fragility further | Deferred until a real-iPhone test shows Web Share / `html-to-image` actually failing there — no evidence yet it's needed | open — revisit after real-phone test |
 | L16 | A tab left open overnight keeps a stale in-memory business date / draft: nothing re-checks "is this still today" or expires the draft while the app stays open (only `DRAFT_TTL_MS` on reload) | Needs a running-app staleness check, not just a load-time one | open — revisit in Plan 5 |
 | L17 | `saveDraft` failures (e.g. storage quota) are silent — no UI notice, unlike `saveSubmission`'s explicit failed-save alert | Not yet designed | open — add a draft-save failure notice |
+| L18 | `RegisterScreen.save()` treats any non-`'failed'` result as success, so if the retry after a `'conflict'` also hit `'conflict'` the form would reset and report "saved" with nothing stored | Needs two `crypto.randomUUID()` collisions in a row — negligible; tighten the guard to `saved \| duplicate` when Plan 5 moves saving to the server RPC | open — Plan 5 |
 
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
