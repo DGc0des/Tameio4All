@@ -44,4 +44,26 @@ describe('Sheet', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(screen.getByText('60,00€')).toBeTruthy();
   });
+
+  it('has a close button that calls onClose', () => {
+    const onClose = vi.fn();
+    render(<Sheet title="Φάκελος" onClose={onClose}><p>inside</p></Sheet>);
+    fireEvent.click(screen.getByRole('button', { name: 'Κλείσιμο' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('focuses the dialog on mount and restores focus on unmount', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    const { unmount } = render(<Sheet title="Φάκελος" onClose={vi.fn()}><p>inside</p></Sheet>);
+    const dialog = screen.getByRole('dialog', { name: 'Φάκελος' });
+    expect(document.activeElement).toBe(dialog);
+
+    unmount();
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
 });
