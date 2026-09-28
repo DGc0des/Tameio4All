@@ -19,6 +19,7 @@ const shop: ShopConfig = {
 };
 
 const inputs: ClosingInputs = {
+  schema: 1,
   counts: { '10000': 3, '50': 2 },
   channelCents: { pos: 5000, wolt: 2000, box: 1000 },
   expenses: [{ description: 'Γάλα', cents: 500 }],
@@ -56,7 +57,7 @@ describe('evaluateTotals', () => {
   });
 
   it('gives −float when nothing is entered', () => {
-    const empty: ClosingInputs = { counts: {}, channelCents: {}, expenses: [] };
+    const empty: ClosingInputs = { schema: 1, counts: {}, channelCents: {}, expenses: [] };
     expect(evaluateTotals(shop, empty)).toEqual({ tameio: 0, expenses_total: 0, cash: -20000 });
   });
 

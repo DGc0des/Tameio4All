@@ -7,6 +7,7 @@ const euros = (values: number[]): Cents[] => values.map((v) => Math.round(v * 10
 
 /** Join Juice Bars, Thessaloniki — reproduces tameioV2 exactly. First real shop and parity test. */
 export const joinJuicePreset: ShopConfig = {
+  schema: 1,
   floatCents: 100000,
   denominations: EUR_DENOMINATIONS.filter((d) => d <= 10000),
   channels: [

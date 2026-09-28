@@ -43,6 +43,8 @@ export interface TareItem {
 
 /** Everything shop-specific. Staff and PINs are deliberately NOT here (server-side only). */
 export interface ShopConfig {
+  /** Bumped whenever the stored shape changes; lets validators reject configs from a future/past shape. */
+  schema: 1;
   floatCents: Cents;
   denominations: Cents[];
   channels: Channel[];
@@ -113,6 +115,7 @@ export function defaultTotals(): TotalDef[] {
 
 export function newShopConfig(): ShopConfig {
   return {
+    schema: 1,
     floatCents: 0,
     denominations: EUR_DENOMINATIONS.filter((d) => d <= 10000),
     channels: [],

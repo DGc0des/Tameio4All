@@ -14,6 +14,8 @@ export interface ExpenseEntry {
 
 /** Raw, already-parsed inputs of one closing. This is what gets stored — never the totals. */
 export interface ClosingInputs {
+  /** Bumped whenever the stored shape changes; lets validators reject inputs from a future/past shape. */
+  schema: 1;
   /** Piece count per denomination, keyed by String(denominationCents). */
   counts: Record<string, number>;
   /** Amount per channel id. */

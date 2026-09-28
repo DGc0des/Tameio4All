@@ -13,6 +13,7 @@ describe('joinJuicePreset', () => {
     // 0.50:6.5, 0.20:3.4, 0.10:1.2, 0.05:0.45, ΚΕΡΜΑΤΑ 150, ΈΞΟΔΑ 12.50 + 7.80,
     // WOLT 45.60, EFOOD 23.10, myPos 310.25, Eurobank 88.40
     const inputs: ClosingInputs = {
+      schema: 1,
       counts: {
         '10000': 5, '5000': 6, '2000': 12, '1000': 9, '500': 7,
         '200': 12, '100': 17, '50': 13, '20': 17, '10': 12, '5': 9,
@@ -33,7 +34,7 @@ describe('joinJuicePreset', () => {
   });
 
   it('matches tameioV2 on an empty form (ΜΕΤΡΗΤΑ −1000)', () => {
-    const empty: ClosingInputs = { counts: {}, channelCents: {}, expenses: [] };
+    const empty: ClosingInputs = { schema: 1, counts: {}, channelCents: {}, expenses: [] };
     expect(evaluateTotals(joinJuicePreset, empty)).toEqual({
       tameio: 0,
       expenses_total: 0,
