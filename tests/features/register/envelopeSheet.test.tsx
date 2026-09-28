@@ -20,6 +20,13 @@ describe('EnvelopeSheet', () => {
 
   it('says how much is missing when the till cannot cover it', () => {
     render(<EnvelopeSheet denominations={DENOMS} envelope={planEnvelope(1000, { '5000': 1 }, DENOMS)} onClose={vi.fn()} />);
+    expect(screen.getByText('0,00€ σε 0 κομμάτια · στόχος 10,00€')).toBeTruthy();
+    expect(screen.getByText('Λείπουν 10,00€')).toBeTruthy();
+  });
+
+  it('shows partial shortfall with what was put and target', () => {
+    render(<EnvelopeSheet denominations={DENOMS} envelope={planEnvelope(8000, { '5000': 1, '2000': 1 }, DENOMS)} onClose={vi.fn()} />);
+    expect(screen.getByText('70,00€ σε 2 κομμάτια · στόχος 80,00€')).toBeTruthy();
     expect(screen.getByText('Λείπουν 10,00€')).toBeTruthy();
   });
 

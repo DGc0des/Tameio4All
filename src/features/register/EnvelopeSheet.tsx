@@ -25,8 +25,13 @@ export function EnvelopeSheet({ denominations, envelope, onClose }: Props) {
   const left = sorted.filter((d) => count(envelope.remaining, d) > 0);
   const total = put.reduce((n, d) => n + count(envelope.put, d), 0);
 
+  const subtitle =
+    envelope.shortCents === 0
+      ? `${formatEuro(envelope.targetCents)} σε ${pieces(total)}`
+      : `${formatEuro(envelope.putCents)} σε ${pieces(total)} · στόχος ${formatEuro(envelope.targetCents)}`;
+
   return (
-    <Sheet title="Φάκελος" subtitle={`${formatEuro(envelope.targetCents)} σε ${pieces(total)}`} onClose={onClose}>
+    <Sheet title="Φάκελος" subtitle={subtitle} onClose={onClose}>
       <ul className="list">
         {put.map((d) => (
           <li className="list-row" key={d}>
