@@ -50,8 +50,17 @@ supabase/migrations/  schema, RLS, RPCs;  supabase/tests/ RLS tests
   (ΚΕΡΜΑΤΑ = `cash_extra`; WOLT = `delivery`; myPos = `card`)
 - `totals: {id, label, terms: {sign: +1|-1, ref}[], showInSummary, showInShare}`
   with `ref` ∈ `counted | float | expenses | channel:<id> | type:<type> | total:<id>`
-- `envelopeTotalId` (which total Φάκελος fills — default ΜΕΤΡΗΤΑ), `maxExpenses`,
-  `tareItems`, `seedSuppliers` (initial suggestion data; Join Juice gets `EXPENSE_HISTORY`)
+- `envelopeTotalId` (which total Φάκελος fills — default ΜΕΤΡΗΤΑ), `maxExpenses`, `tareItems`
+- No supplier list in the config or the code (revised 2026-09-28): supplier names differ per shop,
+  so expense suggestions are **learned from each shop's own submissions** (see below).
+
+**Expense suggestions (learned):** `buildSupplierHistory(pastExpenses)` turns the expense lines of a
+shop's submitted closings (`{description, cents, date}`) into per-supplier amount lists; the existing
+`suggestExpenseDescriptions` / `exactExpenseMatch` rank from it. Spellings are grouped ignoring case,
+accents, extra spaces and final sigma; the most recent spelling is shown; blank/zero lines are
+skipped; each supplier keeps only its **30 most recent** amounts so old prices fade out. A new shop
+starts with no suggestions. Every Υποβολή teaches: Plan 2 learns from the device's own submitted
+closings (local), Plan 5 from `expense_suggestion_data` (all devices of the shop).
 
 **Defaults from channel types** (`defaultTotals`): ΤΑΜΕΙΟ = counted + all channels + expenses;
 ΜΕΤΡΗΤΑ = ΤΑΜΕΙΟ − float − expenses − card − delivery − noncash_other. Owner edits/adds totals
@@ -83,8 +92,9 @@ RPCs (security definer, all identity from `auth.uid()`, never from payload):
 - `redeem_pairing_code(code)` → binds current anon user to the shop
 - `verify_staff_pin(staff_id, pin)` (UX) and `submit_closing(staff_id, pin, config_id, business_date,
   inputs, idempotency_key)` — re-verifies device→shop, staff active, PIN; 5 failures → 15-min lockout
-- `expense_suggestion_data(shop_id)` → only (description, amount) pairs from the last 180 days, so a
-  staff device never reads full closing history
+- `expense_suggestion_data(shop_id)` → only (description, amount, business_date) triples from the
+  shop's non-voided closings of the last 180 days, so a staff device never reads full closing
+  history; fed to `buildSupplierHistory`
 
 **Trust rule:** closings store **raw inputs only** (counts, expenses, channel amounts) + the exact
 `config_id`. Totals are never stored; the owner's view recomputes them with `src/core`. Staff can't
@@ -97,7 +107,7 @@ path only, owner may read. Client downsizes the photo before upload.
 ## Screens
 
 - **Owner** (email auth): sign up → create shop → setup wizard (float, denominations, channels,
-  staff + PINs, tare items, seed suppliers) → formula builder (+/− terms, live preview with sample
+  staff + PINs, tare items) → formula builder (+/− terms, live preview with sample
   numbers) → pair device (show code) → history list (date range, staff, each summary total) →
   closing detail (same layout as Στέλνω + receipt + void).
 - **Register device**: enter pairing code once → pick staff + PIN → V2 flow (amount/count modes,

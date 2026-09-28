@@ -194,15 +194,10 @@ describe('validateConfig on JSON-shaped unknown input', () => {
     expect(() => evaluateTotals(c as unknown as ShopConfig, emptyInputs)).toThrow(ConfigInvalidError);
   });
 
-  it('rejects seedSuppliers values that are not non-negative safe integers (bad_shape)', () => {
-    const negative = validConfigJson() as Record<string, unknown>;
-    negative.seedSuppliers = { X: [-5] };
-    expect(codesOf(negative)).toContain('bad_shape');
-    expect(() => evaluateTotals(negative as unknown as ShopConfig, emptyInputs)).toThrow(ConfigInvalidError);
-
-    const stringValue = validConfigJson() as Record<string, unknown>;
-    stringValue.seedSuppliers = { X: ['5'] };
-    expect(codesOf(stringValue)).toContain('bad_shape');
+  it('does not require or read a supplier list (suggestions are learned from submissions)', () => {
+    const c = validConfigJson() as Record<string, unknown>;
+    expect(Object.keys(c)).not.toContain('seedSuppliers');
+    expect(codesOf(c)).toEqual([]);
   });
 
   it('rejects a config with a missing schema (bad_shape)', () => {

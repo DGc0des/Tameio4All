@@ -27,6 +27,9 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 - Envelope (Φάκελος) is computed only by `planEnvelope`, fed computed totals — never UI text.
   Exact up to ~20 000€ (`MAX_UNITS` at 5c units); best-effort above that.
 - Staff/PINs are never part of `ShopConfig` (server-side table only).
+- No shop's data ships in the code: expense suggestions are learned per shop from its own submitted
+  expense lines via `buildSupplierHistory` (30 most recent amounts per supplier). Never add a
+  hardcoded supplier list.
 
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.

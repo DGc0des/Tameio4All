@@ -52,7 +52,6 @@ export interface ShopConfig {
   envelopeTotalId: string;
   maxExpenses: number;
   tareItems: TareItem[];
-  seedSuppliers: Record<string, Cents[]>;
 }
 
 export type ConfigErrorCode =
@@ -125,7 +124,6 @@ export function newShopConfig(): ShopConfig {
     envelopeTotalId: 'cash',
     maxExpenses: 10,
     tareItems: [],
-    seedSuppliers: {},
   };
 }
 
@@ -182,8 +180,6 @@ function checkIds(ids: string[], what: string, errors: ConfigError[]): Set<strin
 
 type Obj = Record<string, unknown>;
 const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
-const isSafeNonNegInt = (x: unknown): x is number =>
-  typeof x === 'number' && Number.isSafeInteger(x) && x >= 0;
 
 /**
  * Validates a config of unknown origin (e.g. jsonb read back from storage). Structural problems
@@ -341,16 +337,6 @@ export function validateConfig(config: unknown): ConfigError[] {
       }
       if (item.name.trim() === '' || !Number.isSafeInteger(item.tareGrams) || item.tareGrams < 0) {
         errors.push({ code: 'bad_tare', detail: item.name || '(empty name)' });
-      }
-    }
-  }
-
-  if (!isObj(c.seedSuppliers)) {
-    errors.push({ code: 'bad_shape', detail: 'seedSuppliers' });
-  } else {
-    for (const [name, values] of Object.entries(c.seedSuppliers)) {
-      if (!Array.isArray(values) || !values.every(isSafeNonNegInt)) {
-        errors.push({ code: 'bad_shape', detail: `seedSuppliers: ${name}` });
       }
     }
   }

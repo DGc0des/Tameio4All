@@ -44,10 +44,9 @@ describe('joinJuicePreset', () => {
     });
   });
 
-  it('carries the V2 tare products and supplier history', () => {
+  it('carries the V2 tare products but no supplier data (suggestions are learned per shop)', () => {
     expect(joinJuicePreset.tareItems).toContainEqual({ name: 'Σολομός μπροστά', tareGrams: 360 });
-    expect(joinJuicePreset.seedSuppliers['Ντόντης']).toEqual([1800, 2400]);
-    expect(joinJuicePreset.seedSuppliers['Μεβγάλ']).toContain(2964);
+    expect(Object.keys(joinJuicePreset)).not.toContain('seedSuppliers');
   });
 
   it('is deeply frozen so consumers cannot mutate the shared preset', () => {
@@ -55,7 +54,7 @@ describe('joinJuicePreset', () => {
     expect(Object.isFrozen(joinJuicePreset.channels[0])).toBe(true);
     expect(Object.isFrozen(joinJuicePreset.totals[0])).toBe(true);
     expect(Object.isFrozen(joinJuicePreset.tareItems[0])).toBe(true);
-    expect(Object.isFrozen(joinJuicePreset.seedSuppliers['Ντόντης'])).toBe(true);
+    expect(Object.isFrozen(joinJuicePreset.totals[0]!.terms)).toBe(true);
 
     expect(() => {
       joinJuicePreset.floatCents = 0;
