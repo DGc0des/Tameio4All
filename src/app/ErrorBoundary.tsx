@@ -14,7 +14,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
         <main className="page">
           <div className="card">
             <h2>Κάτι πήγε στραβά</h2>
-            <p>Τα στοιχεία σου έχουν αποθηκευτεί. Ανανέωσε τη σελίδα.</p>
+            <p>Ανανέωσε τη σελίδα για να συνεχίσεις.</p>
             <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>
               Ανανέωση
             </button>
