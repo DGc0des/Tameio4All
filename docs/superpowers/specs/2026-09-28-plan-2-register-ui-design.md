@@ -50,7 +50,7 @@ Any edit to the form closes the sheet (fixes V2 M2 — can't go stale). Zero/neg
 
 **Υποβολή sheet:** read-only summary (staff, date, totals with `showInShare`, each expense, non-zero
 channels, notes/coins left after the envelope, cash_extra amount) = the **share card**; optional
-receipt photo ("Φωτογραφία Ζ"); buttons **Υποβολή** (save) and, after saving, **Κοινοποίηση**
+Z photo ("Φωτογραφία Ζ", attached to the share only, never stored); buttons **Υποβολή** (save) and, after saving, **Κοινοποίηση**
 (share image + photo via Web Share API, download fallback). After a successful save the form resets
 (inputs only — staff and date kept, fixes V2 M1) and a toast confirms.
 
@@ -113,8 +113,8 @@ tests/                        core tests (Plan 1) + tests for draft/derive/data 
   Keys are namespaced `tameio4all:v1:<shopId>:…`. Storage failures (private mode, quota) never break
   the form — it keeps working in memory and shows a one-time notice.
 - **Submission record:** `{ id: draft.id, shopId, staffName, businessDate, submittedAt, inputs }`.
-  Saving is idempotent by `id` (double-tap/retry stores once). Receipt photos are not stored in
-  Plan 2 (localStorage is too small); upload arrives with the server in Plan 5.
+  Saving is idempotent by `id` (double-tap/retry stores once). The Z photo is never stored — not on
+  the device, not on the server; it only rides along with the share.
 - **Suggestions learn from submissions:** history = every stored submission's expenses as
   `{description, cents, date: businessDate}` → `buildSupplierHistory`.
 - **Share image:** the Υποβολή sheet's summary card rendered to PNG with `html-to-image`.
@@ -136,7 +136,7 @@ tests/                        core tests (Plan 1) + tests for draft/derive/data 
 
 ## Out of scope (later plans)
 
-Server, auth, pairing, PIN (Plans 3–4); receipt upload, owner history, cross-device suggestions,
+Server, auth, pairing, PIN (Plans 3–4); owner history, cross-device suggestions,
 PWA install/offline (Plan 5); configurable shop setup UI (Plan 4).
 
 ## DEV ONLY items introduced

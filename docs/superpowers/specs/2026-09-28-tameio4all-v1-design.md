@@ -14,7 +14,7 @@ Goal: turn it into a **product other shops can adopt and later pay for**. Agreed
   (no free-text expressions, no eval).
 - Staff sign in on a **paired shop device with name + 4-digit PIN** (no staff emails).
 - Extras in v1: expense suggestions (learned from the shop's own history), Αποβάρα, coin calculator,
-  receipt/Z photo stored with the closing.
+  Z/receipt photo attached to the shared summary only — never stored (revised 2026-09-28).
 - Greek UI, EUR only, mobile-first. Not in v1: billing, expected-sales/Z difference, multi-currency,
   English UI, background offline sync queue.
 
@@ -86,7 +86,7 @@ Tables (RLS on, default deny):
 - `devices(user_id pk, shop_id, label, revoked_at)` — the device is a Supabase **anonymous auth user**
 - `pairing_codes(code_hash, shop_id, expires_at, used_at)` — 8-char code, 10-min expiry, single use
 - `closings(id, shop_id, staff_id, device_user_id, config_id, business_date, inputs jsonb,
-  idempotency_key, receipt_path, voided_at, created_at)` — unique `(shop_id, idempotency_key)`
+  idempotency_key, voided_at, created_at)` — unique `(shop_id, idempotency_key)`
 
 RPCs (security definer, all identity from `auth.uid()`, never from payload):
 - `redeem_pairing_code(code)` → binds current anon user to the shop
@@ -101,18 +101,17 @@ RPCs (security definer, all identity from `auth.uid()`, never from payload):
 fake a total, old closings keep the formulas they were made with, and the math lives in one language.
 
 Owner: full access to own shops' rows; may set `voided_at` on a closing (closings otherwise immutable).
-Storage: private bucket `receipts/{shop_id}/{closing_id}.jpg`; device may insert into its shop's
-path only, owner may read. Client downsizes the photo before upload.
+No file storage: the Z/receipt photo is only attached to the share (Web Share API) and never uploaded.
 
 ## Screens
 
 - **Owner** (email auth): sign up → create shop → setup wizard (float, denominations, channels,
   staff + PINs, tare items) → formula builder (+/− terms, live preview with sample
   numbers) → pair device (show code) → history list (date range, staff, each summary total) →
-  closing detail (same layout as Στέλνω + receipt + void).
+  closing detail (same layout as Στέλνω + void).
 - **Register device**: enter pairing code once → pick staff + PIN → V2 flow (amount/count modes,
   expenses with suggestions, channels, coin calculator, live totals, Φάκελος, Στέλνω) →
-  **Υποβολή** (saves closing + receipt) → optional share image (html2canvas, as V2).
+  **Υποβολή** (saves closing) → optional share image + Z photo (as V2; photo not stored).
   Draft autosaved per shop in localStorage (V2 behaviour, 10h expiry); submit failure keeps the
   draft and shows retry; idempotency key makes retries/double taps safe. Reset clears inputs only
   (not date/staff), and any edit hides a stale Φάκελος.
@@ -126,7 +125,7 @@ path only, owner may read. Client downsizes the photo before upload.
 2. Register UI running on local `joinJuicePreset` — V2 parity on a phone.
 3. Supabase migrations: schema, RLS, RPCs, storage policies + RLS tests.
 4. Owner auth, shop setup, formula builder, staff/PIN, device pairing.
-5. Submit closings, receipt upload, history list/detail, suggestions from history.
+5. Submit closings, history list/detail, suggestions from history.
 6. PWA install/icons, global error boundary + offline/retry screen, deploy, real-device test at
    Join Juice alongside V2 for a few days.
 
@@ -142,7 +141,7 @@ path only, owner may read. Client downsizes the photo before upload.
   lockout triggers after 5 failures; duplicate idempotency key inserts once; stale
   `publish_config` is rejected. Run `get_advisors` on the hosted project after applying.
 - **End-to-end on real hardware:** owner creates shop on desktop, pairs a phone over the deployed
-  URL (not localhost), staff closes a till, owner sees the closing with matching totals and receipt.
+  URL (not localhost), staff closes a till, owner sees the closing with matching totals.
   Compare several real closings against V2 side-by-side.
 - `PROJECT_STATUS.md` records explicitly what is not covered (UI components untested; PL/pgSQL
   logic covered only by the SQL tests, not Vitest).
