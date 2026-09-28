@@ -101,7 +101,11 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
-  if (select count(*) from public.shops) <> 0 then raise exception 'T9 anonymous session sees owner shops'; end if;
+  if (select count(*) from public.shops) <> 0 then raise exception 'T9 anonymous session sees shops'; end if;
+  if (select count(*) from public.shop_configs) <> 0 then raise exception 'T9 anonymous session sees shop_configs'; end if;
+  if (select count(id) from public.staff) <> 0 then raise exception 'T9 anonymous session sees staff'; end if;
+  if (select count(*) from public.devices) <> 0 then raise exception 'T9 anonymous session sees devices'; end if;
+  if (select count(*) from public.closings) <> 0 then raise exception 'T9 anonymous session sees closings'; end if;
 end $$;
 reset role;
 
@@ -109,9 +113,11 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
-  if (select count(*) from public.shops) + (select count(*) from public.closings) + (select count(id) from public.staff) <> 0 then
-    raise exception 'T10 phone reads tables directly';
-  end if;
+  if (select count(*) from public.shops) <> 0 then raise exception 'T10 phone reads shops directly'; end if;
+  if (select count(*) from public.shop_configs) <> 0 then raise exception 'T10 phone reads shop_configs directly'; end if;
+  if (select count(id) from public.staff) <> 0 then raise exception 'T10 phone reads staff directly'; end if;
+  if (select count(*) from public.devices) <> 0 then raise exception 'T10 phone reads devices directly'; end if;
+  if (select count(*) from public.closings) <> 0 then raise exception 'T10 phone reads closings directly'; end if;
 end $$;
 reset role;
 
