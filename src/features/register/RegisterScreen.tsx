@@ -83,15 +83,18 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
       submittedAt: now().toISOString(),
       inputs: derived.inputs,
     });
-    if (result !== 'failed') setSubmissions(loadSubmissions(store, shop.id));
+    if (result !== 'failed') {
+      setSubmissions(loadSubmissions(store, shop.id));
+      // Reset right away (new draft id): if the person leaves or reloads instead of tapping
+      // "Νέο κλείσιμο", later edits must not be resubmitted under the saved id ('duplicate').
+      dispatch({ type: 'resetInputs', id: newId() });
+    }
     return result;
   };
 
   const closeSubmit = (saved: boolean) => {
     setSheet(null);
-    if (!saved) return;
-    dispatch({ type: 'resetInputs', id: newId() });
-    setToast('Το κλείσιμο αποθηκεύτηκε');
+    if (saved) setToast('Το κλείσιμο αποθηκεύτηκε');
   };
 
   return (

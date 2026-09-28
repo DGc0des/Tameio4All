@@ -43,6 +43,21 @@ describe('SubmitSheet', () => {
     expect(text).toContain('Χαρτονομίσματα');
   });
 
+  it('keeps showing the closing it was opened with after the form underneath resets', () => {
+    const noop = vi.fn();
+    const { rerender } = render(
+      <SubmitSheet config={cfg} draft={d} derived={derived} onSave={() => 'saved'} onShare={vi.fn<ShareFn>(async () => 'shared')} onClose={noop} />,
+    );
+    const fresh = newDraft('d2', '2026-09-29', 'ΜΑΡΙΑ');
+    rerender(
+      <SubmitSheet config={cfg} draft={fresh} derived={deriveClosing(cfg, fresh)} onSave={() => 'saved'} onShare={vi.fn<ShareFn>(async () => 'shared')} onClose={noop} />,
+    );
+    const text = screen.getByRole('dialog').textContent ?? '';
+    expect(text).toContain('ΓΚΡΕΖΙΟΣ');
+    expect(text).toContain('28/09/2026');
+    expect(text).not.toContain('ΜΑΡΙΑ');
+  });
+
   it('saves, then offers sharing and a new closing', () => {
     const { onSave, onClose } = setup();
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));

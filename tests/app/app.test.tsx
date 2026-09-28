@@ -106,6 +106,9 @@ describe('register flows', () => {
     fireEvent.click(button('Υποβολή'));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
     expect(loadSubmissions(store, 'local')).toHaveLength(1);
+    // The form resets as soon as the closing is saved; the sheet keeps showing the saved closing.
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
+    expect(screen.getByRole('dialog', { name: 'Αποθηκεύτηκε ✓' }).textContent).toContain('1.524,00€');
     fireEvent.click(button('Νέο κλείσιμο'));
 
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
@@ -210,5 +213,31 @@ describe('navigation', () => {
     });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Κλείσιμο ταμείου' })).toBeTruthy();
+  });
+
+  it('stores the next closing even when the person left without tapping Νέο κλείσιμο', () => {
+    const store = memoryStore();
+    saveStaff(store, 'local', ['ΓΚΡΕΖΙΟΣ']);
+    start(store);
+    fireEvent.click(screen.getByRole('button', { name: /Διάλεξε όνομα/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'ΓΚΡΕΖΙΟΣ' }));
+    fireEvent.click(button('Εντάξει'));
+    type('100€', '1500');
+    fireEvent.click(button('Υποβολή'));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
+    act(() => {
+      window.location.hash = '#/staff';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    act(() => {
+      window.location.hash = '#/';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    type('100€', '2000');
+    fireEvent.click(button('Υποβολή'));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
+    const subs = loadSubmissions(store, 'local');
+    expect(subs).toHaveLength(2);
+    expect(subs[1]?.inputs.counts['10000']).toBe(20);
   });
 });

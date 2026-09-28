@@ -19,6 +19,9 @@ interface Props {
 }
 
 export function SubmitSheet({ config, draft, derived, onSave, onShare, onClose }: Props) {
+  // The form resets as soon as the closing is saved; the card (and the shared image) must keep
+  // showing the closing this sheet was opened for.
+  const [snapshot] = useState(() => ({ draft, derived }));
   const cardRef = useRef<HTMLDivElement>(null);
   const [saved, setSaved] = useState(false);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -45,7 +48,7 @@ export function SubmitSheet({ config, draft, derived, onSave, onShare, onClose }
   return (
     <Sheet title={saved ? 'Αποθηκεύτηκε ✓' : 'Υποβολή'} onClose={() => onClose(saved)}>
       <div ref={cardRef}>
-        <ShareCard config={config} draft={draft} derived={derived} />
+        <ShareCard config={config} draft={snapshot.draft} derived={snapshot.derived} />
       </div>
       {message !== null && (
         <p className="status-warn" role="alert">
