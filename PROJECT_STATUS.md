@@ -47,10 +47,12 @@ targets, 20 000€ timing, NaN/negative/fractional counts, bounded search above 
 (ranking, learning from submissions: grouping, recency, 30-amount cap, malformed entries, new shop empty),
 tare, core purity (side-effect imports, `require()`, directory escape).
 
+CI (GitHub Actions: `npm ci` → typecheck → test on Node 22) ran green on GitHub for `b281da3` —
+https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
+
 ## Not verified
 - Nothing runs in a browser yet; no UI exists.
 - V2 parity figures are hand-computed from V2's formulas (V2 is DOM-bound and can't run headless).
-- CI workflow is written but has not run: the repo has no GitHub remote yet.
 - Core purity rule was widened: core imports must be relative and resolve inside `src/core` (recursive scan), not only `./`.
 - Dev dependencies are on new majors (TypeScript 7, Vitest 5); Node 22.12+ required.
 - Env vars not yet registered in Vercel (no Vercel project yet).
