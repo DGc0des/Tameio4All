@@ -16,7 +16,8 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 - (Plan 3+) `src/data/` Supabase access (the one mutation path), `supabase/migrations/`.
 
 ## Invariants
-- Money is integer cents everywhere in core. Parse with `parseAmount`, show with `formatCents`.
+- Money is integer cents everywhere in core. Parse with `parseAmount`; display with `formatEuro`
+  (UI) — `formatCents` is the plain form.
 - `ShopConfig` and `ClosingInputs` both carry a `schema: 1` field (day-zero identifier). Bump it
   whenever the stored shape changes; validators reject a mismatched/missing schema as `bad_shape`.
 - Configs and closing inputs are read back as JSON (jsonb / stored rows), so `validateConfig` and

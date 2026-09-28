@@ -2,7 +2,7 @@
 
 ## Stages
 - [x] Plan 1 — day zero + `src/core`
-- [x] Plan 2 — register UI on local preset (real-device check pending)
+- [ ] Plan 2 — register UI on local preset (code complete; pending real-phone test + Vercel URL)
 - [ ] Plan 3 — Supabase schema, RLS, RPCs
 - [ ] Plan 4 — owner app + device pairing
 - [ ] Plan 5 — closings, history, suggestions, PWA, deploy
@@ -36,11 +36,25 @@ Continues the severity scheme above (H1, H2, M1–M3, L1).
 | L9 | `presets.ts`'s `euros()` converts float literals (e.g. `6.3`) to cents with `Math.round(v * 100)`; float rounding could in principle round the wrong way | Moot: the hardcoded supplier list and `euros()` were removed (see M4) | closed — no longer applies |
 | M4 | Expense suggestions came from a hardcoded supplier list (Join Juice's V2 `EXPENSE_HISTORY` in the preset, `seedSuppliers` in every config) — wrong for a product, since supplier names differ per shop | Removed `seedSuppliers` from `ShopConfig`, validation and the preset. New `buildSupplierHistory(pastExpenses)` learns per shop from submitted expense lines (grouping ignores case/accents/spaces/final sigma, most recent spelling shown, 30 most recent amounts per supplier). Wiring: Plan 2 local submissions, Plan 5 `expense_suggestion_data` | fixed in core; wiring in Plans 2 and 5 |
 | L10 | `formatKg` (tare.ts) is undefined/wraps for negative `grams` | `netWeightGrams` already returns `null` for any negative result, so `formatKg` never receives one in practice; unreachable via the current call path | open |
-| L11 | ΚΕΡΜΑΤΑ (`cash_extra` channel type) counts toward ΜΕΤΡΗΤΑ (`cash`) but is never in the counted till, so Φάκελος (fed by `cash`) can report a shortfall equal to the ΚΕΡΜΑΤΑ amount even when the till is exact | This is tameioV2's existing behaviour, reproduced intentionally for parity; revisit the ΚΕΡΜΑΤΑ/Φάκελος relationship once Plan 2's UI defines how it should be presented | open — V2 behaviour, revisit in Plan 2 UI |
-| P1 | Φάκελος shortfall subtitle wording | Now shows what goes in plus the target ("70,00€ σε 2 κομμάτια · στόχος 80,00€") instead of pairing the target with the actual piece count | fixed — Φάκελος subtitle in Plan 2 register UI |
-| P2 | `validateConfig` did not detect duplicate tare product names | Rejects duplicate names since they'd get identical labels in Αποβάρα | fixed — duplicate tare product names check |
-| P3 | Staff screen rows and rename handling | Rows keyed by name (an unfinished rename survived removing another row); empty renames are ignored; the ⋯ menu closes on Escape/outside tap | fixed — staff screen row keying and rename logic |
-| P4 | Suggestion chips touch target size | Raised from system default to 44px for reliable tapping | fixed — suggestion chips 44px touch targets |
+| L11 | ΚΕΡΜΑΤΑ (`cash_extra` channel type) counts toward ΜΕΤΡΗΤΑ (`cash`) but is never in the counted till, so Φάκελος (fed by `cash`) can report a shortfall equal to the ΚΕΡΜΑΤΑ amount even when the till is exact | This is tameioV2's existing behaviour, reproduced intentionally for parity; revisit the ΚΕΡΜΑΤΑ/Φάκελος relationship once Plan 2's UI defines how it should be presented | open — V2 behaviour, revisit with the owner app (Plan 4) |
+| L12 | Φάκελος shortfall subtitle wording (P1) | Now shows what goes in plus the target ("70,00€ σε 2 κομμάτια · στόχος 80,00€") instead of pairing the target with the actual piece count | fixed — Φάκελος subtitle in Plan 2 register UI |
+| M5 | `validateConfig` did not detect duplicate tare product names (P2) | Rejects duplicate names since they'd get identical labels in Αποβάρα | fixed — duplicate tare product names check |
+| M6 | Staff screen rows and rename handling (P3) | Rows keyed by name (an unfinished rename survived removing another row); empty renames are ignored; the ⋯ menu closes on Escape/outside tap | fixed — staff screen row keying and rename logic |
+| L13 | Suggestion chips touch target size (P4) | Raised from system default to 44px for reliable tapping | fixed — suggestion chips 44px touch targets |
+
+## Final-review fix wave (Plan 2)
+Whole-branch review after all 14 Plan 2 tasks landed. Continues the severity scheme above.
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| H6 | `saveSubmission` reported `'duplicate'` (treated as a successful save) for any id collision, even when the stored inputs differed — a closing that reused a stale/colliding draft id was silently discarded, losing data | Compares inputs: same id + same inputs → `'duplicate'` (idempotent retry); same id + different inputs → `'conflict'`, nothing written. `RegisterScreen` retries once under a fresh id on `'conflict'` | fixed — data-loss bug (F1) |
+| M7 | Error hint text sat visually next to an invalid field but was never programmatically associated with it, so a screen reader announced "invalid" without saying why | `AmountField` takes `describedBy`; `CountCard`/`ChannelsCard`/`ExpensesCard` id their error hint and wire `aria-describedby` | fixed — a11y (F2) |
+| M8 | `.field` `min-height` was 40px, below the 44px minimum touch target for a phone-first app | Raised to 44px | fixed — a11y (F3) |
+| M9 | Sheets had no visible close control and never moved focus on open/close, stranding keyboard and screen-reader users | `Sheet` adds a ✕ "Κλείσιμο" button, focuses the dialog on mount, restores the previously focused element on unmount | fixed — a11y (F4) |
+| L14 | Importing the unsplit `@fontsource/inter/{weight}.css` pulled in every unicode-range subset (cyrillic, vietnamese, etc.), bloating the font payload on a slow iOS connection during share | Import only the `greek-*`/`latin-*` subsets for weights 400/500/600/700 | partially fixed — fonts (F5); pre-rendering the share image itself was deferred (see below) |
+| L15 | F5 also proposed pre-rendering the share image ahead of time to reduce iOS share fragility further | Deferred until a real-iPhone test shows Web Share / `html-to-image` actually failing there — no evidence yet it's needed | open — revisit after real-phone test |
+| L16 | A tab left open overnight keeps a stale in-memory business date / draft: nothing re-checks "is this still today" or expires the draft while the app stays open (only `DRAFT_TTL_MS` on reload) | Needs a running-app staleness check, not just a load-time one | open — revisit in Plan 5 |
+| L17 | `saveDraft` failures (e.g. storage quota) are silent — no UI notice, unlike `saveSubmission`'s explicit failed-save alert | Not yet designed | open — add a draft-save failure notice |
 
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
@@ -54,6 +68,7 @@ UI (jsdom + Testing Library): primitives, counting cards, expenses + learned sug
 
 CI (GitHub Actions: `npm ci` → typecheck → test on Node 22) ran green on GitHub for `b281da3` —
 https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
+CI now runs the production build (`npm run build`) as well, after test.
 
 ## Not verified
 - Plan 2 on a real phone: layout, Web Share with files (iOS Safari / Android Chrome), camera/gallery
