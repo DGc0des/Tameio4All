@@ -13,7 +13,11 @@ export function BottomBar({ label, amountCents, envelopeBlocked, submitBlocked, 
   const reason = envelopeBlocked ?? submitBlocked;
   return (
     <footer className="bar-wrap">
-      {reason !== null && <p className="blocked">{reason}</p>}
+      {reason !== null && (
+        <p className="blocked" role="status">
+          {reason}
+        </p>
+      )}
       <div className="bar">
         <div className="bar-amt">
           <small>{label}</small>

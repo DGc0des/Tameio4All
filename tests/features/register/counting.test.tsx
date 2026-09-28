@@ -98,7 +98,7 @@ describe('BottomBar', () => {
       <BottomBar label="ΜΕΤΡΗΤΑ" amountCents={36755} envelopeBlocked={null} submitBlocked="Διάλεξε όνομα για υποβολή" onEnvelope={onEnvelope} onSubmit={onSubmit} />,
     );
     expect(screen.getByText('367,55€')).toBeTruthy();
-    expect(screen.getByText('Διάλεξε όνομα για υποβολή')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe('Διάλεξε όνομα για υποβολή');
     fireEvent.click(screen.getByRole('button', { name: 'Φάκελος' }));
     expect(onEnvelope).toHaveBeenCalled();
     expect((screen.getByRole('button', { name: 'Υποβολή' }) as HTMLButtonElement).disabled).toBe(true);
