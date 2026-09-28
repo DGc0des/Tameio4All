@@ -28,12 +28,16 @@ export function StaffScreen({ staff, onChange, onBack }: Props) {
         <p className="notice-soft">Προσωρινό: τα ονόματα αποθηκεύονται μόνο σε αυτή τη συσκευή.</p>
         <Card>
           {staff.map((name, i) => (
-            <div className="row" key={`${i}-${name}`}>
+            <div className="row" key={name}>
               <input
                 className="field text"
                 aria-label={`Όνομα ${i + 1}`}
                 defaultValue={name}
                 onBlur={(e) => {
+                  if (e.target.value.trim() === '') {
+                    e.target.value = name;
+                    return;
+                  }
                   if (e.target.value !== name) onChange(staff.map((n, j) => (j === i ? e.target.value : n)));
                 }}
               />

@@ -72,4 +72,51 @@ describe('StaffScreen', () => {
     expect(onBack).toHaveBeenCalled();
     expect(screen.getByText('Προσωρινό: τα ονόματα αποθηκεύονται μόνο σε αυτή τη συσκευή.')).toBeTruthy();
   });
+
+  it('keeps typed input when a different row is removed (key stability)', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<StaffScreen staff={['A', 'B', 'C']} onChange={onChange} onBack={vi.fn()} />);
+    const input2 = screen.getByLabelText('Όνομα 2');
+    fireEvent.change(input2, { target: { value: 'B2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Αφαίρεση A' }));
+    expect(onChange).toHaveBeenLastCalledWith(['B', 'C']);
+    rerender(<StaffScreen staff={['B', 'C']} onChange={onChange} onBack={vi.fn()} />);
+    expect((screen.getByLabelText('Όνομα 1') as HTMLInputElement).value).toBe('B2');
+  });
+
+  it('rejects renaming to whitespace and restores original value', () => {
+    const onChange = vi.fn();
+    render(<StaffScreen staff={['ORIGINAL']} onChange={onChange} onBack={vi.fn()} />);
+    const input = screen.getByLabelText('Όνομα 1');
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.blur(input);
+    expect(onChange).not.toHaveBeenCalled();
+    expect((input as HTMLInputElement).value).toBe('ORIGINAL');
+  });
+});
+
+describe('HeaderMenu closing', () => {
+  it('closes on Escape key', () => {
+    render(<HeaderMenu hasTare={false} themePref="system" onNavigate={vi.fn()} onTheme={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Μενού' }));
+    expect(screen.getByRole('menu')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('closes on pointerdown outside the menu', () => {
+    render(<HeaderMenu hasTare={false} themePref="system" onNavigate={vi.fn()} onTheme={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Μενού' }));
+    expect(screen.getByRole('menu')).toBeTruthy();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('does not close when clicking a menu item (lets click handler run)', () => {
+    const onNavigate = vi.fn();
+    render(<HeaderMenu hasTare={false} themePref="system" onNavigate={onNavigate} onTheme={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Μενού' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Προσωπικό' }));
+    expect(onNavigate).toHaveBeenCalledWith('staff');
+  });
 });
