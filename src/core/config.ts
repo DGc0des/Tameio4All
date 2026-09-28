@@ -330,6 +330,7 @@ export function validateConfig(config: unknown): ConfigError[] {
   if (!Array.isArray(c.tareItems)) {
     errors.push({ code: 'bad_shape', detail: 'tareItems' });
   } else {
+    const seenNames = new Set<string>();
     for (const item of c.tareItems) {
       if (!isObj(item) || typeof item.name !== 'string' || typeof item.tareGrams !== 'number') {
         errors.push({ code: 'bad_shape', detail: 'tareItems' });
@@ -338,6 +339,11 @@ export function validateConfig(config: unknown): ConfigError[] {
       if (item.name.trim() === '' || !Number.isSafeInteger(item.tareGrams) || item.tareGrams < 0) {
         errors.push({ code: 'bad_tare', detail: item.name || '(empty name)' });
       }
+      const normalized = item.name.trim().toLocaleLowerCase('el');
+      if (seenNames.has(normalized)) {
+        errors.push({ code: 'bad_tare', detail: `duplicate: ${item.name}` });
+      }
+      seenNames.add(normalized);
     }
   }
 

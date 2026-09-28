@@ -104,6 +104,11 @@ describe('validateConfig', () => {
     expect(codes(withChanges({ tareItems: [{ name: '', tareGrams: 100 }] }))).toContain('bad_tare');
     expect(codes(withChanges({ tareItems: [{ name: 'x', tareGrams: -5 }] }))).toContain('bad_tare');
   });
+
+  it('rejects duplicate tare item names (case-insensitive)', () => {
+    expect(codes(withChanges({ tareItems: [{ name: 'Σολομός', tareGrams: 100 }, { name: ' σολομός ', tareGrams: 200 }] }))).toContain('bad_tare');
+    expect(codes(withChanges({ tareItems: [{ name: 'Α', tareGrams: 1 }, { name: 'Β', tareGrams: 1 }] }))).toEqual([]);
+  });
 });
 
 describe('validateConfig on JSON-shaped unknown input', () => {
