@@ -25,15 +25,21 @@ export function CountCard({ title, denominations, totalCents, draft, derived, di
         const rowCents = derived.rowCents[key];
         // € mode: no hint. # mode: the row's euro value. An error always wins.
         const hint = error ?? (draft.mode === 'count' && rowCents !== undefined ? formatEuro(rowCents) : undefined);
+        const errId = `denom-${key}-err`;
         return (
           <div className="row" key={key}>
             <span className="row-label">{label}</span>
-            {hint !== undefined && <span className={error !== undefined ? 'row-hint err' : 'row-hint'}>{hint}</span>}
+            {hint !== undefined && (
+              <span id={error !== undefined ? errId : undefined} className={error !== undefined ? 'row-hint err' : 'row-hint'}>
+                {hint}
+              </span>
+            )}
             <AmountField
               id={`denom-${key}`}
               label={label}
               value={draft.entries[key] ?? ''}
               invalid={error !== undefined}
+              describedBy={error !== undefined ? errId : undefined}
               inputMode={draft.mode === 'count' ? 'numeric' : 'decimal'}
               onChange={(text) => dispatch({ type: 'setEntry', denom: d, text })}
             />

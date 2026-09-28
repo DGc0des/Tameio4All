@@ -40,6 +40,7 @@ interface RowProps {
 function ExpenseRow({ expense, index, derived, history, dispatch }: RowProps) {
   const n = index + 1;
   const error = fieldError(derived, fieldId.expense(expense.id));
+  const errId = `expense-${expense.id}-err`;
   const cents = derived.expenseRowCents[expense.id] ?? 0;
   const described = expense.description.trim() !== '';
   const chips = described ? [] : suggestExpenseDescriptions(history, cents);
@@ -67,6 +68,7 @@ function ExpenseRow({ expense, index, derived, history, dispatch }: RowProps) {
           label={`Ποσό εξόδου ${n}`}
           value={expense.amountText}
           invalid={error !== undefined}
+          describedBy={error !== undefined ? errId : undefined}
           onBlur={autoFill}
           onChange={(text) => dispatch({ type: 'setExpense', id: expense.id, amountText: text })}
         />
@@ -74,7 +76,13 @@ function ExpenseRow({ expense, index, derived, history, dispatch }: RowProps) {
           ×
         </button>
       </div>
-      {error !== undefined && <p className="row-hint err">{error}</p>}
+      {error !== undefined && (
+        <div>
+          <span id={errId} className="row-hint err">
+            {error}
+          </span>
+        </div>
+      )}
       {chips.length > 0 && (
         <div className="chips">
           {chips.map((name) => (

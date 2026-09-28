@@ -82,7 +82,10 @@ describe('ExpensesCard', () => {
     render(<Harness />);
     add();
     type('Ποσό εξόδου 1', '1.234');
-    expect(screen.getByLabelText('Ποσό εξόδου 1').getAttribute('aria-invalid')).toBe('true');
-    expect(screen.getByText('πολλά δεκαδικά')).toBeTruthy();
+    const input = screen.getByLabelText('Ποσό εξόδου 1');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    const hint = screen.getByText('πολλά δεκαδικά');
+    expect(hint).toBeTruthy();
+    expect(input.getAttribute('aria-describedby')).toBe(hint.id);
   });
 });

@@ -7,15 +7,17 @@ interface Props {
   inputMode?: 'decimal' | 'numeric';
   placeholder?: string;
   onBlur?: () => void;
+  describedBy?: string;
 }
 
-export function AmountField({ id, label, value, onChange, invalid = false, inputMode = 'decimal', placeholder = '0', onBlur }: Props) {
+export function AmountField({ id, label, value, onChange, invalid = false, inputMode = 'decimal', placeholder = '0', onBlur, describedBy }: Props) {
   return (
     <input
       id={id}
       className="field"
       aria-label={label}
       aria-invalid={invalid || undefined}
+      aria-describedby={describedBy}
       inputMode={inputMode}
       autoComplete="off"
       enterKeyHint="next"

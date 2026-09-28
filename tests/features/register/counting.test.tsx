@@ -47,7 +47,9 @@ describe('CountCard', () => {
     render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} dispatch={vi.fn()} />);
     const input = screen.getByLabelText('10€');
     expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(within(input.closest('.row') as HTMLElement).getByText('όχι πολλαπλάσιο')).toBeTruthy();
+    const hint = within(input.closest('.row') as HTMLElement).getByText('όχι πολλαπλάσιο');
+    expect(hint).toBeTruthy();
+    expect(input.getAttribute('aria-describedby')).toBe(hint.id);
   });
 
   it('dispatches setEntry on typing', () => {
