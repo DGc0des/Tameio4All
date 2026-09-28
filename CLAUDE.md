@@ -5,17 +5,27 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 
 ## Architecture
 - `src/core/` — pure TypeScript money logic. No packages, no DOM, no Supabase. Every UI and
-  report computes through these functions. Enforced by `tests/core-purity.test.ts`.
+  report computes through these functions. The purity rule (imports stay inside `src/core`, no
+  browser globals) is enforced by the test `tests/core-purity.test.ts` — a Vitest check that scans
+  the real source files, not a linter/eslint rule. There is no lint step in this repo.
 - (Plan 2+) `src/features/` UI, `src/data/` Supabase access (the one mutation path),
   `supabase/migrations/` schema + RLS + RPCs.
 
 ## Invariants
 - Money is integer cents everywhere in core. Parse with `parseAmount`, show with `formatCents`.
+- `ShopConfig` and `ClosingInputs` both carry a `schema: 1` field (day-zero identifier). Bump it
+  whenever the stored shape changes; validators reject a mismatched/missing schema as `bad_shape`.
+- Configs and closing inputs are read back as JSON (jsonb / stored rows), so `validateConfig` and
+  `validateClosingInputs` both accept `unknown` and never throw on foreign input — they report
+  structural problems as `bad_shape`/`bad_id`/`bad_label`/etc. instead. `isShopConfig(x)` is the
+  `unknown` → `ShopConfig` type guard built on `validateConfig`.
 - Totals are computed only by `evaluateTotals(config, inputs)`. Closings will store raw inputs +
   `config_id`, never totals (staff cannot fake a total; old closings keep their formulas).
 - Shop configs are immutable versions; a new version is a new row.
-- A config must pass `validateConfig` before use; `evaluateTotals` throws `ConfigInvalidError` otherwise.
+- A config must pass `validateConfig` before use; `evaluateTotals` throws `ConfigInvalidError`
+  otherwise, then `ClosingInputsInvalidError` if `validateClosingInputs` finds a problem.
 - Envelope (Φάκελος) is computed only by `planEnvelope`, fed computed totals — never UI text.
+  Exact up to ~20 000€ (`MAX_UNITS` at 5c units); best-effort above that.
 - Staff/PINs are never part of `ShopConfig` (server-side table only).
 
 ## Conventions
