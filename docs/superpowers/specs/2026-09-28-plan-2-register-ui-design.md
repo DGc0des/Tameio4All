@@ -50,7 +50,7 @@ Any edit to the form closes the sheet (fixes V2 M2 — can't go stale). Zero/neg
 
 **Υποβολή sheet:** read-only summary (staff, date, totals with `showInShare`, each expense, non-zero
 channels, notes/coins left after the envelope, cash_extra amount) = the **share card**; optional
-Z photo — "Φωτογραφία Ζ" button opens the camera or gallery (`<input type=file accept=image/* capture>`); the photo is attached to the share only and never stored; buttons **Υποβολή** (save) and, after saving, **Κοινοποίηση**
+Z photo — "Φωτογραφία Ζ" button opens the camera or gallery (`<input type=file accept=image/*>` — no `capture`, which would force the camera on Android); the photo is attached to the share only and never stored; buttons **Υποβολή** (save) and, after saving, **Κοινοποίηση**
 (share image + photo via Web Share API, download fallback). After a successful save the form resets
 (inputs only — staff and date kept, fixes V2 M1) and a toast confirms.
 
