@@ -91,7 +91,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px 
 .rest { margin-top: 10px; font-size: 14px; color: var(--muted); }
 .rest summary { min-height: 44px; display: flex; align-items: center; }
 
-.share-card { background: var(--surface); padding: 4px 0 8px; }
+.share-card { background: var(--surface); padding: 12px 16px; }
 .share-head { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
 .share-left { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
 .share-left span { color: var(--ink); font-weight: 600; }
