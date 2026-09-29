@@ -35,11 +35,12 @@ export interface RegisterProps {
   active: boolean;
   onTheme: () => void;
   onNavigate: (route: Route) => void;
+  onOwner: () => void;
 }
 
 type SheetName = 'envelope' | 'submit' | 'people';
 
-export function RegisterScreen({ shop, store, now, newId, share, staff, themePref, active, onTheme, onNavigate }: RegisterProps) {
+export function RegisterScreen({ shop, store, now, newId, share, staff, themePref, active, onTheme, onNavigate, onOwner }: RegisterProps) {
   const { config } = shop;
   const [draft, dispatch] = useReducer(
     draftReducer,
@@ -110,7 +111,7 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
             {formatDayEl(draft.businessDate)} · {draft.staffName || 'Διάλεξε όνομα'}
           </button>
         </div>
-        {active && <HeaderMenu hasTare={config.tareItems.length > 0} themePref={themePref} onNavigate={onNavigate} onTheme={onTheme} />}
+        {active && <HeaderMenu hasTare={config.tareItems.length > 0} themePref={themePref} onNavigate={onNavigate} onTheme={onTheme} onOwner={onOwner} />}
       </header>
       <main className="page">
         <ModeSwitch mode={draft.mode} onChange={(mode) => dispatch({ type: 'setMode', mode, denominations: config.denominations })} />

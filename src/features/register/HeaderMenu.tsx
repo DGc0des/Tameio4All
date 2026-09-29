@@ -8,9 +8,10 @@ interface Props {
   themePref: ThemePref;
   onNavigate: (route: Route) => void;
   onTheme: () => void;
+  onOwner: () => void;
 }
 
-export function HeaderMenu({ hasTare, themePref, onNavigate, onTheme }: Props) {
+export function HeaderMenu({ hasTare, themePref, onNavigate, onTheme, onOwner }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -50,6 +51,16 @@ export function HeaderMenu({ hasTare, themePref, onNavigate, onTheme }: Props) {
           )}
           <button type="button" role="menuitem" onClick={() => go('staff')}>
             Προσωπικό
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onOwner();
+            }}
+          >
+            Διαχείριση καταστήματος
           </button>
           <button type="button" role="menuitem" onClick={onTheme}>
             Θέμα: {THEME_LABELS[themePref]}

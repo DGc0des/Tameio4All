@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { ComponentType } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/app/App';
 import { loadStaff, saveStaff } from '../../src/data/local/staff';
 import { memoryStore, shopKey, type KeyValueStore } from '../../src/data/local/storage';
 import { loadSubmissions, saveSubmission, type Submission } from '../../src/data/local/submissions';
+import type { OwnerAppProps } from '../../src/features/owner/OwnerApp';
 import type { ShareFn } from '../../src/features/register/share';
 
 const NOW = () => new Date(2026, 8, 28, 22, 0);
@@ -266,5 +268,34 @@ describe('navigation', () => {
     const subs = loadSubmissions(store, 'local');
     expect(subs).toHaveLength(2);
     expect(subs[1]?.inputs.counts['10000']).toBe(20);
+  });
+});
+
+const OwnerStub: ComponentType<Omit<OwnerAppProps, 'api'>> = ({ route, redirect }) => (
+  <p>
+    owner:{route.name}:{redirect?.kind ?? 'none'}
+  </p>
+);
+
+describe('owner area', () => {
+  it('opens from the menu and keeps the register mounted', async () => {
+    render(<App appStore={{ store: memoryStore(), persistent: true }} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
+    type('100€', '500');
+    fireEvent.click(screen.getByRole('button', { name: 'Μενού' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Διαχείριση καταστήματος' }));
+    expect(await screen.findByText('owner:shops:none')).toBeTruthy();
+    expect(window.location.hash).toBe('#/owner');
+    act(() => {
+      window.location.hash = '#/';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('500');
+  });
+
+  it('routes an email-link return to the owner area with the parsed redirect', async () => {
+    window.history.replaceState(null, '', '/?auth=recovery&code=abc');
+    render(<App appStore={{ store: memoryStore(), persistent: true }} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
+    expect(await screen.findByText('owner:shops:recovery')).toBeTruthy();
+    window.history.replaceState(null, '', '/');
   });
 });

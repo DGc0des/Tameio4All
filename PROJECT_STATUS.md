@@ -4,7 +4,8 @@
 - [x] Plan 1 — day zero + `src/core`
 - [ ] Plan 2 — register UI on local preset (code complete; pending real-phone test + Vercel URL)
 - [x] Plan 3 — Supabase schema, RLS, RPCs (dev project)
-- [ ] Plan 4 — owner app + device pairing
+- [x] Plan 4a — owner app (auth, shop, settings + formula builder, staff/PIN, pairing codes, devices)
+- [ ] Plan 4b — phone side (pair, server config + staff, PIN sign-in, remove LOCAL_SHOP)
 - [ ] Plan 5 — closings, history, suggestions, PWA, deploy
 
 ## Issues carried over from tameioV2 (fixed by design; verify when the owning code lands)
@@ -70,19 +71,19 @@ Whole-branch review of Supabase schema, RLS policies, and RPCs for security. Con
 | L20 | `business_date` was unbounded, so a far-future closing would pin its suggestions forever | `submit_closing` returns `bad_inputs` outside [today−7, today+1]; `expense_suggestion_data` ignores dates after today+1; test T12 (040) | fixed — business-date bounds |
 | L21 | Huge JSON bodies are parsed before the 64 KB size check | Needs an API-gateway body limit | open — Plan 5 |
 | L22 | Dashboard "Exposed schemas" must be only `public`, `graphql_public` (never `private`) | Check in the dashboard before Plan 5 deploy | open — Plan 5 |
-| L23 | Overlong shop/staff names fail with raw CHECK messages | Plan 4 UI validates 80 (shop) / 40 (staff) chars before calling | open — Plan 4 |
+| L23 | Overlong shop/staff names fail with raw CHECK messages | Plan 4 UI validates 80 (shop) / 40 (staff) chars before calling | fixed — owner app checks 80/40/60 before calling (limits.ts) |
 | L24 | The `unique_violation` handler in `create_staff` isn't scoped to the name constraint | Only one unique constraint can fire today; scope it if another is added | open |
 | L25 | PIN hashes use bcrypt cost 8 | A 4-digit PIN is brute-forceable offline at any cost; the lockout is the real defence | open — accepted |
-| L26 | Expired pairing codes are never deleted | Add a cleanup (cron or on create) | open |
+| L26 | Expired pairing codes are never deleted | Add a cleanup (cron or on create) | fixed — create_pairing_code deletes the shop's expired/used codes (migration 20260929000006) |
 | L27 | Lockout history isn't kept, so an owner can't see a slow brute force | Consider a `lockout_count` in Plan 5 | open — Plan 5 |
 | L28 | A retry after the owner changed a staff member's PIN/active flag returns an error although the closing was stored | Plan 5 UX: treat as "maybe saved", show history check | open — Plan 5 |
 | L29 | Protection of the read-only (GET RPC) path relies on `FOR UPDATE` in `check_staff_pin` (documented in the migration; no SQL test possible) | Plan 5: HTTP-level lockout test incl. GET and `Prefer: tx=rollback` | open — Plan 5 |
 
 ### Open decisions for Plan 4
-- Shop rename: there is no update grant on `shops.name` — add one or an RPC.
-- Unlock a staff member without changing the PIN (today only `set_staff_pin` clears a lockout).
-- Telling "revoked" from "not paired" on the phone: a `device_status()` RPC, or document `verify_staff_pin(null, null)`.
-- Device label in closing history: `closings.device_user_id` has no FK to `devices`.
+- Shop rename: there is no update grant on `shops.name` — add one or an RPC. → done (grant + policy).
+- Unlock a staff member without changing the PIN (today only `set_staff_pin` clears a lockout). → done (`unlock_staff`).
+- Telling "revoked" from "not paired" on the phone: a `device_status()` RPC, or document `verify_staff_pin(null, null)`. → moved to Plan 4b.
+- Device label in closing history: `closings.device_user_id` has no FK to `devices`. → moved to Plan 5.
 
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
@@ -92,8 +93,10 @@ unknown input, `isShopConfig`), formula (evaluation, stale inputs, invalid confi
 targets, 20 000€ timing, NaN/negative/fractional counts, bounded search above MAX_UNITS), suggestions
 (ranking, learning from submissions: grouping, recency, 30-amount cap, malformed entries, new shop empty),
 tare, core purity (side-effect imports, `require()`, directory escape).
-UI (jsdom + Testing Library): primitives, counting cards, expenses + learned suggestions, Φάκελος, Υποβολή/share, staff/date/menu/theme, Αποβάρα, coin calculator, end-to-end register flows (V2 parity, mode switch, blocking, thousands separator, submit once + reset + learning, storage failure, draft restore, corrupt draft, no-storage notice, navigation).
-Database: supabase/tests 010–040 (RLS, owner functions, pairing/PIN lockout, submit/idempotency/suggestions) — run against the dev project, all passing.
+UI (jsdom + Testing Library): primitives, counting cards, expenses + learned suggestions, Φάκελος, Υποβολή/share, staff/date/menu/theme, Αποβάρα, coin calculator, end-to-end register flows (V2 parity, mode switch, blocking, thousands separator, submit once + reset + learning, storage failure, draft restore, corrupt draft, no-storage notice, navigation), owner area wiring (menu entry, lazy load, email-link redirect to #/owner).
+Owner model — pure, no supabase-js loaded (`tests/app/ownerRouter.test.ts`, `tests/data/ownerApi.test.ts`, `tests/data/ownerLocal.test.ts`, `tests/data/remoteErrors.test.ts`, `tests/features/owner/{model,messages,preview,settingsDraft}.test.ts`): settings reducer, terms, preview, limits, pairing, messages, `mapError`, owner API parameter names, owner drafts, auth storage.
+Owner UI (`tests/features/owner/*.test.tsx`, jsdom + Testing Library against `fakeApi.ts`, never loads supabase-js): auth + link errors, shops, new shop, settings publish/conflict/draft, formula builder + preview, staff, devices + pairing countdown.
+Database: supabase/tests 010–050 (RLS, owner functions, pairing/PIN lockout, submit/idempotency/suggestions, migration 20260929000006 — pairing code cleanup) — run against the dev project, all passing.
 
 CI (GitHub Actions: `npm ci` → typecheck → test on Node 22) ran green on GitHub for `b281da3` —
 https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
@@ -107,3 +110,11 @@ CI now runs the production build (`npm run build`) as well, after test.
 - Production Supabase project not created yet; anonymous sign-ins not yet enabled in the dashboard
   (needed before Plan 4); migrations applied via the connector, so remote migration versions are
   timestamps chosen by Supabase, not the file names.
+- Plan 4a's manual end-to-end check (Task 14 Step 5) has not been run: Supabase dashboard redirect
+  setup (Site URL, redirect URL allow-list, Confirm email), sign-up/confirm/reset email links
+  including the same-browser PKCE rule, building out the Join Juice shop (float, channels, ΜΕΤΡΗΤΑ/
+  ΕΣΟΔΑ totals, preview vs V2 numbers, publish, staff + PINs, pairing code), and the two-tab publish
+  conflict dialog. Needs the human owner against the dev project (`fstfuhogvsdaiwpfdmep`).
+- Owner UI on a real phone.
+- The anonymous-session (paired phone) warning on owner sign-in, against a real paired phone — Plan 4b.
+- Supabase free-tier auth email rate limits under real use.

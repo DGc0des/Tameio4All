@@ -11,6 +11,11 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   typed text; `deriveClosing(config, draft)` is the only bridge from text to money.
 - `src/data/local/` — the only code that touches localStorage (drafts, submissions, staff, theme).
   Every call is failure-safe; `pickStore()` falls back to memory when storage is unavailable.
+- `src/data/remote/` — the only code importing supabase-js. `owner.ts` (`createOwnerApi`) is the
+  one path for owner reads/writes; `errors.ts` maps every failure into the closed `OwnerError`
+  union; `client.ts` builds the PKCE client.
+- `src/features/owner/` — owner area (lazy-loaded from `#/owner`): `model/` is pure (settings
+  reducer, terms, preview, limits, pairing, messages); screens get an injected `OwnerApi`.
 - `src/ui/` primitives, `src/features/*` screens and sheets, `src/app/` composition (App, hash
   router, theme, error boundary).
 - `supabase/migrations/` — the database (source of truth; applied to the dev project
@@ -59,6 +64,18 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 - A closing's `business_date` must be within [today−7, today+1] (server-checked in `submit_closing`).
 - A non-UUID id sent to any function fails with a Postgres type error before the function runs (nothing
   is changed).
+- Owner screens never call supabase directly — only through `OwnerApi`; UI tests use
+  `tests/features/owner/fakeApi.ts` and never load supabase-js.
+- Auth uses PKCE with `detectSessionInUrl: false`; email links return as `?auth=signup|recovery&code=…`
+  and `OwnerApp` exchanges the code exactly once. Redirect URLs must be allow-listed in the Supabase
+  dashboard.
+- Shared-browser rule: signing in as owner in a browser holding an anonymous (paired phone) session
+  unpairs it; the login/signup screens require explicit confirmation.
+- A new server error string needs a case in `mapError` and a Greek message in `ownerErrorMessage`, or
+  it surfaces as «Κάτι πήγε στραβά».
+- `publish_config` conflicts are never retried automatically; the owner chooses «Φόρτωση νέας» or
+  «Δημοσίευση πάνω της».
+- The settings preview computes only through `previewTotals` → `evaluateTotals`.
 
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.

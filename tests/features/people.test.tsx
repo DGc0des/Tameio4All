@@ -32,12 +32,12 @@ describe('HeaderMenu', () => {
   it('hides Αποβάρα without tare items and navigates / cycles theme', () => {
     const onNavigate = vi.fn();
     const onTheme = vi.fn();
-    const { rerender } = render(<HeaderMenu hasTare={false} themePref="system" onNavigate={onNavigate} onTheme={onTheme} />);
+    const { rerender } = render(<HeaderMenu hasTare={false} themePref="system" onNavigate={onNavigate} onOwner={vi.fn()} onTheme={onTheme} />);
     fireEvent.click(screen.getByRole('button', { name: 'Μενού' }));
     expect(screen.queryByRole('menuitem', { name: 'Αποβάρα' })).toBeNull();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Θέμα: Αυτόματο' }));
     expect(onTheme).toHaveBeenCalled();
-    rerender(<HeaderMenu hasTare themePref="dark" onNavigate={onNavigate} onTheme={onTheme} />);
+    rerender(<HeaderMenu hasTare themePref="dark" onNavigate={onNavigate} onOwner={vi.fn()} onTheme={onTheme} />);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Αποβάρα' }));
     expect(onNavigate).toHaveBeenCalledWith('tare');
     expect(screen.queryByRole('menu')).toBeNull();
@@ -97,7 +97,7 @@ describe('StaffScreen', () => {
 
 describe('HeaderMenu closing', () => {
   it('closes on Escape key', () => {
-    render(<HeaderMenu hasTare={false} themePref="system" onNavigate={vi.fn()} onTheme={vi.fn()} />);
+    render(<HeaderMenu hasTare={false} themePref="system" onNavigate={vi.fn()} onOwner={vi.fn()} onTheme={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Μενού' }));
     expect(screen.getByRole('menu')).toBeTruthy();
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -105,7 +105,7 @@ describe('HeaderMenu closing', () => {
   });
 
   it('closes on pointerdown outside the menu', () => {
-    render(<HeaderMenu hasTare={false} themePref="system" onNavigate={vi.fn()} onTheme={vi.fn()} />);
+    render(<HeaderMenu hasTare={false} themePref="system" onNavigate={vi.fn()} onOwner={vi.fn()} onTheme={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Μενού' }));
     expect(screen.getByRole('menu')).toBeTruthy();
     fireEvent.pointerDown(document.body);
@@ -114,7 +114,7 @@ describe('HeaderMenu closing', () => {
 
   it('does not close when clicking a menu item (lets click handler run)', () => {
     const onNavigate = vi.fn();
-    render(<HeaderMenu hasTare={false} themePref="system" onNavigate={onNavigate} onTheme={vi.fn()} />);
+    render(<HeaderMenu hasTare={false} themePref="system" onNavigate={onNavigate} onOwner={vi.fn()} onTheme={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Μενού' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Προσωπικό' }));
     expect(onNavigate).toHaveBeenCalledWith('staff');

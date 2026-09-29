@@ -22,3 +22,14 @@ Requires Node 22.12+ (or 24+).
 Supabase (dev project `fstfuhogvsdaiwpfdmep`). Migrations: `supabase/migrations/` (apply in order).
 Security tests: `supabase/tests/` — paste a file into the dashboard SQL editor and run; it cleans up
 after itself. Before the owner app works: Authentication → Sign In / Providers → allow anonymous sign-ins.
+
+## Supabase dashboard setup (owner app auth)
+The owner app (`#/owner`) signs in with email/password and PKCE; email links (confirm sign-up,
+reset password) return to the app at `/?auth=signup|recovery&code=…`. In the Supabase dashboard:
+1. Authentication → URL Configuration → **Site URL**: the deployed Vercel URL.
+2. Authentication → URL Configuration → **Redirect URLs**: add `http://localhost:5173/**` (local dev)
+   and `https://<vercel-domain>/**` (production).
+3. Authentication → Sign In / Providers → Email: turn **Confirm email** on.
+4. `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` must also be registered as environment
+   variables in Vercel (see Deploy above) — a build that works locally ships with these `undefined`
+   if they're missing there.
