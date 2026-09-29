@@ -11,7 +11,9 @@ import { ErrorText } from '../OwnerUi';
 import { useAction } from '../useAction';
 import { ChannelsSection } from './ChannelsSection';
 import { GeneralSection } from './GeneralSection';
+import { PreviewCard } from './PreviewCard';
 import { TareSection } from './TareSection';
+import { TotalsSection } from './TotalsSection';
 
 interface Props {
   api: OwnerApi;
@@ -202,7 +204,8 @@ export function SettingsScreen({ api, shopId, store, now }: Props) {
           )}
           <GeneralSection {...sectionProps('general')} />
           <ChannelsSection {...sectionProps('channels')} />
-          {/* Task 11 inserts <TotalsSection …/> and <PreviewCard …/> here. */}
+          <TotalsSection {...sectionProps('totals')} />
+          <PreviewCard config={draft.config} />
           <TareSection {...sectionProps('tare')} />
 
           <div className="publish-bar">
