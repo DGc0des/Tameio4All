@@ -114,3 +114,22 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px 
   .sheet { animation: sheet-in 0.2s ease-out; }
   @keyframes sheet-in { from { transform: translateY(24px); opacity: 0.6; } to { transform: none; opacity: 1; } }
 }
+
+/* Owner area */
+.form { display: flex; flex-direction: column; gap: 10px; }
+.text-field { width: 100%; min-height: 44px; background: var(--field); border: 0; border-radius: 10px; padding: 8px 12px; font-size: 16px; color: var(--ink); }
+.text-field[aria-invalid='true'] { background: var(--danger-soft); }
+.select { min-height: 44px; background: var(--field); border: 0; border-radius: 10px; padding: 8px 10px; font-size: 15px; color: var(--ink); }
+.form-error { margin: 8px 0 0; font-size: 14px; color: var(--danger); }
+.form-ok { margin: 8px 0 0; font-size: 14px; color: var(--accent); }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; }
+.check input { width: 22px; height: 22px; }
+.tabs { display: flex; gap: 4px; margin: 0 12px; background: var(--field); border-radius: 12px; padding: 4px; }
+.tabs button { flex: 1; border: 0; background: transparent; min-height: 44px; border-radius: 9px; font-size: 14px; color: var(--muted); }
+.tabs button[aria-current='page'] { background: var(--surface); color: var(--ink); font-weight: 650; }
+.pair-code { margin: 8px 0; font-size: 34px; font-weight: 700; letter-spacing: 0.08em; text-align: center; font-variant-numeric: tabular-nums; }
+.term { display: flex; align-items: center; gap: 6px; min-height: 44px; }
+.term .sign { min-width: 44px; min-height: 44px; border: 0; border-radius: 10px; background: var(--field); font-size: 18px; font-weight: 700; color: var(--ink); }
+.formula { margin: 2px 0 6px; font-size: 13px; color: var(--muted); }
+.publish-bar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: var(--surface); box-shadow: 0 -1px 0 var(--line); }
+.publish-bar p { flex: 1; margin: 0; font-size: 13px; color: var(--muted); }
