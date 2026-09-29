@@ -57,6 +57,15 @@ Whole-branch review after all 14 Plan 2 tasks landed. Continues the severity sch
 | L17 | `saveDraft` failures (e.g. storage quota) are silent — no UI notice, unlike `saveSubmission`'s explicit failed-save alert | Not yet designed | open — add a draft-save failure notice |
 | L18 | `RegisterScreen.save()` treats any non-`'failed'` result as success, so if the retry after a `'conflict'` also hit `'conflict'` the form would reset and report "saved" with nothing stored | Needs two `crypto.randomUUID()` collisions in a row — negligible; tighten the guard to `saved \| duplicate` when Plan 5 moves saving to the server RPC | open — Plan 5 |
 
+## Database findings (Plan 3 review)
+Whole-branch review of Supabase schema, RLS policies, and RPCs for security. Continues the severity scheme above.
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| M10 | Security tests for an anonymous session carrying an owner's id, and for a paired phone, only checked some tables — no assertion that other sensitive tables were empty | Widened so each asserts zero rows on shops, shop_configs, staff, devices and closings (supabase/tests/010) | fixed — table coverage in RLS tests |
+| M11 | Internal helpers `private.is_anonymous` / `require_owner` / `check_config` / `check_pin` were callable by any signed-in user — privilege escalation vector | Revoked (migration 20260929000002b); only `private.is_shop_owner` stays callable because row-level security policies need it | fixed — internal helper revoke |
+| L19 | `set_staff_pin` gives the same `not_owner` answer for a non-existent and a foreign staff id — no way to probe ids, but the absence of a test left this susceptible to regression | Pinned by test T7b in supabase/tests/020; also T11 proves the helper revoke | fixed — no-existence-oracle test |
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped
