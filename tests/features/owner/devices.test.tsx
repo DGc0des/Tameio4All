@@ -11,7 +11,9 @@ const now = () => new Date(nowMs);
 const phone: DeviceRow = { userId: 'u1', label: 'Ταμείο 1', createdAt: '2026-09-20T08:00:00Z', revokedAt: null };
 
 beforeEach(() => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  // Only the countdown's own setInterval is faked; RTL's internal waitFor/findBy timers stay real,
+  // so the pairing-code promise's resolution can never race with a manual clock advance.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
   nowMs = Date.parse('2026-09-29T10:00:00Z');
 });
 afterEach(() => {
@@ -23,7 +25,10 @@ describe('DevicesScreen', () => {
   it('shows a pairing code with a countdown that expires', async () => {
     const api = fakeApi();
     render(<DevicesScreen api={api} shopId={SHOP} now={now} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Σύνδεση νέας συσκευής' }));
+    const createButton = await screen.findByRole('button', { name: 'Σύνδεση νέας συσκευής' });
+    await act(async () => {
+      fireEvent.click(createButton);
+    });
     expect(await screen.findByText('ABCD-EFGH')).toBeTruthy();
     expect(screen.getByText(/10:00/)).toBeTruthy();
     act(() => {
@@ -37,7 +42,9 @@ describe('DevicesScreen', () => {
     });
     expect(screen.getByText(/Ο κωδικός έληξε/)).toBeTruthy();
     expect(screen.queryByText('ABCD-EFGH')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Νέος κωδικός' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Νέος κωδικός' }));
+    });
     await waitFor(() => expect(api.createPairingCode).toHaveBeenCalledTimes(2));
   });
 
@@ -66,5 +73,17 @@ describe('DevicesScreen', () => {
     fireEvent.change(within(row).getByLabelText('Νέο όνομα συσκευής'), { target: { value: 'Ταμείο μπαρ' } });
     fireEvent.click(within(row).getByRole('button', { name: 'Αποθήκευση ονόματος' }));
     await waitFor(() => expect(api.updateDevice).toHaveBeenCalledWith('u1', { label: 'Ταμείο μπαρ' }));
+  });
+
+  it('cancels a device rename back to the choices view', async () => {
+    const api = fakeApi({ listDevices: vi.fn(() => ok([phone])) });
+    render(<DevicesScreen api={api} shopId={SHOP} now={now} />);
+    const row = await screen.findByRole('group', { name: 'Ταμείο 1' });
+    fireEvent.click(within(row).getByRole('button', { name: 'Μετονομασία' }));
+    fireEvent.change(within(row).getByLabelText('Νέο όνομα συσκευής'), { target: { value: 'x' } });
+    fireEvent.click(within(row).getByRole('button', { name: 'Άκυρο' }));
+    expect(within(row).queryByLabelText('Νέο όνομα συσκευής')).toBeNull();
+    expect(within(row).getByRole('button', { name: 'Μετονομασία' })).toBeTruthy();
+    expect(api.updateDevice).not.toHaveBeenCalled();
   });
 });

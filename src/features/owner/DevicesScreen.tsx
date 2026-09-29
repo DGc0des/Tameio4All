@@ -105,6 +105,9 @@ function DeviceEditor({ api, device, onChanged }: { api: OwnerApi; device: Devic
           <button type="submit" className="btn btn-primary" aria-label="Αποθήκευση ονόματος" disabled={action.busy}>
             OK
           </button>
+          <button type="button" className="btn btn-text" onClick={() => setRenaming(false)}>
+            Άκυρο
+          </button>
         </form>
       ) : (
         <div className="choices">
