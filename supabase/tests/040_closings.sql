@@ -114,4 +114,20 @@ do $$ begin
 end $$;
 reset role;
 
+-- T11 a revoked phone cannot submit a closing or read suggestion data
+update public.devices set revoked_at = now() where user_id = '00000000-0000-0000-0000-0000000000d1';
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
+set local role authenticated;
+do $$ begin
+  if public.submit_closing(current_setting('t.maria')::uuid, '1234', current_setting('t.cfg_a')::uuid, current_date,
+       '{"schema":1,"counts":{},"channelCents":{},"expenses":[]}', 'revoked-key') ->> 'error' <> 'device_revoked' then
+    raise exception 'T11 revoked phone submitted';
+  end if;
+  if (select count(*) from public.expense_suggestion_data()) <> 0 then raise exception 'T11 revoked phone got suggestion data'; end if;
+end $$;
+reset role;
+do $$ begin
+  if exists (select 1 from public.closings where idempotency_key = 'revoked-key') then raise exception 'T11 revoked phone stored a closing'; end if;
+end $$;
+
 rollback;
