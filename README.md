@@ -17,3 +17,8 @@ Requires Node 22.12+ (or 24+).
 3. No environment variables are needed yet (Supabase arrives in Plan 3; register
    `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` in Vercel then).
 4. Deploy. Every push to `main` redeploys.
+
+## Database
+Supabase (dev project `fstfuhogvsdaiwpfdmep`). Migrations: `supabase/migrations/` (apply in order).
+Security tests: `supabase/tests/` — paste a file into the dashboard SQL editor and run; it cleans up
+after itself. Before the owner app works: Authentication → Sign In / Providers → allow anonymous sign-ins.

@@ -13,7 +13,9 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   Every call is failure-safe; `pickStore()` falls back to memory when storage is unavailable.
 - `src/ui/` primitives, `src/features/*` screens and sheets, `src/app/` composition (App, hash
   router, theme, error boundary).
-- (Plan 3+) `src/data/` Supabase access (the one mutation path), `supabase/migrations/`.
+- `supabase/migrations/` — the database (source of truth; applied to the dev project
+  `fstfuhogvsdaiwpfdmep` with the Supabase connector). `supabase/tests/` — SQL security tests,
+  one rolled-back transaction each (see its README).
 
 ## Invariants
 - Money is integer cents everywhere in core. Parse with `parseAmount`; display with `formatEuro`
@@ -37,6 +39,23 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   hardcoded supplier list.
 - Components never parse or add money: text → cents via `deriveClosing`/core, display via `formatEuro`.
 - The Z photo is attached to the share only — never stored (not on the device, not on the server).
+- Database: RLS on every table, `anon` gets nothing, phones have no direct table access (server
+  functions only), every function is `security definer` + `search_path = ''` with execute for
+  `authenticated` only. Identity only from `auth.uid()`/`auth.jwt()`.
+- Cross-file invariant: the closing `inputs` shape is defined by `ClosingInputs` (src/core) AND
+  checked by `private.inputs_shape_ok` (SQL). Bumping `schema` or changing the shape needs a new
+  migration updating that check, or phones' submissions will be refused as `bad_inputs`.
+- `verify_staff_pin` / `submit_closing` return `{ok:false,error}` for expected failures — never raise
+  there (a raise rolls back the PIN lockout counter).
+- Owner functions report "not yours" and "doesn't exist" the same way (`not_owner`), so ids can't be
+  probed; there is no `staff_not_found` error from owner functions (only phone functions return
+  `staff_not_found`).
+- Internal `private.*` helpers are not callable by clients, except `private.is_shop_owner` (row-level
+  security policies need it).
+- A revoked phone stays revoked until an owner gives it a fresh pairing code; redeeming one re-pairs it
+  (possibly to another shop). That's intended.
+- A non-UUID id sent to any function fails with a Postgres type error before the function runs (nothing
+  is changed).
 
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.

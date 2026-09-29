@@ -60,7 +60,8 @@ shop's submitted closings (`{description, cents, date}`) into per-supplier amoun
 accents, extra spaces and final sigma; the most recent spelling is shown; blank/zero lines are
 skipped; each supplier keeps only its **30 most recent** amounts so old prices fade out. A new shop
 starts with no suggestions. Every Υποβολή teaches: Plan 2 learns from the device's own submitted
-closings (local), Plan 5 from `expense_suggestion_data` (all devices of the shop).
+closings (local), Plan 5 from `expense_suggestion_data()` (all devices of the shop; shop from caller's
+identity).
 
 **Defaults from channel types** (`defaultTotals`): ΤΑΜΕΙΟ = counted + all channels + expenses;
 ΜΕΤΡΗΤΑ = ΤΑΜΕΙΟ − float − expenses − card − delivery − noncash_other. Owner edits/adds totals
@@ -91,9 +92,10 @@ Tables (RLS on, default deny):
 RPCs (security definer, all identity from `auth.uid()`, never from payload):
 - `redeem_pairing_code(code)` → binds current anon user to the shop
 - `verify_staff_pin(staff_id, pin)` (UX) and `submit_closing(staff_id, pin, config_id, business_date,
-  inputs, idempotency_key)` — re-verifies device→shop, staff active, PIN; 5 failures → 15-min lockout
-- `expense_suggestion_data(shop_id)` → only (description, amount, business_date) triples from the
-  shop's non-voided closings of the last 180 days, so a staff device never reads full closing
+  inputs, idempotency_key)` — re-verifies device→shop, staff active, PIN; 5 failures → 15-min lockout;
+  refuses a reused idempotency key with different inputs
+- `expense_suggestion_data()` → only (description, amount, business_date) triples from the
+  caller's shop's non-voided closings of the last 180 days, so a staff device never reads full closing
   history; fed to `buildSupplierHistory`
 
 **Trust rule:** closings store **raw inputs only** (counts, expenses, channel amounts) + the exact

@@ -3,7 +3,7 @@
 ## Stages
 - [x] Plan 1 — day zero + `src/core`
 - [ ] Plan 2 — register UI on local preset (code complete; pending real-phone test + Vercel URL)
-- [ ] Plan 3 — Supabase schema, RLS, RPCs
+- [x] Plan 3 — Supabase schema, RLS, RPCs (dev project)
 - [ ] Plan 4 — owner app + device pairing
 - [ ] Plan 5 — closings, history, suggestions, PWA, deploy
 
@@ -66,6 +66,7 @@ targets, 20 000€ timing, NaN/negative/fractional counts, bounded search above 
 (ranking, learning from submissions: grouping, recency, 30-amount cap, malformed entries, new shop empty),
 tare, core purity (side-effect imports, `require()`, directory escape).
 UI (jsdom + Testing Library): primitives, counting cards, expenses + learned suggestions, Φάκελος, Υποβολή/share, staff/date/menu/theme, Αποβάρα, coin calculator, end-to-end register flows (V2 parity, mode switch, blocking, thousands separator, submit once + reset + learning, storage failure, draft restore, corrupt draft, no-storage notice, navigation).
+Database: supabase/tests 010–040 (RLS, owner functions, pairing/PIN lockout, submit/idempotency/suggestions) — run against the dev project, all passing.
 
 CI (GitHub Actions: `npm ci` → typecheck → test on Node 22) ran green on GitHub for `b281da3` —
 https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
@@ -76,3 +77,6 @@ CI now runs the production build (`npm run build`) as well, after test.
   picker for the Z photo, html-to-image output quality, dark mode, safe-area insets.
 - A full closing entered in both V2 and Tameio4All at the till, compared line by line.
 - Vercel deploy URL (set up by the owner; see README).
+- Production Supabase project not created yet; anonymous sign-ins not yet enabled in the dashboard
+  (needed before Plan 4); migrations applied via the connector, so remote migration versions are
+  timestamps chosen by Supabase, not the file names.
