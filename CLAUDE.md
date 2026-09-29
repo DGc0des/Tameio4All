@@ -54,6 +54,9 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   security policies need it).
 - A revoked phone stays revoked until an owner gives it a fresh pairing code; redeeming one re-pairs it
   (possibly to another shop). That's intended.
+- Default privileges in `public` still grant new tables/functions to anon/authenticated — every new
+  table or function needs an explicit `revoke … from public, anon` (and table grants chosen deliberately).
+- A closing's `business_date` must be within [today−7, today+1] (server-checked in `submit_closing`).
 - A non-UUID id sent to any function fails with a Postgres type error before the function runs (nothing
   is changed).
 

@@ -416,7 +416,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Create: `supabase/migrations/20260929000002_owner_functions.sql`, `supabase/tests/020_owner_functions.sql`
 
-**Interfaces (produced, used by Plan 4):** `create_shop(p_name text, p_config jsonb) → uuid`; `publish_config(p_shop_id uuid, p_expected_version int, p_config jsonb) → int`; `create_staff(p_shop_id uuid, p_name text, p_pin text) → uuid`; `set_staff_pin(p_staff_id uuid, p_pin text) → void`; `create_pairing_code(p_shop_id uuid) → text`. Errors (exception messages): `not_owner`, `bad_config`, `version_conflict`, `bad_pin_format`, `staff_name_taken`, `staff_not_found`.
+**Interfaces (produced, used by Plan 4):** `create_shop(p_name text, p_config jsonb) → uuid`; `publish_config(p_shop_id uuid, p_expected_version int, p_config jsonb) → int`; `create_staff(p_shop_id uuid, p_name text, p_pin text) → uuid`; `set_staff_pin(p_staff_id uuid, p_pin text) → void`; `create_pairing_code(p_shop_id uuid) → text`. Errors (exception messages): `not_owner`, `bad_config`, `version_conflict`, `bad_pin_format`, `staff_name_taken` (owner functions answer `not_owner` for both missing and foreign ids).
 
 - [ ] **Step 1: Write the test `supabase/tests/020_owner_functions.sql`**
 

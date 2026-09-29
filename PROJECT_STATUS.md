@@ -63,8 +63,26 @@ Whole-branch review of Supabase schema, RLS policies, and RPCs for security. Con
 | ID | Issue | Fix | Status |
 |---|---|---|---|
 | M10 | Security tests for an anonymous session carrying an owner's id, and for a paired phone, only checked some tables — no assertion that other sensitive tables were empty | Widened so each asserts zero rows on shops, shop_configs, staff, devices and closings (supabase/tests/010) | fixed — table coverage in RLS tests |
-| M11 | Internal helpers `private.is_anonymous` / `require_owner` / `check_config` / `check_pin` were callable by any signed-in user — privilege escalation vector | Revoked (migration 20260929000002b); only `private.is_shop_owner` stays callable because row-level security policies need it | fixed — internal helper revoke |
+| M11 | Internal helpers `private.is_anonymous` / `require_owner` / `check_config` / `check_pin` were callable by any signed-in user — unnecessary exposure (no side effects found) | Revoked (migration 20260929000002b); only `private.is_shop_owner` stays callable because row-level security policies need it | fixed — internal helper revoke |
 | L19 | `set_staff_pin` gives the same `not_owner` answer for a non-existent and a foreign staff id — no way to probe ids, but the absence of a test left this susceptible to regression | Pinned by test T7b in supabase/tests/020; also T11 proves the helper revoke | fixed — no-existence-oracle test |
+| H7 | `publish_config` with a null expected version skipped the version check (`v_current <> null` is null, never true), so it silently overwrote whatever version was current | Null now raises `version_conflict` (migration 20260929000005); test T3b in 020 | fixed — null version guard |
+| M12 | `"schema":"1"` (a string) passed the config/inputs checks because `->>` reads both as the text `1` | `check_config`, `inputs_shape_ok` and the `shop_configs` CHECK compare `-> 'schema'` with `'1'::jsonb`; tests T2c (020) and T12 (040) | fixed — schema is a JSON number |
+| L20 | `business_date` was unbounded, so a far-future closing would pin its suggestions forever | `submit_closing` returns `bad_inputs` outside [today−7, today+1]; `expense_suggestion_data` ignores dates after today+1; test T12 (040) | fixed — business-date bounds |
+| L21 | Huge JSON bodies are parsed before the 64 KB size check | Needs an API-gateway body limit | open — Plan 5 |
+| L22 | Dashboard "Exposed schemas" must be only `public`, `graphql_public` (never `private`) | Check in the dashboard before Plan 5 deploy | open — Plan 5 |
+| L23 | Overlong shop/staff names fail with raw CHECK messages | Plan 4 UI validates 80 (shop) / 40 (staff) chars before calling | open — Plan 4 |
+| L24 | The `unique_violation` handler in `create_staff` isn't scoped to the name constraint | Only one unique constraint can fire today; scope it if another is added | open |
+| L25 | PIN hashes use bcrypt cost 8 | A 4-digit PIN is brute-forceable offline at any cost; the lockout is the real defence | open — accepted |
+| L26 | Expired pairing codes are never deleted | Add a cleanup (cron or on create) | open |
+| L27 | Lockout history isn't kept, so an owner can't see a slow brute force | Consider a `lockout_count` in Plan 5 | open — Plan 5 |
+| L28 | A retry after the owner changed a staff member's PIN/active flag returns an error although the closing was stored | Plan 5 UX: treat as "maybe saved", show history check | open — Plan 5 |
+| L29 | Protection of the read-only (GET RPC) path relies on `FOR UPDATE` in `check_staff_pin` (documented in the migration; no SQL test possible) | Plan 5: HTTP-level lockout test incl. GET and `Prefer: tx=rollback` | open — Plan 5 |
+
+### Open decisions for Plan 4
+- Shop rename: there is no update grant on `shops.name` — add one or an RPC.
+- Unlock a staff member without changing the PIN (today only `set_staff_pin` clears a lockout).
+- Telling "revoked" from "not paired" on the phone: a `device_status()` RPC, or document `verify_staff_pin(null, null)`.
+- Device label in closing history: `closings.device_user_id` has no FK to `devices`.
 
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
