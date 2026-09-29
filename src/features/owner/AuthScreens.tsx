@@ -190,7 +190,8 @@ export function LinkErrorScreen({ onLogin, onResend }: { onLogin: () => void; on
         <Card>
           <p>Ο σύνδεσμος δεν λειτούργησε.</p>
           <p className="notice-soft">
-            Μπορεί να έληξε ή να χρησιμοποιήθηκε ήδη. Άνοιξέ τον στη συσκευή και τον browser όπου τον ζήτησες, ή ζήτησε νέο.
+            Μπορεί να έληξε ή να χρησιμοποιήθηκε ήδη. Άνοιξέ τον στη συσκευή και τον browser όπου τον ζήτησες, ή ζήτησε νέο
+            σύνδεσμο με «Ξέχασα τον κωδικό» — επιβεβαιώνει ξανά και το email σου.
           </p>
           <div className="sheet-actions">
             <button type="button" className="btn btn-text" onClick={onLogin}>

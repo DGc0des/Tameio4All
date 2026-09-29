@@ -26,6 +26,8 @@ function StaffEditor({ api, person, now, onChanged }: { api: OwnerApi; person: S
   const after = async (p: Promise<{ ok: boolean }>) => {
     if ((await p).ok) {
       setMode('view');
+      // A typed PIN shouldn't linger in state once it's been saved.
+      setText('');
       onChanged();
     }
   };
