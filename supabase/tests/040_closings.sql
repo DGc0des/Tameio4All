@@ -73,6 +73,17 @@ begin
   r := public.submit_closing(current_setting('t.maria')::uuid, '1234', current_setting('t.cfg_a')::uuid, current_date - 1,
         '{"schema":1,"counts":{},"channelCents":{},"expenses":[{"description":"Μεβγάλ","cents":2160},{"description":7,"cents":"x"}]}', 'key-5');
   if (r ->> 'ok')::boolean is not true then raise exception 'T7 second closing failed: %', r; end if;
+
+  -- T12 business_date must be within [today-7, today+1]; schema must be the JSON number 1
+  -- (checked against the full expected shape, not just ->>'error', so a silent success with a
+  -- null 'error' key can't slip past an `<>` comparison that would itself evaluate to null)
+  r := public.submit_closing(current_setting('t.maria')::uuid, '1234', current_setting('t.cfg_a')::uuid, current_date + 5, good, 'key-future');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T12 future date accepted: %', r; end if;
+  r := public.submit_closing(current_setting('t.maria')::uuid, '1234', current_setting('t.cfg_a')::uuid, current_date - 30, good, 'key-too-old');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T12 too-old date accepted: %', r; end if;
+  r := public.submit_closing(current_setting('t.maria')::uuid, '1234', current_setting('t.cfg_a')::uuid, current_date,
+        '{"schema":"1","counts":{},"channelCents":{},"expenses":[]}', 'key-schema-string');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T12 string schema accepted: %', r; end if;
 end $$;
 reset role;
 
@@ -87,11 +98,15 @@ insert into public.closings (shop_id, staff_id, device_user_id, config_id, busin
    current_date - 200, '{"schema":1,"counts":{},"channelCents":{},"expenses":[{"description":"Old","cents":100}]}', 'old', null),
   (current_setting('t.shop_a')::uuid, current_setting('t.maria')::uuid, '00000000-0000-0000-0000-0000000000d1', current_setting('t.cfg_a')::uuid,
    current_date, '{"schema":1,"counts":{},"channelCents":{},"expenses":[{"description":"Voided","cents":100}]}', 'void', now());
+-- A future-dated closing (inserted directly, bypassing the RPC's own date bound) must also be excluded.
+insert into public.closings (shop_id, staff_id, device_user_id, config_id, business_date, inputs, idempotency_key) values
+  (current_setting('t.shop_a')::uuid, current_setting('t.maria')::uuid, '00000000-0000-0000-0000-0000000000d1', current_setting('t.cfg_a')::uuid,
+   current_date + 30, '{"schema":1,"counts":{},"channelCents":{},"expenses":[{"description":"Future","cents":100}]}', 'future');
 insert into public.closings (shop_id, staff_id, device_user_id, config_id, business_date, inputs, idempotency_key) values
   (current_setting('t.shop_b')::uuid, current_setting('t.nikos')::uuid, '00000000-0000-0000-0000-0000000000d2', current_setting('t.cfg_b')::uuid,
    current_date, '{"schema":1,"counts":{},"channelCents":{},"expenses":[{"description":"Shop B supplier","cents":100}]}', 'b-1');
 
--- T9 suggestion data: own shop, last 180 days, not voided, malformed lines skipped
+-- T9 suggestion data: own shop, last 180 days, not in the future, not voided, malformed lines skipped
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
@@ -99,6 +114,9 @@ do $$ begin
     raise exception 'T9 wrong suggestion data: %', (select array_agg(description) from public.expense_suggestion_data());
   end if;
   if (select cents from public.expense_suggestion_data() where description = 'Nice') <> 1300 then raise exception 'T9 wrong cents'; end if;
+  if exists (select 1 from public.expense_suggestion_data() where description = 'Future') then
+    raise exception 'T9b future-dated closing leaked into suggestions';
+  end if;
 end $$;
 reset role;
 

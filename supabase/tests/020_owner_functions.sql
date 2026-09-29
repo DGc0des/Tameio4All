@@ -30,12 +30,26 @@ do $$ begin
   raise exception 'T2b expected bad_config';
 end $$;
 
+-- T2c schema must be the JSON number 1, not the string "1"
+do $$ begin
+  begin perform public.create_shop('X', '{"schema":"1"}');
+  exception when others then if sqlerrm not like '%bad_config%' then raise exception 'T2c wrong error: %', sqlerrm; end if; return; end;
+  raise exception 'T2c expected bad_config';
+end $$;
+
 -- T3 publish_config: expected version → next version; stale version → version_conflict
 do $$ begin
   if public.publish_config(current_setting('t.shop_a')::uuid, 1, '{"schema":1,"floatCents":50000}') <> 2 then raise exception 'T3 not version 2'; end if;
   begin perform public.publish_config(current_setting('t.shop_a')::uuid, 1, '{"schema":1}');
   exception when others then if sqlerrm not like '%version_conflict%' then raise exception 'T3 wrong error: %', sqlerrm; end if; return; end;
   raise exception 'T3 expected version_conflict';
+end $$;
+
+-- T3b a null expected version must never bypass the version check
+do $$ begin
+  begin perform public.publish_config(current_setting('t.shop_a')::uuid, null, '{"schema":1}');
+  exception when others then if sqlerrm not like '%version_conflict%' then raise exception 'T3b wrong error: %', sqlerrm; end if; return; end;
+  raise exception 'T3b expected version_conflict';
 end $$;
 
 -- T4 create_staff: 4-digit PIN only, stored hashed, names unique per shop (case/space-insensitive)
