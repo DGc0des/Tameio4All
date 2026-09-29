@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { TareItem } from '../../../core/config';
 import { Card } from '../../../ui/Card';
 import type { SettingsAction } from '../model/settingsDraft';
@@ -7,6 +7,18 @@ import { SectionErrors, type SectionProps } from './GeneralSection';
 function TareRow({ item, index, dispatch }: { item: TareItem; index: number; dispatch: (action: SettingsAction) => void }) {
   const [gramsText, setGramsText] = useState(() => String(item.tareGrams));
   const gramsValid = /^\d+$/.test(gramsText.trim());
+
+  // Rows are keyed by array index, so removing an earlier row shifts this instance onto a
+  // different item — resync local text whenever the underlying weight no longer matches what's
+  // typed (but not on every render: while gramsText already reads as item.tareGrams, e.g. mid-typing
+  // a leading zero, leave it alone so a keystroke isn't undone).
+  useEffect(() => {
+    const parsed = Number(gramsText);
+    if (gramsText.trim() === '' || !Number.isInteger(parsed) || parsed !== item.tareGrams) {
+      setGramsText(String(item.tareGrams));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.tareGrams]);
 
   return (
     <div className="row">

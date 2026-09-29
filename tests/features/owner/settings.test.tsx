@@ -181,4 +181,26 @@ describe('SettingsScreen', () => {
     expect(field.value).toBe('5');
     expect(loadOwnerDraft(store, SHOP)?.config.tareItems[0]?.tareGrams).toBe(5);
   });
+
+  it('tare rows resync their weight after removing an earlier row (no stale text left behind)', async () => {
+    const config = jj();
+    config.tareItems = [
+      { name: 'Α', tareGrams: 100 },
+      { name: 'Β', tareGrams: 250 },
+    ];
+    const store = start(fakeApi({ latestConfig: serverAt(1, config) }));
+    await screen.findByText(/Έκδοση 1/);
+    expect((screen.getByLabelText('Γραμμάρια 1') as HTMLInputElement).value).toBe('100');
+    expect((screen.getByLabelText('Γραμμάρια 2') as HTMLInputElement).value).toBe('250');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Αφαίρεση προϊόντος 1' }));
+
+    // The remaining row is item Β (250g), not the removed item Α's stale text.
+    expect((screen.getByLabelText('Προϊόν αποβάρας 1') as HTMLInputElement).value).toBe('Β');
+    expect((screen.getByLabelText('Γραμμάρια 1') as HTMLInputElement).value).toBe('250');
+    expect(screen.queryByLabelText('Γραμμάρια 2')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Γραμμάρια 1'), { target: { value: '99' } });
+    expect(loadOwnerDraft(store, SHOP)?.config.tareItems).toEqual([{ name: 'Β', tareGrams: 99 }]);
+  });
 });
