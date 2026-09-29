@@ -6,6 +6,7 @@ import { Card } from '../../ui/Card';
 import { checkName, SHOP_NAME_MAX } from './model/limits';
 import { nameProblemMessage, ownerErrorMessage } from './model/messages';
 import { ErrorText, OwnerHeader, type OwnerNavigate } from './OwnerUi';
+import { OwnerStaffScreen } from './OwnerStaffScreen';
 import { SettingsScreen } from './settings/SettingsScreen';
 import { useAction } from './useAction';
 
@@ -131,8 +132,9 @@ export function ShopLayout({ api, shopId, tab, navigate, store, now, email, onSi
   );
 }
 
-/** Tasks 12 and 13 replace the staff/devices placeholders. */
+/** Task 13 replaces the devices placeholder. */
 function TabBody({ tab, api, shopId, store, now }: { tab: ShopTab; api: OwnerApi; shopId: string; store: KeyValueStore; now: () => Date }) {
   if (tab === 'settings') return <SettingsScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
+  if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} />;
   return <p className="notice-soft">{TABS.find((t) => t.tab === tab)?.label}</p>;
 }
