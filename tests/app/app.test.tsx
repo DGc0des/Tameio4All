@@ -271,10 +271,15 @@ describe('navigation', () => {
   });
 });
 
-const OwnerStub: ComponentType<Omit<OwnerAppProps, 'api'>> = ({ route, redirect }) => (
-  <p>
-    owner:{route.name}:{redirect?.kind ?? 'none'}
-  </p>
+const OwnerStub: ComponentType<Omit<OwnerAppProps, 'api'>> = ({ route, redirect, onRedirectHandled }) => (
+  <div>
+    <p>
+      owner:{route.name}:{redirect?.kind ?? 'none'}
+    </p>
+    <button type="button" onClick={onRedirectHandled}>
+      handle redirect
+    </button>
+  </div>
 );
 
 describe('owner area', () => {
@@ -296,6 +301,23 @@ describe('owner area', () => {
     window.history.replaceState(null, '', '/?auth=recovery&code=abc');
     render(<App appStore={{ store: memoryStore(), persistent: true }} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
     expect(await screen.findByText('owner:shops:recovery')).toBeTruthy();
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('does not keep offering the used-up redirect after leaving and returning to the owner area', async () => {
+    window.history.replaceState(null, '', '/?auth=recovery&code=abc');
+    render(<App appStore={{ store: memoryStore(), persistent: true }} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
+    expect(await screen.findByText('owner:shops:recovery')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'handle redirect' }));
+    act(() => {
+      window.location.hash = '#/';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    act(() => {
+      window.location.hash = '#/owner';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(await screen.findByText('owner:shops:none')).toBeTruthy();
     window.history.replaceState(null, '', '/');
   });
 });

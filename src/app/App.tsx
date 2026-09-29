@@ -34,7 +34,7 @@ const systemNow = (): Date => new Date();
 export function App({ appStore, shop = LOCAL_SHOP, now = systemNow, newId = randomId, share = shareCard, ownerArea: OwnerAreaComponent = LazyOwnerEntry }: AppProps) {
   const [{ store, persistent }] = useState(() => appStore ?? pickStore());
   const [hash, setHash] = useHash();
-  const [redirect] = useState(() => parseAuthRedirect(window.location.search));
+  const [redirect, setRedirect] = useState(() => parseAuthRedirect(window.location.search));
   const [staff, setStaff] = useState(() => loadStaff(store, shop.id));
   const [themePref, setThemePref] = useState(() => loadTheme(store));
   const appRoute = parseAppRoute(hash);
@@ -89,7 +89,10 @@ export function App({ appStore, shop = LOCAL_SHOP, now = systemNow, newId = rand
             store={store}
             now={now}
             redirect={redirect}
-            onRedirectHandled={() => window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`)}
+            onRedirectHandled={() => {
+              window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
+              setRedirect(null);
+            }}
             redirectBase={`${window.location.origin}${window.location.pathname}`}
             onExit={() => navigate('register')}
           />
