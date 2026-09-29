@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { newShopConfig, type ShopConfig } from '../../../src/core/config';
 import { joinJuicePreset } from '../../../src/core/presets';
@@ -74,6 +74,7 @@ describe('SettingsScreen', () => {
     expect(await screen.findByText(/Έκδοση 5/)).toBeTruthy();
     expect(loadOwnerDraft(store, SHOP)).toBeNull();
     expect((screen.getByLabelText('Αρχικό ταμείο (€)') as HTMLInputElement).value).toBe('1000');
+    expect((api.publishConfig as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
   });
 
   it('conflict → «Δημοσίευση πάνω της» republishes on the current version', async () => {
@@ -112,6 +113,20 @@ describe('SettingsScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Απόρριψη' }));
     expect((screen.getByLabelText('Αρχικό ταμείο (€)') as HTMLInputElement).value).toBe('1000');
     expect(loadOwnerDraft(older, SHOP)).toBeNull();
+  });
+
+  it('hides the editable sections while an older-version draft is offered; continuing keeps the edits', async () => {
+    const older = memoryStore();
+    saveOwnerDraft(older, SHOP, { config: { ...jj(), floatCents: 777 }, baseVersion: 2, savedAt: 1 });
+    start(fakeApi({ latestConfig: serverAt(3) }), older);
+    expect(await screen.findByText(/πρόχειρο από την έκδοση 2/)).toBeTruthy();
+    expect(screen.queryByLabelText('Αρχικό ταμείο (€)')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Δημοσίευση' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Συνέχεια πρόχειρου' }));
+    const field = (await screen.findByLabelText('Αρχικό ταμείο (€)')) as HTMLInputElement;
+    expect(field.value).toBe('7.77');
+    expect(loadOwnerDraft(older, SHOP)?.config.floatCents).toBe(777);
   });
 
   it('opens a server config that fails validation, and starts blank from a broken one', async () => {

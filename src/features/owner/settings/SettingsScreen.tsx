@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { isShopConfig, newShopConfig, validateConfig, type ShopConfig } from '../../../core/config';
+import { newShopConfig, validateConfig, type ShopConfig } from '../../../core/config';
 import { clearOwnerDraft, loadOwnerDraft, saveOwnerDraft, type OwnerDraft } from '../../../data/local/ownerDrafts';
 import type { KeyValueStore } from '../../../data/local/storage';
 import type { OwnerApi } from '../../../data/remote/ownerApi';
@@ -127,7 +127,10 @@ export function SettingsScreen({ api, shopId, store, now }: Props) {
       if (version === null) return publish.fail('Δεν βρέθηκε η τρέχουσα έκδοση. Δοκίμασε ξανά.');
     }
     setConflict(undefined);
-    if (draft) saveOwnerDraft(store, shopId, { config: draft.config, baseVersion: version, savedAt: now().getTime() });
+    if (draft) {
+      saveOwnerDraft(store, shopId, { config: draft.config, baseVersion: version, savedAt: now().getTime() });
+      setDraft({ ...draft, baseVersion: version });
+    }
     await doPublish(version);
   };
 
@@ -190,23 +193,27 @@ export function SettingsScreen({ api, shopId, store, now }: Props) {
           </div>
         </Card>
       )}
-      {blocked.length > 0 && (
-        <p className="form-error" role="alert">
-          Δεν γίνεται διαγραφή: χρησιμοποιείται στο {blocked.join(', ')}.
-        </p>
-      )}
-      <GeneralSection {...sectionProps('general')} />
-      <ChannelsSection {...sectionProps('channels')} />
-      {/* Task 11 inserts <TotalsSection …/> and <PreviewCard …/> here. */}
-      <TareSection {...sectionProps('tare')} />
+      {!offer && (
+        <>
+          {blocked.length > 0 && (
+            <p className="form-error" role="alert">
+              Δεν γίνεται διαγραφή: χρησιμοποιείται στο {blocked.join(', ')}.
+            </p>
+          )}
+          <GeneralSection {...sectionProps('general')} />
+          <ChannelsSection {...sectionProps('channels')} />
+          {/* Task 11 inserts <TotalsSection …/> and <PreviewCard …/> here. */}
+          <TareSection {...sectionProps('tare')} />
 
-      <div className="publish-bar">
-        <p>{published !== null ? `Δημοσιεύτηκε η έκδοση ${published}.` : errors.length > 0 ? 'Διόρθωσε τα λάθη για να δημοσιεύσεις.' : dirty ? 'Οι αλλαγές ισχύουν στα ταμεία μετά τη δημοσίευση.' : 'Καμία αλλαγή.'}</p>
-        <button type="button" className="btn btn-primary" disabled={!dirty || errors.length > 0 || publish.busy} onClick={() => void doPublish(draft.baseVersion)}>
-          Δημοσίευση
-        </button>
-      </div>
-      <ErrorText state={publish.state} />
+          <div className="publish-bar">
+            <p>{published !== null ? `Δημοσιεύτηκε η έκδοση ${published}.` : errors.length > 0 ? 'Διόρθωσε τα λάθη για να δημοσιεύσεις.' : dirty ? 'Οι αλλαγές ισχύουν στα ταμεία μετά τη δημοσίευση.' : 'Καμία αλλαγή.'}</p>
+            <button type="button" className="btn btn-primary" disabled={!dirty || errors.length > 0 || publish.busy} onClick={() => void doPublish(draft.baseVersion)}>
+              Δημοσίευση
+            </button>
+          </div>
+          <ErrorText state={publish.state} />
+        </>
+      )}
 
       {conflict !== undefined && (
         <Sheet title="Οι ρυθμίσεις άλλαξαν" subtitle={ownerErrorMessage({ code: 'version_conflict', currentVersion: conflict })} onClose={() => setConflict(undefined)}>
