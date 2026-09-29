@@ -32,6 +32,21 @@ do $$ declare n int; begin
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'T2 renamed a foreign shop'; end if;
 end $$;
+reset role;
+
+-- T2b an anonymous phone session cannot rename shop A either (row is invisible → 0 rows)
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
+set local role authenticated;
+do $$ declare n int; begin
+  update public.shops set name = 'phone-hijack' where id = current_setting('t.shop_a')::uuid;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'T2b anonymous phone renamed a shop'; end if;
+end $$;
+reset role;
+
+-- back to owner A for the rest of this block
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
 
 -- T3 an 81-character name is refused by the CHECK
 do $$ begin
