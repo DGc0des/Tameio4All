@@ -4,7 +4,7 @@
 - [x] Plan 1 — day zero + `src/core`
 - [ ] Plan 2 — register UI on local preset (code complete; pending real-phone test + Vercel URL)
 - [x] Plan 3 — Supabase schema, RLS, RPCs (dev project)
-- [x] Plan 4a — owner app (auth, shop, settings + formula builder, staff/PIN, pairing codes, devices)
+- [ ] Plan 4a — owner app: auth, shop, settings + formula builder, staff/PIN, pairing codes, devices (code complete; pending the manual end-to-end check on the dev project)
 - [ ] Plan 4b — phone side (pair, server config + staff, PIN sign-in, remove LOCAL_SHOP)
 - [ ] Plan 5 — closings, history, suggestions, PWA, deploy
 
@@ -96,7 +96,7 @@ tare, core purity (side-effect imports, `require()`, directory escape).
 UI (jsdom + Testing Library): primitives, counting cards, expenses + learned suggestions, Φάκελος, Υποβολή/share, staff/date/menu/theme, Αποβάρα, coin calculator, end-to-end register flows (V2 parity, mode switch, blocking, thousands separator, submit once + reset + learning, storage failure, draft restore, corrupt draft, no-storage notice, navigation), owner area wiring (menu entry, lazy load, email-link redirect to #/owner).
 Owner model — pure, no supabase-js loaded (`tests/app/ownerRouter.test.ts`, `tests/data/ownerApi.test.ts`, `tests/data/ownerLocal.test.ts`, `tests/data/remoteErrors.test.ts`, `tests/features/owner/{model,messages,preview,settingsDraft}.test.ts`): settings reducer, terms, preview, limits, pairing, messages, `mapError`, owner API parameter names, owner drafts, auth storage.
 Owner UI (`tests/features/owner/*.test.tsx`, jsdom + Testing Library against `fakeApi.ts`, never loads supabase-js): auth + link errors, shops, new shop, settings publish/conflict/draft, formula builder + preview, staff, devices + pairing countdown.
-Database: supabase/tests 010–050 (RLS, owner functions, pairing/PIN lockout, submit/idempotency/suggestions, migration 20260929000006 — pairing code cleanup) — run against the dev project, all passing.
+Database: supabase/tests 010–050 (RLS, owner functions, pairing/PIN lockout, submit/idempotency/suggestions) — run against the dev project, all passing after applying migration 20260929000006 (2026-09-29, pairing code cleanup).
 
 CI (GitHub Actions: `npm ci` → typecheck → test on Node 22) ran green on GitHub for `b281da3` —
 https://github.com/DGc0des/Tameio4All/actions/runs/36388814893

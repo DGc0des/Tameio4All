@@ -84,5 +84,5 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 ## DEV ONLY register
 | What | Where | Remove when |
 |---|---|---|
-| `LOCAL_SHOP` — Join Juice preset as the only shop | `src/app/shop.ts` | Plan 4 (owner setup) |
-| Device-local staff list + Προσωπικό screen | `src/data/local/staff.ts`, `src/features/staff/StaffScreen.tsx` | Plan 4 (server staff + PIN) |
+| `LOCAL_SHOP` — Join Juice preset as the only shop | `src/app/shop.ts` | Plan 4b (owner setup) |
+| Device-local staff list + Προσωπικό screen | `src/data/local/staff.ts`, `src/features/staff/StaffScreen.tsx` | Plan 4b (server staff + PIN) |
