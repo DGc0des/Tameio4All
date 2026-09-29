@@ -26,6 +26,8 @@ export function SectionErrors({ errors }: { errors: string[] }) {
 export function GeneralSection({ config, dispatch, errors }: SectionProps) {
   const [floatText, setFloatText] = useState(() => centsToPlain(config.floatCents));
   const floatParsed = floatText.trim() === '' ? { ok: true as const, value: 0 } : parseAmount(floatText);
+  const [maxExpensesText, setMaxExpensesText] = useState(() => String(config.maxExpenses));
+  const maxExpensesValid = /^\d+$/.test(maxExpensesText.trim());
 
   return (
     <Card title="Γενικά">
@@ -60,11 +62,14 @@ export function GeneralSection({ config, dispatch, errors }: SectionProps) {
         <input
           className="field"
           aria-label="Έξοδα ανά κλείσιμο"
+          aria-invalid={!maxExpensesValid || undefined}
           inputMode="numeric"
-          value={String(config.maxExpenses)}
+          value={maxExpensesText}
           onChange={(e) => {
-            const v = Number(e.target.value);
-            if (e.target.value.trim() !== '' && Number.isInteger(v)) dispatch({ type: 'setMaxExpenses', value: v });
+            const text = e.target.value;
+            setMaxExpensesText(text);
+            const v = Number(text);
+            if (text.trim() !== '' && Number.isInteger(v)) dispatch({ type: 'setMaxExpenses', value: v });
           }}
         />
       </div>

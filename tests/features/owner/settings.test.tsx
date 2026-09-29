@@ -147,4 +147,38 @@ describe('SettingsScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ξανά' }));
     expect(await screen.findByText(/Έκδοση 1/)).toBeTruthy();
   });
+
+  it('overwrite: when the conflict version is unknown and re-checking it also fails, the sheet closes so the error is visible', async () => {
+    const latestConfig = vi.fn().mockReturnValueOnce(ok({ id: 'c3', version: 3, config: jj() })).mockReturnValue(fail({ code: 'network' }));
+    const publishConfig = vi.fn(() => fail<number>({ code: 'version_conflict', currentVersion: null }));
+    start(fakeApi({ latestConfig, publishConfig }));
+    await screen.findByText(/Έκδοση 3/);
+    fireEvent.change(screen.getByLabelText('Αρχικό ταμείο (€)'), { target: { value: '500' } });
+    fireEvent.click(publishButton());
+    fireEvent.click(await screen.findByRole('button', { name: 'Δημοσίευση πάνω της' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Δεν βρέθηκε η τρέχουσα έκδοση');
+    expect(screen.queryByRole('dialog', { name: 'Οι ρυθμίσεις άλλαξαν' })).toBeNull();
+  });
+
+  it('clearing the expenses-per-closing field then typing a digit does not snap back and dispatches the new value', async () => {
+    const store = start(fakeApi({ latestConfig: serverAt(3) }));
+    await screen.findByText(/Έκδοση 3/);
+    const field = screen.getByLabelText('Έξοδα ανά κλείσιμο') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: '' } });
+    expect(field.value).toBe('');
+    fireEvent.change(field, { target: { value: '5' } });
+    expect(field.value).toBe('5');
+    expect(loadOwnerDraft(store, SHOP)?.config.maxExpenses).toBe(5);
+  });
+
+  it('clearing a tare weight field then typing a digit does not snap back and dispatches the new value', async () => {
+    const store = start(fakeApi({ latestConfig: serverAt(3) }));
+    await screen.findByText(/Έκδοση 3/);
+    const field = screen.getByLabelText('Γραμμάρια 1') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: '' } });
+    expect(field.value).toBe('');
+    fireEvent.change(field, { target: { value: '5' } });
+    expect(field.value).toBe('5');
+    expect(loadOwnerDraft(store, SHOP)?.config.tareItems[0]?.tareGrams).toBe(5);
+  });
 });

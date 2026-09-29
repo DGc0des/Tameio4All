@@ -126,7 +126,10 @@ export function SettingsScreen({ api, shopId, store, now }: Props) {
     if (version === null || version === undefined) {
       const r = await api.latestConfig(shopId);
       version = r.ok ? (r.data?.version ?? 0) : null;
-      if (version === null) return publish.fail('Δεν βρέθηκε η τρέχουσα έκδοση. Δοκίμασε ξανά.');
+      if (version === null) {
+        setConflict(undefined);
+        return publish.fail('Δεν βρέθηκε η τρέχουσα έκδοση. Δοκίμασε ξανά.');
+      }
     }
     setConflict(undefined);
     if (draft) {
