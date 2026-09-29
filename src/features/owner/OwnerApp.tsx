@@ -45,7 +45,7 @@ export function OwnerApp(props: OwnerAppProps) {
   return <ConnectedOwnerApp {...props} api={props.api} />;
 }
 
-function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redirect = null, onRedirectHandled, redirectBase }: OwnerAppProps & { api: OwnerApi }) {
+function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redirect = null, onRedirectHandled, redirectBase, onExit }: OwnerAppProps & { api: OwnerApi }) {
   const [session, setSession] = useState<SessionInfo | null | 'loading'>('loading');
   const [linkError, setLinkError] = useState(false);
   // Shared across StrictMode's double effect run so the one-time code is exchanged exactly once.
@@ -140,6 +140,7 @@ function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redir
             autoOpen.current = false;
           }}
           onSignOut={() => void signOut()}
+          onExit={onExit}
         />
       );
     case 'new':
@@ -157,6 +158,7 @@ function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redir
           now={now}
           email={owner.email}
           onSignOut={() => void signOut()}
+          onExit={onExit}
         />
       );
   }

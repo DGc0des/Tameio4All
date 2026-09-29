@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { ShopTab } from '../../app/router';
 import type { KeyValueStore } from '../../data/local/storage';
 import type { OwnerApi } from '../../data/remote/ownerApi';
@@ -20,6 +20,8 @@ export interface ShopLayoutProps {
   now: () => Date;
   email: string | null;
   onSignOut: () => void;
+  /** Leaves the owner area back to the register. */
+  onExit: () => void;
 }
 
 const TABS: { tab: ShopTab; label: string }[] = [
@@ -30,14 +32,17 @@ const TABS: { tab: ShopTab; label: string }[] = [
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'missing' } | { status: 'ready'; name: string };
 
-export function ShopLayout({ api, shopId, tab, navigate, store, now, email, onSignOut }: ShopLayoutProps) {
+export function ShopLayout({ api, shopId, tab, navigate, store, now, email, onSignOut, onExit }: ShopLayoutProps) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const rename = useAction();
 
   useEffect(() => {
     let cancelled = false;
+    setLoad({ status: 'loading' });
     void api.listShops().then((r) => {
       if (cancelled) return;
       if (!r.ok) return setLoad({ status: 'error', message: ownerErrorMessage(r.error) });
@@ -47,7 +52,7 @@ export function ShopLayout({ api, shopId, tab, navigate, store, now, email, onSi
     return () => {
       cancelled = true;
     };
-  }, [api, shopId]);
+  }, [api, shopId, attempt]);
 
   const saveName = async (e: FormEvent) => {
     e.preventDefault();
@@ -69,9 +74,14 @@ export function ShopLayout({ api, shopId, tab, navigate, store, now, email, onSi
           {load.status === 'loading' && <p className="notice-soft">Φόρτωση…</p>}
           {load.status === 'missing' && <p className="notice-soft">Το κατάστημα δεν βρέθηκε.</p>}
           {load.status === 'error' && (
-            <p className="form-error" role="alert">
-              {load.message}
-            </p>
+            <>
+              <p className="form-error" role="alert">
+                {load.message}
+              </p>
+              <button type="button" className="btn btn-text" onClick={retry}>
+                Ξανά
+              </button>
+            </>
           )}
         </main>
       </div>
@@ -124,7 +134,10 @@ export function ShopLayout({ api, shopId, tab, navigate, store, now, email, onSi
         <TabBody tab={tab} api={api} shopId={shopId} store={store} now={now} />
       </main>
       <footer className="notice-soft" style={{ padding: '0 12px 16px' }}>
-        {email ?? ''}{' '}
+        <button type="button" className="link" onClick={onExit}>
+          ← Ταμείο
+        </button>{' '}
+        · {email ?? ''}{' '}
         <button type="button" className="link" onClick={onSignOut}>
           Αποσύνδεση
         </button>

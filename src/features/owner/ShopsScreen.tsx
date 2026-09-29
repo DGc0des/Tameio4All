@@ -11,11 +11,13 @@ interface Props {
   autoOpen: boolean;
   onLoaded: () => void;
   onSignOut: () => void;
+  /** Leaves the owner area back to the register — this is the top of the owner nav stack, so it lives in the header's back slot. */
+  onExit: () => void;
 }
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; shops: ShopRow[] };
 
-export function ShopsScreen({ api, navigate, autoOpen, onLoaded, onSignOut }: Props) {
+export function ShopsScreen({ api, navigate, autoOpen, onLoaded, onSignOut, onExit }: Props) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
@@ -42,6 +44,8 @@ export function ShopsScreen({ api, navigate, autoOpen, onLoaded, onSignOut }: Pr
     <div className="app">
       <OwnerHeader
         title="Καταστήματα"
+        onBack={onExit}
+        backLabel="← Ταμείο"
         right={
           <button type="button" className="link" onClick={onSignOut}>
             Αποσύνδεση

@@ -4,12 +4,23 @@ import type { ActionState } from './useAction';
 
 export type OwnerNavigate = (route: OwnerRoute, opts?: { replace?: boolean }) => void;
 
-export function OwnerHeader({ title, onBack, right }: { title: string; onBack?: () => void; right?: ReactNode }) {
+export function OwnerHeader({
+  title,
+  onBack,
+  backLabel,
+  right,
+}: {
+  title: string;
+  onBack?: () => void;
+  /** Overrides the plain "←" back arrow with a labelled action (e.g. "← Ταμείο"); its own text is the accessible name. */
+  backLabel?: string;
+  right?: ReactNode;
+}) {
   return (
     <header className="top">
       {onBack ? (
-        <button type="button" className="icon-btn" aria-label="Πίσω" onClick={onBack}>
-          ←
+        <button type="button" className="icon-btn" aria-label={backLabel ? undefined : 'Πίσω'} onClick={onBack}>
+          {backLabel ?? '←'}
         </button>
       ) : (
         <span />
