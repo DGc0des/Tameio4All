@@ -80,9 +80,11 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
     }
   }, [api, store]);
 
+  // The one load path: runs on mount and whenever the gate asks for a reload by entering `loading`.
+  const reloading = gate.s === 'loading';
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (reloading) void load();
+  }, [reloading, load]);
 
   // Stored state follows the gate: the session lives exactly as long as `ready`.
   useEffect(() => {
@@ -91,12 +93,25 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
     if (gate.s === 'unpaired') clearCachedContext(store);
   }, [gate, store]);
 
-  const onPaired = useCallback(() => {
-    dispatch({ t: 'paired' });
-    void load();
-  }, [load]);
-  const onSignedIn = useCallback((session: StaffSession) => dispatch({ t: 'signed_in', session }), []);
-  const onServerError = useCallback((error: DeviceError) => dispatch({ t: 'server_error', error }), []);
+  const onPaired = useCallback(() => dispatch({ t: 'paired' }), []);
+  const signedOutShopId = gate.s === 'signed_out' ? gate.ctx.shopId : '';
+  const onSignedIn = useCallback(
+    (signed: StaffSession) => {
+      // device.ts only knows the shop after a successful context(); offline it comes from the cached one.
+      const session = signed.shopId === '' ? { ...signed, shopId: signedOutShopId } : signed;
+      // Stored before the event: if the gate reloads, the fresh context finds it and opens the register.
+      saveStaffSession(store, session);
+      dispatch({ t: 'signed_in', session });
+    },
+    [store, signedOutShopId],
+  );
+  const onServerError = useCallback(
+    (error: DeviceError) => {
+      if (error.code === 'session_invalid' || error.code === 'wrong_day') clearStaffSession(store);
+      dispatch({ t: 'server_error', error });
+    },
+    [store],
+  );
 
   switch (gate.s) {
     case 'loading':

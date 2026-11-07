@@ -19,11 +19,16 @@ export type GateEvent =
   | { t: 'signed_out' }
   | { t: 'server_error'; error: DeviceError };
 
-/** A stored session counts only for the same shop and the same business date. */
+/** A session counts only for the same shop and the same business date as the context. */
+const matches = (ctx: DeviceContext, session: StaffSession): boolean =>
+  session.shopId === ctx.shopId && session.businessDate === ctx.businessDate;
+
 function fromContext(ctx: DeviceContext, stored: StaffSession | null, offline: boolean): Gate {
-  const valid = stored !== null && stored.shopId === ctx.shopId && stored.businessDate === ctx.businessDate;
-  return valid ? { s: 'ready', ctx, session: stored, offline } : { s: 'signed_out', ctx, offline };
+  return stored !== null && matches(ctx, stored) ? { s: 'ready', ctx, session: stored, offline } : { s: 'signed_out', ctx, offline };
 }
+
+/** `loading` means "fetch the context again": PhoneApp re-runs its one load path whenever the gate enters it. */
+const RELOAD: Gate = { s: 'loading' };
 
 const unpairedBy = (error: DeviceError): Gate => ({ s: 'unpaired', notice: deviceErrorMessage(error) });
 
@@ -38,9 +43,11 @@ export function gateReducer(g: Gate, e: GateEvent): Gate {
       // Any other failure (network, or a server hiccup) falls back to the cache like a dropped connection.
       return e.cached === null ? { s: 'offline_no_cache' } : fromContext(e.cached, e.stored, true);
     case 'paired':
-      return { s: 'loading' };
+      return RELOAD;
     case 'signed_in':
-      return g.s === 'signed_out' ? { s: 'ready', ctx: g.ctx, session: e.session, offline: g.offline } : g;
+      if (g.s !== 'signed_out') return g;
+      // A cached (offline) or mismatched context may be another day's: reload before opening the register.
+      return g.offline || !matches(g.ctx, e.session) ? RELOAD : { s: 'ready', ctx: g.ctx, session: e.session, offline: false };
     case 'signed_out':
       return g.s === 'ready' ? { s: 'signed_out', ctx: g.ctx, offline: g.offline } : g;
     case 'server_error':
@@ -50,7 +57,8 @@ export function gateReducer(g: Gate, e: GateEvent): Gate {
           return unpairedBy(e.error);
         case 'session_invalid':
         case 'wrong_day':
-          return g.s === 'ready' ? { s: 'signed_out', ctx: g.ctx, offline: g.offline } : g;
+          // The day may have changed: the context is stale too.
+          return g.s === 'ready' || g.s === 'signed_out' ? RELOAD : g;
         default:
           return g;
       }

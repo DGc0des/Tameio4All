@@ -144,6 +144,23 @@ describe('PhoneApp', () => {
     expect(screen.getByLabelText('100€')).toBeTruthy();
   });
 
+  it('signing in offline reloads the context: today replaces yesterday\'s cache', async () => {
+    const store = memoryStore();
+    saveCachedContext(store, { ...CTX, businessDate: '2026-11-06' });
+    const context = vi.fn<DeviceApi['context']>().mockReturnValueOnce(fail({ code: 'network' })).mockReturnValue(ok(CTX));
+    // As in device.ts: no context() has succeeded yet, so the session does not know its shop.
+    const signInFn = vi.fn<DeviceApi['signIn']>(() => ok({ ...SESSION, shopId: '' }));
+    start(fakeDeviceApi({ context, signIn: signInFn }), store);
+    expect(await screen.findByText('Εκτός σύνδεσης')).toBeTruthy();
+    await signIn('1234');
+    expect(await screen.findByLabelText('100€')).toBeTruthy();
+    expect(context).toHaveBeenCalledTimes(2);
+    expect(within(screen.getByRole('banner')).getByText('Σαβ 07/11 · ΜΑΡΙΑ')).toBeTruthy();
+    expect(screen.queryByText('Εκτός σύνδεσης')).toBeNull();
+    expect(loadStaffSession(store)).toEqual(SESSION);
+    expect(signInFn).toHaveBeenCalledTimes(1);
+  });
+
   it('without a cache shows a retry screen, never a blank page (Review Focus 5)', async () => {
     const context = vi.fn<DeviceApi['context']>().mockReturnValueOnce(fail({ code: 'network' })).mockReturnValue(ok(CTX));
     const store = memoryStore();

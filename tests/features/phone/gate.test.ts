@@ -64,9 +64,17 @@ describe('gateReducer — transitions', () => {
     expect(gateReducer({ s: 'unpaired', notice: null }, { t: 'paired' })).toEqual(loading);
   });
 
-  it('signed_in from signed_out → ready, keeping offline', () => {
+  it('signed_in from an online signed_out with a matching session → ready', () => {
     expect(gateReducer(signedOut, { t: 'signed_in', session })).toEqual(ready);
-    expect(gateReducer({ ...signedOut, offline: true }, { t: 'signed_in', session })).toEqual({ ...ready, offline: true });
+  });
+
+  it('signed_in while offline → loading (reload the context before opening the register)', () => {
+    expect(gateReducer({ ...signedOut, offline: true }, { t: 'signed_in', session })).toEqual(loading);
+  });
+
+  it('signed_in with a session for another business date or shop → loading', () => {
+    expect(gateReducer(signedOut, { t: 'signed_in', session: { ...session, businessDate: '2026-11-08' } })).toEqual(loading);
+    expect(gateReducer(signedOut, { t: 'signed_in', session: { ...session, shopId: '' } })).toEqual(loading);
   });
 
   it('signed_in is ignored outside signed_out', () => {
@@ -78,9 +86,16 @@ describe('gateReducer — transitions', () => {
     expect(gateReducer(ready, { t: 'signed_out' })).toEqual(signedOut);
   });
 
-  it('server_error session_invalid / wrong_day → signed_out', () => {
-    expect(gateReducer(ready, { t: 'server_error', error: { code: 'session_invalid' } })).toEqual(signedOut);
-    expect(gateReducer(ready, { t: 'server_error', error: { code: 'wrong_day' } })).toEqual(signedOut);
+  it('server_error session_invalid / wrong_day → loading (fresh context, then sign in again)', () => {
+    expect(gateReducer(ready, { t: 'server_error', error: { code: 'session_invalid' } })).toEqual(loading);
+    expect(gateReducer(ready, { t: 'server_error', error: { code: 'wrong_day' } })).toEqual(loading);
+    expect(gateReducer({ ...signedOut, offline: true }, { t: 'server_error', error: { code: 'wrong_day' } })).toEqual(loading);
+  });
+
+  it('after the reload, a matching stored session → ready, otherwise signed_out on the fresh context', () => {
+    const today = { ...ctx, businessDate: '2026-11-08' };
+    expect(gateReducer(loading, { t: 'loaded', ctx: today, stored: { ...session, businessDate: '2026-11-08' } }).s).toBe('ready');
+    expect(gateReducer(loading, { t: 'loaded', ctx: today, stored: null })).toEqual({ s: 'signed_out', ctx: today, offline: false });
   });
 
   it('server_error device_revoked from ready → unpaired (Review Focus 4)', () => {

@@ -82,7 +82,9 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   «Δημοσίευση πάνω της».
 - The settings preview computes only through `previewTotals` → `evaluateTotals`.
 - Phone: a stored `StaffSession` is used only when its `shopId` and `businessDate` match the device context;
-  it is saved while the gate is `ready` and cleared on `signed_out`/`unpaired`. A paired phone with nobody
+  it is saved while the gate is `ready` and cleared on `signed_out`/`unpaired`. The gate entering `loading` is the
+  one reload path (PhoneApp re-runs `context()`): after pairing, after a sign-in that was offline or doesn't match
+  the context, and on `session_invalid`/`wrong_day` (which also clear the stored session). A paired phone with nobody
   signed in renders only the sign-in screen (no register fields, no amounts). A draft is discarded when its
   `businessDate` differs from the server's (`loadDraft(store, shopId, businessDate)`; no TTL).
 
