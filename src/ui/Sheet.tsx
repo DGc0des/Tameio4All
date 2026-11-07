@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Props {
   title: string;
@@ -7,7 +8,11 @@ interface Props {
   children: ReactNode;
 }
 
-/** Bottom sheet over the page. Escape or a tap on the dimmed backdrop closes it. */
+/**
+ * Bottom sheet over the page. Escape or a tap on the dimmed backdrop closes it.
+ * Rendered into <body> through a portal: glass cards use backdrop-filter, which would otherwise
+ * trap this position:fixed sheet inside whichever card rendered it.
+ */
 export function Sheet({ title, subtitle, onClose, children }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -29,7 +34,7 @@ export function Sheet({ title, subtitle, onClose, children }: Props) {
     };
   }, []);
 
-  return (
+  return createPortal(
     <div
       className="sheet-backdrop"
       onClick={(e) => {
@@ -47,6 +52,7 @@ export function Sheet({ title, subtitle, onClose, children }: Props) {
         {subtitle !== undefined && <p className="sub">{subtitle}</p>}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

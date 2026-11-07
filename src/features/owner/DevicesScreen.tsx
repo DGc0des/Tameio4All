@@ -90,7 +90,7 @@ function DeviceEditor({ api, device, onChanged }: { api: OwnerApi; device: Devic
   };
 
   return (
-    <fieldset className="card" aria-label={title} style={{ border: 0 }}>
+    <fieldset className="card" aria-label={title}>
       <div className="row">
         <span className="row-label">
           <b>{title}</b>

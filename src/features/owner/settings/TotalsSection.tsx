@@ -10,7 +10,7 @@ function TotalEditor({ total, config, dispatch }: Omit<SectionProps, 'errors'> &
   const chosen = options.find((o) => o.key === pick) ?? options[0];
 
   return (
-    <fieldset className="card" aria-label={total.label} style={{ border: 0 }}>
+    <fieldset className="card" aria-label={total.label}>
       <div className="row">
         <input className="field text" aria-label={`Όνομα συνόλου ${total.label}`} value={total.label} onChange={(e) => dispatch({ type: 'renameTotal', id: total.id, label: e.target.value })} />
         <button type="button" className="icon-btn" aria-label={`Πάνω ${total.label}`} onClick={() => dispatch({ type: 'moveTotal', id: total.id, delta: -1 })}>

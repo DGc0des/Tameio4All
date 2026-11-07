@@ -76,6 +76,11 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 - `publish_config` conflicts are never retried automatically; the owner chooses «Φόρτωση νέας» or
   «Δημοσίευση πάνω της».
 - The settings preview computes only through `previewTotals` → `evaluateTotals`.
+- Theme (`src/app/theme.css`): frosted glass over midnight/pale backgrounds; electric blue = actions,
+  cantaloupe (`--hl`) = key numbers. `.share-card` must stay opaque (`--solid`) — `shareCard` renders it
+  to a PNG using its computed background. Glass panels use `backdrop-filter`, which traps
+  `position: fixed` children, so `Sheet` renders through a portal to `<body>`; keep any new fixed overlay
+  out of glass containers the same way.
 
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.

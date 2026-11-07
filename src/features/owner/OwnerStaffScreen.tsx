@@ -44,7 +44,7 @@ function StaffEditor({ api, person, now, onChanged }: { api: OwnerApi; person: S
   };
 
   return (
-    <fieldset className="card" aria-label={person.name} style={{ border: 0 }}>
+    <fieldset className="card" aria-label={person.name}>
       <div className="row">
         <span className="row-label">
           <b>{person.name}</b>
