@@ -47,6 +47,7 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 - Database: RLS on every table, `anon` gets nothing, phones have no direct table access (server
   functions only), every function is `security definer` + `search_path = ''` with execute for
   `authenticated` only. Identity only from `auth.uid()`/`auth.jwt()`.
+- `ClosingInputs.schema` is 2 for new closings (`CLOSING_INPUTS_SCHEMA`): each expense carries `id` and `addedBy` (`{kind:'staff',id}` | `{kind:'owner'}`); schema 1 rows stay readable. `validateClosingInputs` enforces the schema-2 expense rules as `bad_shape`; a draft expense with no author (pre-sign-in draft) is blocked from submit by `submitBlockReason`.
 - Cross-file invariant: the closing `inputs` shape is defined by `ClosingInputs` (src/core) AND
   checked by `private.inputs_shape_ok` (SQL). Bumping `schema` or changing the shape needs a new
   migration updating that check, or phones' submissions will be refused as `bad_inputs`.

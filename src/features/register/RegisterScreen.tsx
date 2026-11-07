@@ -18,7 +18,6 @@ import { EnvelopeSheet } from './EnvelopeSheet';
 import { ExpensesCard } from './ExpensesCard';
 import { HeaderMenu } from './HeaderMenu';
 import { ModeSwitch } from './ModeSwitch';
-import { PeopleSheet } from './PeopleSheet';
 import type { ShareFn } from './share';
 import { SubmitSheet } from './SubmitSheet';
 import { SummaryCard } from './SummaryCard';
@@ -38,7 +37,7 @@ export interface RegisterProps {
   onOwner: () => void;
 }
 
-type SheetName = 'envelope' | 'submit' | 'people';
+type SheetName = 'envelope' | 'submit';
 
 export function RegisterScreen({ shop, store, now, newId, share, staff, themePref, active, onTheme, onNavigate, onOwner }: RegisterProps) {
   const { config } = shop;
@@ -79,7 +78,7 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
     const submission = {
       id: draft.id,
       shopId: shop.id,
-      staffName: draft.staffName,
+      staffName: '', // Task 6 replaces local submissions with the server submit
       businessDate: draft.businessDate,
       submittedAt: now().toISOString(),
       inputs: derived.inputs,
@@ -107,9 +106,7 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
       <header className="top">
         <div>
           <h1>Κλείσιμο ταμείου</h1>
-          <button type="button" className="meta-btn" onClick={() => setSheet('people')}>
-            {formatDayEl(draft.businessDate)} · {draft.staffName || 'Διάλεξε όνομα'}
-          </button>
+          <span className="meta-btn">{formatDayEl(draft.businessDate)}</span>
         </div>
         {active && <HeaderMenu themePref={themePref} onNavigate={onNavigate} onTheme={onTheme} onOwner={onOwner} />}
       </header>
@@ -134,20 +131,6 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
       )}
       {active && sheet === 'submit' && (
         <SubmitSheet config={config} draft={draft} derived={derived} onSave={save} onShare={share} onClose={closeSubmit} />
-      )}
-      {active && sheet === 'people' && (
-        <PeopleSheet
-          staff={staff}
-          staffName={draft.staffName}
-          businessDate={draft.businessDate}
-          onStaff={(name) => dispatch({ type: 'setStaff', name })}
-          onDate={(date) => dispatch({ type: 'setDate', date })}
-          onManage={() => {
-            setSheet(null);
-            onNavigate('staff');
-          }}
-          onClose={() => setSheet(null)}
-        />
       )}
       {active && calcChannel !== undefined && (
         <CoinCalcSheet

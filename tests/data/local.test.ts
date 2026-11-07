@@ -51,7 +51,7 @@ describe('drafts', () => {
 
   it('restores a draft saved within 10 hours', () => {
     const s = memoryStore();
-    const d = newDraft('d1', '2026-09-28', 'ΓΚΡΕΖΙΟΣ');
+    const d = newDraft('d1', '2026-09-28');
     expect(saveDraft(s, 'local', d, now)).toBe(true);
     expect(loadDraft(s, 'local', now + DRAFT_TTL_MS - 1)).toEqual(d);
   });

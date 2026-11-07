@@ -123,6 +123,38 @@ describe('validateClosingInputs', () => {
     );
   });
 
+  describe('schema 2', () => {
+    const e = { id: 'e1', description: 'x', cents: 100, addedBy: { kind: 'staff', id: 's1' } };
+    const s2 = (expenses: unknown[]) => ({ schema: 2, counts: {}, channelCents: {}, expenses });
+    it('accepts expenses with ids and staff/owner authors, and schema 1 rows', () => {
+      expect(codesOf(s2([e, { ...e, id: 'e2', addedBy: { kind: 'owner' } }]))).toEqual([]);
+      expect(codesOf({ schema: 1, counts: {}, channelCents: {}, expenses: [{ description: 'x', cents: 5 }] })).toEqual([]);
+    });
+    it('rejects a missing/empty/too long id, bad author kind, bad staff id, missing author (bad_shape)', () => {
+      const { id: _id, ...noId } = e;
+      const { addedBy: _a, ...noAuthor } = e;
+      for (const bad of [
+        noId,
+        { ...e, id: '' },
+        { ...e, id: 'x'.repeat(65) },
+        { ...e, id: 5 },
+        { ...e, addedBy: { kind: 'admin' } },
+        { ...e, addedBy: { kind: 'staff' } },
+        { ...e, addedBy: { kind: 'staff', id: 5 } },
+        { ...e, addedBy: 'owner' },
+        noAuthor,
+      ]) {
+        expect(codesOf(s2([bad]))).toContain('bad_shape');
+      }
+    });
+    it('still reports a non-number cents as bad_amount', () => {
+      expect(codesOf(s2([{ ...e, cents: '5' }]))).toContain('bad_amount');
+    });
+    it('rejects schema 3', () => {
+      expect(codesOf({ ...s2([]), schema: 3 })).toContain('bad_shape');
+    });
+  });
+
   it('rejects a missing expenses array (bad_shape)', () => {
     expect(codesOf({ schema: 1, counts: {}, channelCents: {} })).toContain('bad_shape');
   });

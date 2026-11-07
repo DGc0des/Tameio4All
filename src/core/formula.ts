@@ -7,15 +7,27 @@ import {
 } from './config';
 import type { Cents } from './money';
 
+/** Who added an expense line. Staff ids are server ids; the owner has none. */
+export type ExpenseAuthor = { kind: 'staff'; id: string } | { kind: 'owner' };
+
+/**
+ * `id`/`addedBy` are required by schema 2 (and absent in stored schema 1 rows), so they are
+ * optional here; validateClosingInputs enforces them for schema 2.
+ */
 export interface ExpenseEntry {
   description: string;
   cents: Cents;
+  id?: string;
+  addedBy?: ExpenseAuthor;
 }
+
+/** Current shape of newly produced closing inputs (schema 1 rows are still readable). */
+export const CLOSING_INPUTS_SCHEMA = 2;
 
 /** Raw, already-parsed inputs of one closing. This is what gets stored — never the totals. */
 export interface ClosingInputs {
   /** Bumped whenever the stored shape changes; lets validators reject inputs from a future/past shape. */
-  schema: 1;
+  schema: 1 | 2;
   /** Piece count per denomination, keyed by String(denominationCents). */
   counts: Record<string, number>;
   /** Amount per channel id. */
@@ -46,6 +58,8 @@ export class ClosingInputsInvalidError extends Error {
 
 type Obj = Record<string, unknown>;
 const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
+const isAuthor = (x: unknown): boolean =>
+  isObj(x) && (x.kind === 'owner' || (x.kind === 'staff' && typeof x.id === 'string' && x.id.length > 0));
 const isSafeNonNegInt = (x: unknown): x is number =>
   typeof x === 'number' && Number.isSafeInteger(x) && x >= 0;
 
@@ -63,7 +77,7 @@ export function validateClosingInputs(config: ShopConfig, inputs: unknown): Inpu
   }
   const c = inputs;
 
-  if (c.schema !== 1) errors.push({ code: 'bad_shape', detail: 'schema' });
+  if (c.schema !== 1 && c.schema !== 2) errors.push({ code: 'bad_shape', detail: 'schema' });
 
   if (!isObj(c.counts)) {
     errors.push({ code: 'bad_shape', detail: 'counts' });
@@ -87,6 +101,10 @@ export function validateClosingInputs(config: ShopConfig, inputs: unknown): Inpu
     for (const e of c.expenses) {
       if (!isObj(e) || typeof e.description !== 'string' || !isSafeNonNegInt(e.cents)) {
         errors.push({ code: 'bad_amount', detail: 'expense' });
+      } else if (c.schema === 2) {
+        // Mirrors private.inputs_shape_ok (SQL) for schema 2.
+        const idOk = typeof e.id === 'string' && e.id.length >= 1 && e.id.length <= 64;
+        if (!idOk || !isAuthor(e.addedBy)) errors.push({ code: 'bad_shape', detail: 'expense id/addedBy' });
       }
     }
     if (c.expenses.length > config.maxExpenses) {

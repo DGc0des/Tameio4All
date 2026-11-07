@@ -21,7 +21,7 @@ export function ExpensesCard({ maxExpenses, draft, derived, history, dispatch, n
         <ExpenseRow key={expense.id} expense={expense} index={index} derived={derived} history={history} dispatch={dispatch} />
       ))}
       {draft.expenses.length < maxExpenses && (
-        <button type="button" className="link" onClick={() => dispatch({ type: 'addExpense', id: newId(), max: maxExpenses })}>
+        <button type="button" className="link" onClick={() => dispatch({ type: 'addExpense', id: newId(), max: maxExpenses, addedBy: null })}>
           + Έξοδο
         </button>
       )}

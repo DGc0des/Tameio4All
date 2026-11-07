@@ -93,7 +93,6 @@ function ShareCard({ config, draft, derived }: { config: ShopConfig; draft: Draf
   return (
     <div className="share-card">
       <div className="share-head">
-        <strong>{draft.staffName}</strong>
         <span>{formatDateEl(draft.businessDate)}</span>
       </div>
       {config.totals

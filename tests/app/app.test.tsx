@@ -89,38 +89,31 @@ describe('register flows', () => {
     expect(within(sheet).getByText('✓ Ακριβές ποσό')).toBeTruthy();
   });
 
-  it('submits once, resets the numbers but keeps staff and date, and learns the expense', () => {
+  it('submits once, resets the numbers but keeps the date', () => {
     const store = memoryStore();
     saveStaff(store, 'local', ['ΓΚΡΕΖΙΟΣ']);
     start(store);
+    // Interim (until Task 6 sets the real author): an expense added now has no author and blocks submit.
+    fireEvent.click(button('+ Έξοδο'));
+    type('Ποσό εξόδου 1', '24');
     expect(button('Υποβολή').disabled).toBe(true);
-    expect(screen.getByText('Διάλεξε όνομα για υποβολή')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: /Διάλεξε όνομα/ }));
-    fireEvent.click(screen.getByRole('radio', { name: 'ΓΚΡΕΖΙΟΣ' }));
-    fireEvent.click(button('Εντάξει'));
+    expect(screen.getByText('Συνδέσου ξανά για υποβολή')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Αφαίρεση εξόδου 1' }));
 
     type('100€', '1500');
-    fireEvent.click(button('+ Έξοδο'));
-    type('Περιγραφή εξόδου 1', 'Ντόντης');
-    type('Ποσό εξόδου 1', '24');
 
     fireEvent.click(button('Υποβολή'));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
     expect(loadSubmissions(store, 'local')).toHaveLength(1);
     // The form resets as soon as the closing is saved; the sheet keeps showing the saved closing.
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
-    expect(screen.getByRole('dialog', { name: 'Αποθηκεύτηκε ✓' }).textContent).toContain('1.524,00€');
+    expect(screen.getByRole('dialog', { name: 'Αποθηκεύτηκε ✓' }).textContent).toContain('1.500,00€');
     fireEvent.click(button('Νέο κλείσιμο'));
 
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
-    expect(screen.getByRole('button', { name: 'Δευ 28/09 · ΓΚΡΕΖΙΟΣ' })).toBeTruthy();
+    expect(screen.getByText('Δευ 28/09')).toBeTruthy();
     expect(screen.getByText('Το κλείσιμο αποθηκεύτηκε')).toBeTruthy();
     expect(loadSubmissions(store, 'local')).toHaveLength(1);
-
-    fireEvent.click(button('+ Έξοδο'));
-    type('Ποσό εξόδου 1', '24');
-    expect(screen.getByRole('button', { name: 'Ντόντης' })).toBeTruthy();
   });
 
   it('says so and keeps the form when the device refuses to save', () => {
@@ -135,9 +128,6 @@ describe('register flows', () => {
     };
     saveStaff(failing, 'local', ['ΓΚΡΕΖΙΟΣ']);
     start(failing);
-    fireEvent.click(screen.getByRole('button', { name: /Διάλεξε όνομα/ }));
-    fireEvent.click(screen.getByRole('radio', { name: 'ΓΚΡΕΖΙΟΣ' }));
-    fireEvent.click(button('Εντάξει'));
     type('100€', '1500');
     fireEvent.click(button('Υποβολή'));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Υποβολή' }));
@@ -160,9 +150,6 @@ describe('register flows', () => {
     expect(saveSubmission(store, stale)).toBe('saved');
 
     start(store);
-    fireEvent.click(screen.getByRole('button', { name: /Διάλεξε όνομα/ }));
-    fireEvent.click(screen.getByRole('radio', { name: 'ΓΚΡΕΖΙΟΣ' }));
-    fireEvent.click(button('Εντάξει'));
     type('100€', '1500');
     fireEvent.click(button('Υποβολή'));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
@@ -203,16 +190,13 @@ describe('persistence and resilience', () => {
 });
 
 describe('navigation', () => {
-  it('adds a name in Προσωπικό and offers it back on the register', () => {
+  it('adds a name in Προσωπικό', () => {
     const store = start();
     fireEvent.click(button('Μενού'));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Προσωπικό' }));
     type('Νέο όνομα', 'ΜΑΡΙΑ');
     fireEvent.click(button('Προσθήκη'));
     expect(loadStaff(store, 'local')).toEqual(['ΜΑΡΙΑ']);
-    fireEvent.click(button('Πίσω'));
-    fireEvent.click(screen.getByRole('button', { name: /Διάλεξε όνομα/ }));
-    expect(screen.getByRole('radio', { name: 'ΜΑΡΙΑ' })).toBeTruthy();
   });
 
   it('has no Αποβάρα in the menu and fills ΚΕΡΜΑΤΑ from the calculator', () => {
@@ -228,8 +212,8 @@ describe('navigation', () => {
 
   it('closes an open sheet when leaving the register via the URL (phone Back)', () => {
     start();
-    fireEvent.click(screen.getByRole('button', { name: /Διάλεξε όνομα/ }));
-    expect(screen.getByRole('dialog', { name: 'Ποιος κλείνει;' })).toBeTruthy();
+    fireEvent.click(button('Φάκελος'));
+    expect(screen.getByRole('dialog', { name: 'Φάκελος' })).toBeTruthy();
     act(() => {
       window.location.hash = '#/staff';
       window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -247,9 +231,6 @@ describe('navigation', () => {
     const store = memoryStore();
     saveStaff(store, 'local', ['ΓΚΡΕΖΙΟΣ']);
     start(store);
-    fireEvent.click(screen.getByRole('button', { name: /Διάλεξε όνομα/ }));
-    fireEvent.click(screen.getByRole('radio', { name: 'ΓΚΡΕΖΙΟΣ' }));
-    fireEvent.click(button('Εντάξει'));
     type('100€', '1500');
     fireEvent.click(button('Υποβολή'));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { draftReducer, isDraft, newDraft, type Draft } from '../../../src/features/register/draft';
 
-const base = (): Draft => newDraft('d1', '2026-09-28', 'ΓΚΡΕΖΙΟΣ');
+const base = (): Draft => newDraft('d1', '2026-09-28');
 
 describe('draftReducer', () => {
   it('sanitizes typed amounts (comma → dot, junk stripped)', () => {
@@ -27,34 +27,30 @@ describe('draftReducer', () => {
   });
 
   it('adds expenses up to the maximum, edits and removes them', () => {
-    let d = draftReducer(base(), { type: 'addExpense', id: 'e1', max: 2 });
-    d = draftReducer(d, { type: 'addExpense', id: 'e2', max: 2 });
-    d = draftReducer(d, { type: 'addExpense', id: 'e3', max: 2 });
+    let d = draftReducer(base(), { type: 'addExpense', id: 'e1', max: 2, addedBy: null });
+    d = draftReducer(d, { type: 'addExpense', id: 'e2', max: 2, addedBy: null });
+    d = draftReducer(d, { type: 'addExpense', id: 'e3', max: 2, addedBy: null });
     expect(d.expenses.map((e) => e.id)).toEqual(['e1', 'e2']);
     d = draftReducer(d, { type: 'setExpense', id: 'e1', description: ' Nice ', amountText: '7,80' });
-    expect(d.expenses[0]).toEqual({ id: 'e1', description: ' Nice ', amountText: '7.80' });
+    expect(d.expenses[0]).toEqual({ id: 'e1', description: ' Nice ', amountText: '7.80', addedBy: null });
     d = draftReducer(d, { type: 'setExpense', id: 'e1', amountText: '9' });
     expect(d.expenses[0]?.description).toBe(' Nice ');
     d = draftReducer(d, { type: 'removeExpense', id: 'e1' });
     expect(d.expenses.map((e) => e.id)).toEqual(['e2']);
   });
 
-  it('trims staff names and rejects invalid dates', () => {
-    let d = draftReducer(base(), { type: 'setStaff', name: '  ΜΑΡΙΑ ' });
-    expect(d.staffName).toBe('ΜΑΡΙΑ');
-    d = draftReducer(d, { type: 'setDate', date: '2026-02-30' });
-    expect(d.businessDate).toBe('2026-09-28');
-    d = draftReducer(d, { type: 'setDate', date: '2026-09-27' });
-    expect(d.businessDate).toBe('2026-09-27');
+  it('addExpense stores the author', () => {
+    const d = draftReducer(base(), { type: 'addExpense', id: 'e2', max: 5, addedBy: { kind: 'staff', id: 's1' } });
+    expect(d.expenses[0]).toEqual({ id: 'e2', description: '', amountText: '', addedBy: { kind: 'staff', id: 's1' } });
   });
 
-  it('resetInputs clears amounts but keeps staff, date and mode, with a new id', () => {
+  it('resetInputs clears amounts but keeps date and mode, with a new id', () => {
     let d = draftReducer(base(), { type: 'setEntry', denom: 10000, text: '500' });
     d = draftReducer(d, { type: 'setMode', mode: 'count', denominations: [10000] });
-    d = draftReducer(d, { type: 'addExpense', id: 'e1', max: 10 });
+    d = draftReducer(d, { type: 'addExpense', id: 'e1', max: 10, addedBy: null });
     d = draftReducer(d, { type: 'resetInputs', id: 'd2' });
     expect(d).toEqual({
-      id: 'd2', staffName: 'ΓΚΡΕΖΙΟΣ', businessDate: '2026-09-28', mode: 'count',
+      id: 'd2', businessDate: '2026-09-28', mode: 'count',
       entries: {}, channels: {}, expenses: [],
     });
   });
@@ -74,5 +70,15 @@ describe('isDraft', () => {
     expect(isDraft({ ...base(), mode: 'pieces' })).toBe(false);
     expect(isDraft({ ...base(), entries: { '500': 5 } })).toBe(false);
     expect(isDraft({ ...base(), expenses: [{ id: 'e1' }] })).toBe(false);
+    expect(isDraft({ ...base(), staffName: 'old' })).toBe(true);
+  });
+
+  it('accepts expenses with an author or null, rejects ones without an addedBy key (old drafts)', () => {
+    const ex = { id: 'e1', description: '', amountText: '' };
+    expect(isDraft({ ...base(), expenses: [{ ...ex, addedBy: null }] })).toBe(true);
+    expect(isDraft({ ...base(), expenses: [{ ...ex, addedBy: { kind: 'owner' } }] })).toBe(true);
+    expect(isDraft({ ...base(), expenses: [{ ...ex, addedBy: { kind: 'staff', id: 's1' } }] })).toBe(true);
+    expect(isDraft({ ...base(), expenses: [ex] })).toBe(false);
+    expect(isDraft({ ...base(), expenses: [{ ...ex, addedBy: { kind: 'x' } }] })).toBe(false);
   });
 });

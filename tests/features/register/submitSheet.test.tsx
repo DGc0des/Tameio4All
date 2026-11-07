@@ -11,12 +11,12 @@ import { SubmitSheet } from '../../../src/features/register/SubmitSheet';
 afterEach(cleanup);
 
 const d: Draft = {
-  ...newDraft('d1', '2026-09-28', 'ΓΚΡΕΖΙΟΣ'),
+  ...newDraft('d1', '2026-09-28'),
   entries: { '10000': '1500', '5000': '50' },
   channels: { wolt: '45,60' },
   expenses: [
-    { id: 'e1', description: 'Nice', amountText: '13' },
-    { id: 'e2', description: '', amountText: '2' },
+    { id: 'e1', description: 'Nice', amountText: '13', addedBy: { kind: 'owner' } },
+    { id: 'e2', description: '', amountText: '2', addedBy: { kind: 'owner' } },
   ],
 };
 const derived = deriveClosing(cfg, d);
@@ -28,10 +28,9 @@ function setup(onSave: () => SaveResult = vi.fn(() => 'saved' as const), onShare
 }
 
 describe('SubmitSheet', () => {
-  it('shows the share card: staff, date, shared totals, expenses, channels, what stays', () => {
+  it('shows the share card: date, shared totals, expenses, channels, what stays', () => {
     const { dialog } = setup();
     const text = dialog().textContent ?? '';
-    expect(text).toContain('ΓΚΡΕΖΙΟΣ');
     expect(text).toContain('28/09/2026');
     expect(text).toContain('ΤΑΜΕΙΟ');
     expect(text).toContain('ΜΕΤΡΗΤΑ');
@@ -48,14 +47,13 @@ describe('SubmitSheet', () => {
     const { rerender } = render(
       <SubmitSheet config={cfg} draft={d} derived={derived} onSave={() => 'saved'} onShare={vi.fn<ShareFn>(async () => 'shared')} onClose={noop} />,
     );
-    const fresh = newDraft('d2', '2026-09-29', 'ΜΑΡΙΑ');
+    const fresh = newDraft('d2', '2026-09-29');
     rerender(
       <SubmitSheet config={cfg} draft={fresh} derived={deriveClosing(cfg, fresh)} onSave={() => 'saved'} onShare={vi.fn<ShareFn>(async () => 'shared')} onClose={noop} />,
     );
     const text = screen.getByRole('dialog').textContent ?? '';
-    expect(text).toContain('ΓΚΡΕΖΙΟΣ');
     expect(text).toContain('28/09/2026');
-    expect(text).not.toContain('ΜΑΡΙΑ');
+    expect(text).not.toContain('29/09/2026');
   });
 
   it('saves, then offers sharing and a new closing', () => {
@@ -102,7 +100,7 @@ describe('SubmitSheet', () => {
     });
     expect(onShare).toHaveBeenCalledTimes(1);
     const [card, file] = onShare.mock.calls[0]!;
-    expect(card.textContent).toContain('ΓΚΡΕΖΙΟΣ');
+    expect(card.textContent).toContain('28/09/2026');
     expect(file).toBe(photo);
   });
 

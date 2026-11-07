@@ -5,13 +5,13 @@ import {
 } from '../../../src/features/register/derive';
 import { newDraft, type Draft } from '../../../src/features/register/draft';
 
-const draft = (changes: Partial<Draft>): Draft => ({ ...newDraft('d1', '2026-09-28', 'ΓΚΡΕΖΙΟΣ'), ...changes });
+const draft = (changes: Partial<Draft>): Draft => ({ ...newDraft('d1', '2026-09-28'), ...changes });
 
 const V2_TOTALS = { tameio: 185520, expenses_total: 2030, cash: 36755, cash_lim: 38785, income_lim: 78650 };
 const V2_CHANNELS = { kermata: '150', wolt: '45.60', efood: '23,10', mypos: '310.25', eurobank: '88.40' };
-const V2_EXPENSES = [
-  { id: 'e1', description: 'Nice', amountText: '12.50' },
-  { id: 'e2', description: ' Nice ', amountText: '7,80' },
+const V2_EXPENSES: Draft['expenses'] = [
+  { id: 'e1', description: 'Nice', amountText: '12.50', addedBy: { kind: 'owner' } },
+  { id: 'e2', description: ' Nice ', amountText: '7,80', addedBy: { kind: 'owner' } },
 ];
 
 describe('deriveClosing', () => {
@@ -31,8 +31,8 @@ describe('deriveClosing', () => {
     expect(d.coinsCents).toBe(5255);
     expect(d.expensesCents).toBe(2030);
     expect(d.inputs.expenses).toEqual([
-      { description: 'Nice', cents: 1250 },
-      { description: 'Nice', cents: 780 },
+      { id: 'e1', description: 'Nice', cents: 1250, addedBy: { kind: 'owner' } },
+      { id: 'e2', description: 'Nice', cents: 780, addedBy: { kind: 'owner' } },
     ]);
     expect(d.rowCents['10000']).toBe(50000);
     expect(d.expenseRowCents).toEqual({ e1: 1250, e2: 780 });
@@ -65,10 +65,10 @@ describe('deriveClosing', () => {
   it('skips blank expense rows and names invalid ones by description or position', () => {
     const d = derive(draft({
       expenses: [
-        { id: 'a', description: '', amountText: '' },
-        { id: 'b', description: 'Μόνο περιγραφή', amountText: '' },
-        { id: 'c', description: '', amountText: '1.234' },
-        { id: 'd', description: 'Γάλα', amountText: '0' },
+        { id: 'a', description: '', amountText: '', addedBy: null },
+        { id: 'b', description: 'Μόνο περιγραφή', amountText: '', addedBy: null },
+        { id: 'c', description: '', amountText: '1.234', addedBy: null },
+        { id: 'd', description: 'Γάλα', amountText: '0', addedBy: null },
       ],
     }));
     expect(d.inputs.expenses).toEqual([]);
@@ -98,17 +98,33 @@ describe('deriveClosing', () => {
 });
 
 describe('block reasons', () => {
-  it('lists invalid fields, then requires a staff member for submit', () => {
+  it('lists invalid fields, then requires every expense to have an author', () => {
     const bad = draft({ entries: { '1000': '95' }, channels: { wolt: '1.234' } });
     const dBad = derive(bad);
     expect(envelopeBlockReason(dBad)).toBe('Λάθος τιμή: 10€, WOLT');
     expect(submitBlockReason(dBad, bad)).toBe('Λάθος τιμή: 10€, WOLT');
 
-    const noStaff = draft({ staffName: '' });
-    const dOk = derive(noStaff);
-    expect(envelopeBlockReason(dOk)).toBeNull();
-    expect(submitBlockReason(dOk, noStaff)).toBe('Διάλεξε όνομα για υποβολή');
-    expect(submitBlockReason(dOk, draft({}))).toBeNull();
+    const ok = draft({});
+    expect(envelopeBlockReason(derive(ok))).toBeNull();
+    expect(submitBlockReason(derive(ok), ok)).toBeNull();
+
+    const noAuthor = draft({ expenses: [{ id: 'e1', description: 'Nice', amountText: '13', addedBy: null }] });
+    expect(submitBlockReason(derive(noAuthor), noAuthor)).toBe('Συνδέσου ξανά για υποβολή');
+    expect(envelopeBlockReason(derive(noAuthor))).toBeNull();
+  });
+
+  it('emits schema 2 with expense ids and authors; omits addedBy for null authors', () => {
+    const d = draft({
+      expenses: [
+        { id: 'e1', description: ' Nice ', amountText: '13', addedBy: { kind: 'staff', id: 's1' } },
+        { id: 'e2', description: 'x', amountText: '2', addedBy: null },
+      ],
+    });
+    const { inputs } = derive(d);
+    expect(inputs.schema).toBe(2);
+    expect(inputs.expenses[0]).toEqual({ id: 'e1', description: 'Nice', cents: 1300, addedBy: { kind: 'staff', id: 's1' } });
+    expect(inputs.expenses[1]).toEqual({ id: 'e2', description: 'x', cents: 200 });
+    expect('addedBy' in (inputs.expenses[1] ?? {})).toBe(false);
   });
 });
 
