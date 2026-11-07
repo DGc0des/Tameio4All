@@ -129,6 +129,26 @@ begin
 end $$;
 reset role;
 
+-- T9 a retry whose first response was lost across the day change is still a repeat: the key lookup
+-- runs before the day check. (The stored row is moved back a day to simulate it.) A fresh key for
+-- that past date is still wrong_day.
+update public.closings set business_date = business_date - 1 where id = current_setting('t.closing')::uuid;
+set local role authenticated;
+select set_config('t.token3', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+do $$
+declare r jsonb;
+begin
+  r := public.submit_closing(current_setting('t.token3'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date - 1,
+        current_setting('t.good')::jsonb, 'key-1');
+  if r is distinct from jsonb_build_object('ok', true, 'closing_id', current_setting('t.closing')::uuid, 'repeat', true) then
+    raise exception 'T9 retry after day change not a repeat: %', r;
+  end if;
+  r := public.submit_closing(current_setting('t.token3'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date - 1,
+        current_setting('t.good')::jsonb, 'key-9-fresh');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'wrong_day') then raise exception 'T9 fresh key for a past day accepted: %', r; end if;
+end $$;
+reset role;
+
 do $$ begin
   if (select count(*) from public.closings where shop_id = current_setting('t.shop_a')::uuid) <> 2 then
     raise exception 'T7 expected exactly 2 stored closings';
