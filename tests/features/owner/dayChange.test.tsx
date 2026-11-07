@@ -35,7 +35,7 @@ describe('DayChangeCard', () => {
   });
 
   it('shows the owner error message', async () => {
-    const api = fakeApi({ setDayChange: vi.fn(() => fail({ code: 'not_owner' })) });
+    const api = fakeApi({ setDayChange: vi.fn(() => fail<string>({ code: 'not_owner' })) });
     render(<DayChangeCard api={api} shopId={SHOP} />);
     await screen.findByText('Αλλαγή ημέρας');
     fireEvent.change(input(), { target: { value: '05:00' } });
