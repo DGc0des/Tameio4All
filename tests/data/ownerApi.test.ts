@@ -94,4 +94,26 @@ describe('createOwnerApi', () => {
     expect(await throwing.unlockStaff('x')).toEqual({ ok: false, error: { code: 'network' } });
     expect(api).toBeTruthy();
   });
+
+  it('reads the day-change time as HH:MM and hides a switch already in the past', async () => {
+    const past = fake({ data: [{ day_change_time: '06:00:00', day_change_switch_at: '2020-01-01T00:00:00Z' }], error: null });
+    expect(await past.api.dayChange('s1')).toEqual({ ok: true, data: { time: '06:00', fromDate: null } });
+    expect(past.calls[0]).toEqual(['from', 'shops']);
+  });
+
+  it('gives the Athens date of a pending day-change switch', async () => {
+    const { api } = fake({ data: [{ day_change_time: '04:00:00', day_change_switch_at: '2999-03-04T22:30:00Z' }], error: null });
+    expect(await api.dayChange('s1')).toEqual({ ok: true, data: { time: '04:00', fromDate: '2999-03-05' } });
+  });
+
+  it('reports not_owner when no shop row is visible', async () => {
+    const { api } = fake({ data: [], error: null });
+    expect(await api.dayChange('s1')).toEqual({ ok: false, error: { code: 'not_owner' } });
+  });
+
+  it('calls set_day_change_time and returns the from-date', async () => {
+    const { api, calls } = fake({ data: '2026-11-08', error: null });
+    expect(await api.setDayChange('s1', '06:00')).toEqual({ ok: true, data: '2026-11-08' });
+    expect(calls).toEqual([['rpc', 'set_day_change_time', { p_shop_id: 's1', p_time: '06:00' }]]);
+  });
 });

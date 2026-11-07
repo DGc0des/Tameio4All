@@ -35,6 +35,13 @@ export interface DeviceRow {
   revokedAt: string | null;
 }
 
+export interface DayChange {
+  /** HH:MM — closings before this time count for the previous day. */
+  time: string;
+  /** YYYY-MM-DD (Athens) the current time starts to apply on, while that is still ahead; else null. */
+  fromDate: string | null;
+}
+
 /** Everything the owner app does with the server. Screens receive this; tests pass a fake. */
 export interface OwnerApi {
   session(): Promise<SessionInfo | null>;
@@ -50,6 +57,9 @@ export interface OwnerApi {
   renameShop(shopId: string, name: string): Promise<Result<void>>;
   latestConfig(shopId: string): Promise<Result<ConfigRow | null>>;
   publishConfig(shopId: string, expectedVersion: number, config: ShopConfig): Promise<Result<number>>;
+  dayChange(shopId: string): Promise<Result<DayChange>>;
+  /** Resolves to the first business date (YYYY-MM-DD) the new time applies to. */
+  setDayChange(shopId: string, time: string): Promise<Result<string>>;
   listStaff(shopId: string): Promise<Result<StaffRow[]>>;
   createStaff(shopId: string, name: string, pin: string): Promise<Result<string>>;
   setStaffPin(staffId: string, pin: string): Promise<Result<void>>;
