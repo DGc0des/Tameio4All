@@ -113,6 +113,8 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
     [store],
   );
 
+  const onSignOut = useCallback(() => dispatch({ t: 'signed_out' }), []);
+
   switch (gate.s) {
     case 'loading':
       return <p className="notice-soft">Φόρτωση…</p>;
@@ -138,6 +140,8 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
       );
     case 'ready': {
       const { ctx, session } = gate;
+      // api is non-null here: without a client the gate is `unconfigured`.
+      if (api === null) return null;
       if (!isShopConfig(ctx.config)) {
         return (
           <Message title={ctx.shopName}>
@@ -150,17 +154,21 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
           {gate.offline && <OfflineBanner />}
           <RegisterScreen
             key={`${ctx.shopId}:${ctx.businessDate}`}
-            shop={{ id: ctx.shopId, name: ctx.shopName, config: ctx.config }}
-            businessDate={ctx.businessDate}
-            staffName={session.name}
+            ctx={ctx}
+            config={ctx.config}
+            session={session}
+            api={api}
             store={store}
             now={now}
             newId={newId}
             share={share}
             themePref={themePref}
             active={active}
+            offline={gate.offline}
             onTheme={onTheme}
             onOwner={onOwner}
+            onSignOut={onSignOut}
+            onServerError={onServerError}
           />
         </>
       );

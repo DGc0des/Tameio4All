@@ -44,17 +44,6 @@ describe('draftReducer', () => {
     expect(d.expenses[0]).toEqual({ id: 'e2', description: '', amountText: '', addedBy: { kind: 'staff', id: 's1' } });
   });
 
-  it('resetInputs clears amounts but keeps date and mode, with a new id', () => {
-    let d = draftReducer(base(), { type: 'setEntry', denom: 10000, text: '500' });
-    d = draftReducer(d, { type: 'setMode', mode: 'count', denominations: [10000] });
-    d = draftReducer(d, { type: 'addExpense', id: 'e1', max: 10, addedBy: null });
-    d = draftReducer(d, { type: 'resetInputs', id: 'd2' });
-    expect(d).toEqual({
-      id: 'd2', businessDate: '2026-09-28', mode: 'count',
-      entries: {}, channels: {}, expenses: [],
-    });
-  });
-
   it('replace swaps the whole draft', () => {
     const other = newDraft('x', '2026-01-01');
     expect(draftReducer(base(), { type: 'replace', draft: other })).toBe(other);

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { THEME_LABELS } from '../../app/theme';
 import type { ThemePref } from '../../data/local/prefs';
+import { Sheet } from '../../ui/Sheet';
 
 interface Props {
   themePref: ThemePref;
@@ -53,5 +54,27 @@ export function HeaderMenu({ themePref, onTheme, onOwner }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Opened from the header's date · cashier button: hands the phone to another person. */
+export function CashierSheet({ name, onSignOut, onClose }: { name: string; onSignOut: () => Promise<void>; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Sheet title={name} onClose={onClose}>
+      <div className="sheet-actions">
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void onSignOut();
+          }}
+        >
+          Αλλαγή ατόμου
+        </button>
+      </div>
+    </Sheet>
   );
 }

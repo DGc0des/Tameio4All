@@ -3,12 +3,15 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import type { ComponentType } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/app/App';
-import { saveStaffSession } from '../../src/data/local/phone';
+import type { ClosingInputs } from '../../src/core/formula';
+import { loadDraft } from '../../src/data/local/drafts';
+import { loadStaffSession, saveCachedContext, saveStaffSession } from '../../src/data/local/phone';
 import { memoryStore, shopKey, type KeyValueStore } from '../../src/data/local/storage';
-import { loadSubmissions, saveSubmission, type Submission } from '../../src/data/local/submissions';
+import type { DeviceApi } from '../../src/data/remote/deviceApi';
 import type { OwnerAppProps } from '../../src/features/owner/OwnerApp';
 import type { ShareFn } from '../../src/features/register/share';
-import { FAKE_SHOP_ID, fakeDeviceApi } from '../features/phone/fakeDeviceApi';
+import { joinJuicePreset } from '../../src/core/presets';
+import { FAKE_CONFIG_ID, FAKE_SHOP_ID, fail, fakeDeviceApi, ok } from '../features/phone/fakeDeviceApi';
 
 const NOW = () => new Date(2026, 10, 7, 22, 0);
 let n = 0;
@@ -42,10 +45,8 @@ function signedIn(store: KeyValueStore): KeyValueStore {
 }
 
 /** Renders the app and waits until the register is on screen. */
-async function start(store: KeyValueStore = memoryStore(), persistent = true) {
-  render(
-    <App appStore={{ store: signedIn(store), persistent }} deviceApi={fakeDeviceApi()} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />,
-  );
+async function start(store: KeyValueStore = memoryStore(), persistent = true, api: DeviceApi = fakeDeviceApi()) {
+  render(<App appStore={{ store: signedIn(store), persistent }} deviceApi={api} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
   await screen.findByLabelText('100€');
   return store;
 }
@@ -57,6 +58,16 @@ const go = (hash: string) =>
 const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 const barAmount = () => document.querySelector('.bar strong')?.textContent;
 const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+const sheetSubmit = () =>
+  act(async () => {
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
+  });
+/** Opens the submit sheet from the bottom bar and taps its Υποβολή. */
+async function submitClosing() {
+  fireEvent.click(button('Υποβολή'));
+  await sheetSubmit();
+}
+const submitCalls = (api: DeviceApi) => vi.mocked(api.submit).mock.calls;
 
 function typeV2Closing() {
   for (const [label, value] of [
@@ -116,72 +127,131 @@ describe('register flows', () => {
     expect(within(sheet).getByText('✓ Ακριβές ποσό')).toBeTruthy();
   });
 
-  it('submits once, resets the numbers but keeps the date', async () => {
-    const store = await start();
-    // Interim (until Task 6 sets the real author): an expense added now has no author and blocks submit.
+  it('shows the signed-in cashier in the header; «Αλλαγή ατόμου» signs out', async () => {
+    const api = fakeDeviceApi();
+    const store = await start(memoryStore(), true, api);
+    fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Σαβ 07/11 · ΜΑΡΙΑ' }));
+    const sheet = screen.getByRole('dialog', { name: 'ΜΑΡΙΑ' });
+    await act(async () => {
+      fireEvent.click(within(sheet).getByRole('button', { name: 'Αλλαγή ατόμου' }));
+    });
+    expect(api.signOut).toHaveBeenCalledWith('token-1');
+    expect(await screen.findByRole('radio', { name: 'ΜΑΡΙΑ' })).toBeTruthy();
+    expect(loadStaffSession(store)).toBeNull();
+  });
+
+  it('submits once to the server as the signed-in cashier and keeps the draft', async () => {
+    const api = fakeDeviceApi();
+    const store = await start(memoryStore(), true, api);
+    type('100€', '1500');
     fireEvent.click(button('+ Έξοδο'));
+    type('Περιγραφή εξόδου 1', 'Ντόντης');
     type('Ποσό εξόδου 1', '24');
-    expect(button('Υποβολή').disabled).toBe(true);
-    expect(screen.getByText('Συνδέσου ξανά για υποβολή')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Αφαίρεση εξόδου 1' }));
+    await submitClosing();
 
-    type('100€', '1500');
+    expect(submitCalls(api)).toHaveLength(1);
+    const [token, configId, businessDate, inputs, key] = submitCalls(api)[0]!;
+    expect([token, configId, businessDate]).toEqual(['token-1', FAKE_CONFIG_ID, '2026-11-07']);
+    expect(inputs).toEqual<ClosingInputs>({
+      schema: 2,
+      counts: { '10000': 15 },
+      channelCents: {},
+      expenses: [{ id: 'id-2', description: 'Ντόντης', cents: 2400, addedBy: { kind: 'staff', id: 'staff-maria' } }],
+    });
+    expect(typeof key).toBe('string');
 
-    fireEvent.click(button('Υποβολή'));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
-    expect(loadSubmissions(store, FAKE_SHOP_ID)).toHaveLength(1);
-    // The form resets as soon as the closing is saved; the sheet keeps showing the saved closing.
-    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
-    expect(screen.getByRole('dialog', { name: 'Αποθηκεύτηκε ✓' }).textContent).toContain('1.500,00€');
-    fireEvent.click(button('Νέο κλείσιμο'));
-
-    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
-    expect(screen.getByText('Σαβ 07/11 · ΜΑΡΙΑ')).toBeTruthy();
-    expect(screen.getByText('Το κλείσιμο αποθηκεύτηκε')).toBeTruthy();
-    expect(loadSubmissions(store, FAKE_SHOP_ID)).toHaveLength(1);
-  });
-
-  it('says so and keeps the form when the device refuses to save', async () => {
-    const base = memoryStore();
-    const failing: KeyValueStore = {
-      getItem: (k) => base.getItem(k),
-      removeItem: (k) => base.removeItem(k),
-      setItem: (k, v) => {
-        if (k.endsWith(':submissions')) throw new Error('QuotaExceededError');
-        base.setItem(k, v);
-      },
-    };
-    await start(failing);
-    type('100€', '1500');
-    fireEvent.click(button('Υποβολή'));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Υποβολή' }));
-    expect(screen.getByRole('alert').textContent).toBe('Δεν αποθηκεύτηκε. Δοκίμασε ξανά.');
-    expect(screen.queryByText('Το κλείσιμο αποθηκεύτηκε')).toBeNull();
-    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'Υποβλήθηκε ✓' }).textContent).toContain('1.524,00€');
+    expect(screen.getByText('Το κλείσιμο υποβλήθηκε')).toBeTruthy();
+    fireEvent.click(button('Τέλος'));
+    // The draft is kept: the numbers stay in the fields (and in storage) for a later resubmit.
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('1500');
+    expect((screen.getByLabelText('Ποσό εξόδου 1') as HTMLInputElement).value).toBe('24');
+    expect(screen.queryByRole('button', { name: 'Νέο κλείσιμο' })).toBeNull();
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+    expect(loadDraft(store, FAKE_SHOP_ID, '2026-11-07')?.entries['10000']).toBe('1500');
   });
 
-  it('never drops a closing when the fresh draft id collides with an unrelated stored one', async () => {
-    const store = memoryStore();
-    // The very first id a fresh draft gets is 'id-1' (see newId() above) — pre-occupy it with an
-    // unrelated closing so the register's own submission collides with it under a different id.
-    const stale: Submission = {
-      id: 'id-1', shopId: FAKE_SHOP_ID, staffName: 'ΝΙΚΟΣ', businessDate: '2026-09-27',
-      submittedAt: '2026-09-27T21:00:00.000Z',
-      inputs: { schema: 1, counts: { '10000': 3 }, channelCents: {}, expenses: [] },
-    };
-    expect(saveSubmission(store, stale)).toBe('saved');
-
-    await start(store);
+  it('retries inside the sheet with the same key; an edited closing gets a new key', async () => {
+    const api = fakeDeviceApi({
+      submit: vi.fn<DeviceApi['submit']>().mockReturnValueOnce(fail({ code: 'network' })).mockImplementation(() => ok({ closingId: 'c1', repeat: false })),
+    });
+    await start(memoryStore(), true, api);
     type('100€', '1500');
-    fireEvent.click(button('Υποβολή'));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
+    await submitClosing();
+    expect(screen.getByRole('alert').textContent).toBe('Δεν υπάρχει σύνδεση.');
+    await sheetSubmit();
+    expect(screen.getByRole('dialog', { name: 'Υποβλήθηκε ✓' })).toBeTruthy();
+    fireEvent.click(button('Τέλος'));
 
-    const subs = loadSubmissions(store, FAKE_SHOP_ID);
-    expect(subs).toHaveLength(2);
-    expect(subs[0]).toEqual(stale);
-    const fresh = subs.find((s) => s.id !== 'id-1');
-    expect(fresh?.inputs.counts['10000']).toBe(15);
+    type('50€', '100');
+    await submitClosing();
+    const keys = submitCalls(api).map((c) => c[4]);
+    expect(keys).toHaveLength(3);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[0]);
+    expect(submitCalls(api)[1]![3]).toEqual(submitCalls(api)[0]![3]);
+  });
+
+  it('reuses the key when the sheet is reopened for an unchanged closing', async () => {
+    const api = fakeDeviceApi({
+      submit: vi.fn<DeviceApi['submit']>().mockReturnValueOnce(fail({ code: 'network' })).mockImplementation(() => ok({ closingId: 'c1', repeat: true })),
+    });
+    await start(memoryStore(), true, api);
+    type('100€', '1500');
+    await submitClosing();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await submitClosing();
+    const keys = submitCalls(api).map((c) => c[4]);
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]);
+  });
+
+  it('an expired session sends the cashier to sign in and keeps the typed draft', async () => {
+    const api = fakeDeviceApi({ submit: vi.fn(() => fail<{ closingId: string; repeat: boolean }>({ code: 'session_invalid' })) });
+    const store = await start(memoryStore(), true, api);
+    type('100€', '1500');
+    await submitClosing();
+    expect(await screen.findByRole('radio', { name: 'ΜΑΡΙΑ' })).toBeTruthy();
+    expect(loadStaffSession(store)).toBeNull();
+    expect(loadDraft(store, FAKE_SHOP_ID, '2026-11-07')?.entries['10000']).toBe('1500');
+  });
+
+  it('disables Υποβολή while offline', async () => {
+    const store = memoryStore();
+    saveCachedContext(store, { shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-07' });
+    await start(store, true, fakeDeviceApi({ context: vi.fn(() => fail<null>({ code: 'network' })) }));
+    expect(screen.getByText('Εκτός σύνδεσης')).toBeTruthy();
+    type('100€', '1500');
+    expect(button('Υποβολή').disabled).toBe(true);
+    expect(screen.getByText('Χρειάζεται σύνδεση για υποβολή')).toBeTruthy();
+  });
+
+  it('suggests a supplier from the server history and learns a submitted expense', async () => {
+    const api = fakeDeviceApi({
+      suggestionData: vi
+        .fn<DeviceApi['suggestionData']>()
+        .mockReturnValueOnce(ok([{ description: 'Nice', cents: 1300, date: '2026-11-06' }]))
+        .mockImplementation(() =>
+          ok([
+            { description: 'Nice', cents: 1300, date: '2026-11-06' },
+            { description: 'Ντόντης', cents: 2400, date: '2026-11-07' },
+          ]),
+        ),
+    });
+    await start(memoryStore(), true, api);
+    fireEvent.click(button('+ Έξοδο'));
+    type('Ποσό εξόδου 1', '13');
+    expect(await screen.findByRole('button', { name: 'Nice' })).toBeTruthy();
+
+    type('Περιγραφή εξόδου 1', 'Ντόντης');
+    type('Ποσό εξόδου 1', '24');
+    await submitClosing();
+    fireEvent.click(button('Τέλος'));
+    fireEvent.click(button('+ Έξοδο'));
+    type('Ποσό εξόδου 2', '24');
+    expect(await screen.findByRole('button', { name: 'Ντόντης' })).toBeTruthy();
   });
 });
 
@@ -253,21 +323,6 @@ describe('navigation', () => {
     go('#/');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Κλείσιμο ταμείου' })).toBeTruthy();
-  });
-
-  it('stores the next closing even when the person left without tapping Νέο κλείσιμο', async () => {
-    const store = await start();
-    type('100€', '1500');
-    fireEvent.click(button('Υποβολή'));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
-    go('#/owner');
-    go('#/');
-    type('100€', '2000');
-    fireEvent.click(button('Υποβολή'));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
-    const subs = loadSubmissions(store, FAKE_SHOP_ID);
-    expect(subs).toHaveLength(2);
-    expect(subs[1]?.inputs.counts['10000']).toBe(20);
   });
 });
 

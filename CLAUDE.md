@@ -9,7 +9,7 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   `tests/core-purity.test.ts` (a Vitest check, not a linter).
 - `src/features/register/draft.ts` + `derive.ts` — the register's pure model: the draft holds raw
   typed text; `deriveClosing(config, draft)` is the only bridge from text to money.
-- `src/data/local/` — the only code that touches localStorage (drafts, submissions, theme, and `phone.ts`:
+- `src/data/local/` — the only code that touches localStorage (drafts, theme, and `phone.ts`:
   the stored staff session + cached device context).
   Every call is failure-safe; `pickStore()` falls back to memory when storage is unavailable.
 - `src/data/remote/` — the only code importing supabase-js. `owner.ts` (`createOwnerApi`) is the
@@ -55,6 +55,11 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 - Cross-file invariant: the closing `inputs` shape is defined by `ClosingInputs` (src/core) AND
   checked by `private.inputs_shape_ok` (SQL). Bumping `schema` or changing the shape needs a new
   migration updating that check, or phones' submissions will be refused as `bad_inputs`.
+- The register submits only through `DeviceApi.submit` as the signed-in cashier; nothing is stored as a
+  local "submission". The idempotency key is minted when the submit sheet opens and kept while the inputs are
+  unchanged (retries and a reopened sheet reuse it; any edit gets a new key). The draft is kept after a
+  submit. Every submit/suggestion failure goes to `onServerError` → gate; the draft is written first.
+- Expense suggestions come from `DeviceApi.suggestionData` (refetched after each successful submit).
 - `verify_staff_pin` / `submit_closing` return `{ok:false,error}` for expected failures — never raise
   there (a raise rolls back the PIN lockout counter).
 - Owner functions report "not yours" and "doesn't exist" the same way (`not_owner`), so ids can't be

@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { joinJuicePreset as cfg } from '../../../src/core/presets';
-import type { SaveResult } from '../../../src/data/local/submissions';
+import type { ClosingInputs } from '../../../src/core/formula';
+import type { DResult } from '../../../src/data/remote/deviceApi';
 import { deriveClosing } from '../../../src/features/register/derive';
 import { newDraft, type Draft } from '../../../src/features/register/draft';
 import type { ShareFn } from '../../../src/features/register/share';
@@ -21,11 +22,18 @@ const d: Draft = {
 };
 const derived = deriveClosing(cfg, d);
 
-function setup(onSave: () => SaveResult = vi.fn(() => 'saved' as const), onShare: ShareFn = vi.fn(async () => 'shared' as const)) {
+type SubmitFn = (inputs: ClosingInputs) => Promise<DResult<{ closingId: string; repeat: boolean }>>;
+const submitted: SubmitFn = async () => ({ ok: true, data: { closingId: 'c1', repeat: false } });
+
+function setup(onSubmit: SubmitFn = vi.fn(submitted), onShare: ShareFn = vi.fn(async () => 'shared' as const)) {
   const onClose = vi.fn();
-  render(<SubmitSheet config={cfg} draft={d} derived={derived} onSave={onSave} onShare={onShare} onClose={onClose} />);
-  return { onSave, onShare, onClose, dialog: () => screen.getByRole('dialog') };
+  render(<SubmitSheet config={cfg} draft={d} derived={derived} onSubmit={onSubmit} onShare={onShare} onClose={onClose} />);
+  return { onSubmit, onShare, onClose, dialog: () => screen.getByRole('dialog') };
 }
+const tapSubmit = () =>
+  act(async () => {
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Υποβολή' }));
+  });
 
 describe('SubmitSheet', () => {
   it('shows the share card: date, shared totals, expenses, channels, what stays', () => {
@@ -42,37 +50,55 @@ describe('SubmitSheet', () => {
     expect(text).toContain('Χαρτονομίσματα');
   });
 
-  it('keeps showing the closing it was opened with after the form underneath resets', () => {
+  it('submits the closing it was opened with, even if the draft underneath changes', async () => {
+    const onSubmit = vi.fn(submitted);
     const noop = vi.fn();
-    const { rerender } = render(
-      <SubmitSheet config={cfg} draft={d} derived={derived} onSave={() => 'saved'} onShare={vi.fn<ShareFn>(async () => 'shared')} onClose={noop} />,
-    );
+    const share: ShareFn = async () => 'shared';
+    const { rerender } = render(<SubmitSheet config={cfg} draft={d} derived={derived} onSubmit={onSubmit} onShare={share} onClose={noop} />);
     const fresh = newDraft('d2', '2026-09-29');
-    rerender(
-      <SubmitSheet config={cfg} draft={fresh} derived={deriveClosing(cfg, fresh)} onSave={() => 'saved'} onShare={vi.fn<ShareFn>(async () => 'shared')} onClose={noop} />,
-    );
+    rerender(<SubmitSheet config={cfg} draft={fresh} derived={deriveClosing(cfg, fresh)} onSubmit={onSubmit} onShare={share} onClose={noop} />);
     const text = screen.getByRole('dialog').textContent ?? '';
     expect(text).toContain('28/09/2026');
     expect(text).not.toContain('29/09/2026');
+    await tapSubmit();
+    expect(onSubmit).toHaveBeenCalledWith(derived.inputs);
   });
 
-  it('saves, then offers sharing and a new closing', () => {
-    const { onSave, onClose } = setup();
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
-    expect(onSave).toHaveBeenCalledTimes(1);
-    const saved = screen.getByRole('dialog', { name: 'Αποθηκεύτηκε ✓' });
-    expect(within(saved).queryByRole('button', { name: 'Υποβολή' })).toBeNull();
-    fireEvent.click(within(saved).getByRole('button', { name: 'Νέο κλείσιμο' }));
-    expect(onClose).toHaveBeenCalledWith(true);
+  it('submits, then offers sharing and closing the sheet', async () => {
+    const { onSubmit, onClose } = setup();
+    await tapSubmit();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const done = screen.getByRole('dialog', { name: 'Υποβλήθηκε ✓' });
+    expect(within(done).queryByRole('button', { name: 'Υποβολή' })).toBeNull();
+    expect(within(done).queryByRole('button', { name: 'Νέο κλείσιμο' })).toBeNull();
+    fireEvent.click(within(done).getByRole('button', { name: 'Τέλος' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the form and says so when saving fails', () => {
-    const { onClose } = setup(vi.fn(() => 'failed' as const));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Υποβολή' }));
-    expect(screen.getByRole('alert').textContent).toBe('Δεν αποθηκεύτηκε. Δοκίμασε ξανά.');
+  it('says why a submit failed and lets the person try again', async () => {
+    const onSubmit = vi.fn<SubmitFn>().mockResolvedValueOnce({ ok: false, error: { code: 'network' } }).mockImplementation(submitted);
+    setup(onSubmit);
+    await tapSubmit();
+    expect(screen.getByRole('alert').textContent).toBe('Δεν υπάρχει σύνδεση.');
     expect(screen.getByRole('dialog', { name: 'Υποβολή' })).toBeTruthy();
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledWith(false);
+    expect(screen.queryByRole('button', { name: 'Κοινοποίηση' })).toBeNull();
+    await tapSubmit();
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('dialog', { name: 'Υποβλήθηκε ✓' })).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('ignores a second tap while the submit is in flight', async () => {
+    let resolve: (r: DResult<{ closingId: string; repeat: boolean }>) => void = () => {};
+    const onSubmit = vi.fn<SubmitFn>(() => new Promise((r) => (resolve = r)));
+    setup(onSubmit);
+    const btn = within(screen.getByRole('dialog')).getByRole('button', { name: 'Υποβολή' }) as HTMLButtonElement;
+    fireEvent.click(btn);
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    await act(async () => resolve({ ok: true, data: { closingId: 'c1', repeat: true } }));
+    expect(screen.getByRole('dialog', { name: 'Υποβλήθηκε ✓' })).toBeTruthy();
   });
 
   it('keeps the photo picker keyboard-reachable instead of removing it from the tab order', () => {
@@ -94,7 +120,7 @@ describe('SubmitSheet', () => {
     const fileInput = screen.getByLabelText('Φωτογραφία Ζ');
     fireEvent.change(fileInput, { target: { files: [photo] } });
     expect(screen.getByText('✓ Φωτογραφία Ζ')).toBeTruthy();
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Υποβολή' }));
+    await tapSubmit();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Κοινοποίηση' }));
     });
@@ -106,7 +132,7 @@ describe('SubmitSheet', () => {
 
   it('reports a failed share', async () => {
     setup(undefined, vi.fn<ShareFn>(async () => 'failed'));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Υποβολή' }));
+    await tapSubmit();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Κοινοποίηση' }));
     });

@@ -1,13 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { ClosingInputs } from '../../src/core/formula';
 import { clearDraft, loadDraft, saveDraft } from '../../src/data/local/drafts';
 import { loadTheme, saveTheme } from '../../src/data/local/prefs';
 import {
   memoryStore, readJson, removeKey, shopKey, writeJson, type KeyValueStore,
 } from '../../src/data/local/storage';
-import {
-  loadSubmissions, MAX_SUBMISSIONS, pastExpenses, saveSubmission, type Submission,
-} from '../../src/data/local/submissions';
 import { newDraft } from '../../src/features/register/draft';
 
 const throwing: KeyValueStore = {
@@ -15,14 +11,6 @@ const throwing: KeyValueStore = {
   setItem: () => { throw new Error('QuotaExceededError'); },
   removeItem: () => { throw new Error('denied'); },
 };
-
-const inputs = (expenses: ClosingInputs['expenses'] = []): ClosingInputs => ({
-  schema: 1, counts: { '10000': 5 }, channelCents: {}, expenses,
-});
-const sub = (id: string, expenses: ClosingInputs['expenses'] = []): Submission => ({
-  id, shopId: 'local', staffName: 'ΓΚΡΕΖΙΟΣ', businessDate: '2026-09-28',
-  submittedAt: '2026-09-28T21:00:00.000Z', inputs: inputs(expenses),
-});
 
 describe('storage', () => {
   it('namespaces keys per shop', () => {
@@ -77,57 +65,6 @@ describe('drafts', () => {
     expect(loadDraft(s, 'local', '2026-09-28')).toBeNull();
     expect(saveDraft(throwing, 'local', newDraft('d1', '2026-09-28'), now)).toBe(false);
     expect(loadDraft(throwing, 'local', '2026-09-28')).toBeNull();
-  });
-});
-
-describe('submissions', () => {
-  it('saves once per id (double tap / retry safe)', () => {
-    const s = memoryStore();
-    expect(saveSubmission(s, sub('a'))).toBe('saved');
-    expect(saveSubmission(s, sub('a'))).toBe('duplicate');
-    expect(loadSubmissions(s, 'local')).toHaveLength(1);
-  });
-
-  it('reports failure when storage refuses the write', () => {
-    expect(saveSubmission(throwing, sub('a'))).toBe('failed');
-  });
-
-  it('reports duplicate only when the same id carries the same inputs', () => {
-    const s = memoryStore();
-    expect(saveSubmission(s, sub('a'))).toBe('saved');
-    expect(saveSubmission(s, sub('a'))).toBe('duplicate');
-    expect(loadSubmissions(s, 'local')).toHaveLength(1);
-  });
-
-  it('reports conflict and keeps the stored record when the same id carries different inputs', () => {
-    const s = memoryStore();
-    expect(saveSubmission(s, sub('a'))).toBe('saved');
-    const changed = { ...sub('a', [{ description: 'X', cents: 500 }]) };
-    expect(saveSubmission(s, changed)).toBe('conflict');
-    const stored = loadSubmissions(s, 'local');
-    expect(stored).toHaveLength(1);
-    expect(stored[0]?.inputs.expenses).toEqual([]);
-  });
-
-  it('skips malformed records', () => {
-    const s = memoryStore();
-    s.setItem(shopKey('local', 'submissions'), JSON.stringify([sub('a'), { id: 1 }, null, { ...sub('b'), inputs: 3 }]));
-    expect(loadSubmissions(s, 'local').map((x) => x.id)).toEqual(['a']);
-  });
-
-  it(`keeps only the newest ${MAX_SUBMISSIONS}`, () => {
-    const s = memoryStore();
-    for (let i = 0; i <= MAX_SUBMISSIONS; i++) saveSubmission(s, sub(`s${i}`));
-    const ids = loadSubmissions(s, 'local').map((x) => x.id);
-    expect(ids).toHaveLength(MAX_SUBMISSIONS);
-    expect(ids[0]).toBe('s1');
-    expect(ids.at(-1)).toBe(`s${MAX_SUBMISSIONS}`);
-  });
-
-  it('turns submissions into past expenses dated by business date', () => {
-    expect(pastExpenses([sub('a', [{ description: 'Nice', cents: 1300 }])])).toEqual([
-      { description: 'Nice', cents: 1300, date: '2026-09-28' },
-    ]);
   });
 });
 

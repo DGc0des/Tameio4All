@@ -33,7 +33,6 @@ export type DraftAction =
   | { type: 'addExpense'; id: string; max: number; addedBy: ExpenseAuthor | null }
   | { type: 'setExpense'; id: string; description?: string; amountText?: string }
   | { type: 'removeExpense'; id: string }
-  | { type: 'resetInputs'; id: string }
   | { type: 'replace'; draft: Draft };
 
 export type DraftDispatch = (action: DraftAction) => void;
@@ -71,8 +70,6 @@ export function draftReducer(draft: Draft, action: DraftAction): Draft {
       };
     case 'removeExpense':
       return { ...draft, expenses: draft.expenses.filter((e) => e.id !== action.id) };
-    case 'resetInputs':
-      return newDraft(action.id, draft.businessDate, draft.mode);
     case 'replace':
       return action.draft;
   }

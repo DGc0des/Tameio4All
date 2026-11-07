@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { joinJuicePreset as cfg } from '../../../src/core/presets';
 import type { SupplierHistory } from '../../../src/core/suggestions';
 import { deriveClosing } from '../../../src/features/register/derive';
-import { draftReducer, newDraft } from '../../../src/features/register/draft';
+import { draftReducer, newDraft, type Draft } from '../../../src/features/register/draft';
 import { ExpensesCard } from '../../../src/features/register/ExpensesCard';
 
 afterEach(cleanup);
@@ -14,16 +14,35 @@ let n = 0;
 const nextId = () => `e${++n}`;
 const HISTORY: SupplierHistory = { 'Ντόντης': [2400, 1800], 'Nice': [1300] };
 
+let lastDraft: Draft | null = null;
+
 function Harness({ max = 10, history = HISTORY }: { max?: number; history?: SupplierHistory }) {
   const [draft, dispatch] = useReducer(draftReducer, null, () => newDraft('d1', '2026-09-28'));
+  lastDraft = draft;
   const derived = deriveClosing(cfg, draft);
-  return <ExpensesCard maxExpenses={max} draft={draft} derived={derived} history={history} dispatch={dispatch} newId={nextId} />;
+  return (
+    <ExpensesCard
+      maxExpenses={max}
+      draft={draft}
+      derived={derived}
+      history={history}
+      author={{ kind: 'staff', id: 'staff-maria' }}
+      dispatch={dispatch}
+      newId={nextId}
+    />
+  );
 }
 
 const add = () => fireEvent.click(screen.getByRole('button', { name: '+ Έξοδο' }));
 const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
 describe('ExpensesCard', () => {
+  it('a new line carries the signed-in author', () => {
+    render(<Harness />);
+    add();
+    expect(lastDraft?.expenses[0]?.addedBy).toEqual({ kind: 'staff', id: 'staff-maria' });
+  });
+
   it('adds rows one at a time and totals them in the header', () => {
     render(<Harness />);
     add();
