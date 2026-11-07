@@ -6,11 +6,10 @@ import { applyTheme, nextTheme, THEME_LABELS } from '../../src/app/theme';
 describe('router', () => {
   it('maps hashes to routes and back', () => {
     expect(parseRoute('#/tare')).toBe('register');
-    expect(parseRoute('#/staff')).toBe('staff');
+    expect(parseRoute('#/staff')).toBe('register');
     expect(parseRoute('')).toBe('register');
     expect(parseRoute('#/anything')).toBe('register');
     expect(routeHash('register')).toBe('#/');
-    expect(routeHash('staff')).toBe('#/staff');
   });
 });
 

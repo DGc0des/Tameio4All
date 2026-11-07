@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
-import { formatDayEl, todayIso } from '../../app/dates';
-import type { Route } from '../../app/router';
-import type { LocalShop } from '../../app/shop';
+import { formatDayEl } from '../../app/dates';
+import type { ShopConfig } from '../../core/config';
 import { isBill } from '../../core/denominations';
 import { buildSupplierHistory } from '../../core/suggestions';
 import { loadDraft } from '../../data/local/drafts';
@@ -23,28 +22,37 @@ import { SubmitSheet } from './SubmitSheet';
 import { SummaryCard } from './SummaryCard';
 import { useDraftAutosave } from './useDraftAutosave';
 
+/** The shop the register works for; `config` has already passed `isShopConfig`. */
+export interface RegisterShop {
+  id: string;
+  name: string;
+  config: ShopConfig;
+}
+
 export interface RegisterProps {
-  shop: LocalShop;
+  shop: RegisterShop;
+  /** The server's business date (DeviceContext.businessDate); the draft belongs to it. */
+  businessDate: string;
+  /** The signed-in cashier, shown in the header. */
+  staffName: string;
   store: KeyValueStore;
   now: () => Date;
   newId: () => string;
   share: ShareFn;
-  staff: readonly string[];
   themePref: ThemePref;
   active: boolean;
   onTheme: () => void;
-  onNavigate: (route: Route) => void;
   onOwner: () => void;
 }
 
 type SheetName = 'envelope' | 'submit';
 
-export function RegisterScreen({ shop, store, now, newId, share, staff, themePref, active, onTheme, onNavigate, onOwner }: RegisterProps) {
+export function RegisterScreen({ shop, businessDate, staffName, store, now, newId, share, themePref, active, onTheme, onOwner }: RegisterProps) {
   const { config } = shop;
   const [draft, dispatch] = useReducer(
     draftReducer,
     null,
-    (): Draft => loadDraft(store, shop.id, now().getTime()) ?? newDraft(newId(), todayIso(now())),
+    (): Draft => loadDraft(store, shop.id, businessDate) ?? newDraft(newId(), businessDate),
   );
   const derived = useMemo(() => deriveClosing(config, draft), [config, draft]);
   const [submissions, setSubmissions] = useState(() => loadSubmissions(store, shop.id));
@@ -60,7 +68,7 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Leaving the register (e.g. phone Back to #/staff) must not leave a sheet mounted-but-hidden
+  // Leaving the register (e.g. into the owner area) must not leave a sheet mounted-but-hidden
   // with its listeners (Escape, outside click) still live.
   useEffect(() => {
     if (!active) {
@@ -106,9 +114,11 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
       <header className="top">
         <div>
           <h1>Κλείσιμο ταμείου</h1>
-          <span className="meta-btn">{formatDayEl(draft.businessDate)}</span>
+          <span className="meta-btn">
+            {formatDayEl(draft.businessDate)} · {staffName}
+          </span>
         </div>
-        {active && <HeaderMenu themePref={themePref} onNavigate={onNavigate} onTheme={onTheme} onOwner={onOwner} />}
+        {active && <HeaderMenu themePref={themePref} onTheme={onTheme} onOwner={onOwner} />}
       </header>
       <main className="page">
         <ModeSwitch mode={draft.mode} onChange={(mode) => dispatch({ type: 'setMode', mode, denominations: config.denominations })} />

@@ -9,13 +9,17 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   `tests/core-purity.test.ts` (a Vitest check, not a linter).
 - `src/features/register/draft.ts` + `derive.ts` — the register's pure model: the draft holds raw
   typed text; `deriveClosing(config, draft)` is the only bridge from text to money.
-- `src/data/local/` — the only code that touches localStorage (drafts, submissions, staff, theme).
+- `src/data/local/` — the only code that touches localStorage (drafts, submissions, theme, and `phone.ts`:
+  the stored staff session + cached device context).
   Every call is failure-safe; `pickStore()` falls back to memory when storage is unavailable.
 - `src/data/remote/` — the only code importing supabase-js. `owner.ts` (`createOwnerApi`) is the
   one path for owner reads/writes; `errors.ts` maps every failure into the closed `OwnerError`
   union; `client.ts` builds the PKCE client.
 - `src/features/owner/` — owner area (lazy-loaded from `#/owner`): `model/` is pure (settings
   reducer, terms, preview, limits, pairing, messages); screens get an injected `OwnerApi`.
+- `src/features/phone/` — phone shell (lazy `PhoneEntry` builds the real `DeviceApi`): `model/gate.ts` is the
+  pure gate reducer (loading → unconfigured | offline_no_cache | unpaired → signed_out → ready); `PhoneApp`
+  renders only from it; `PairScreen`, `SignInScreen`. App tests pass `deviceApi={fakeDeviceApi()}`.
 - `src/ui/` primitives, `src/features/*` screens and sheets, `src/app/` composition (App, hash
   router, theme, error boundary).
 - `supabase/migrations/` — the database (source of truth; applied to the dev project
@@ -77,6 +81,10 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 - `publish_config` conflicts are never retried automatically; the owner chooses «Φόρτωση νέας» or
   «Δημοσίευση πάνω της».
 - The settings preview computes only through `previewTotals` → `evaluateTotals`.
+- Phone: a stored `StaffSession` is used only when its `shopId` and `businessDate` match the device context;
+  it is saved while the gate is `ready` and cleared on `signed_out`/`unpaired`. A paired phone with nobody
+  signed in renders only the sign-in screen (no register fields, no amounts). A draft is discarded when its
+  `businessDate` differs from the server's (`loadDraft(store, shopId, businessDate)`; no TTL).
 
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.
@@ -85,5 +93,4 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 ## DEV ONLY register
 | What | Where | Remove when |
 |---|---|---|
-| `LOCAL_SHOP` — Join Juice preset as the only shop | `src/app/shop.ts` | Plan 4b (owner setup) |
-| Device-local staff list + Προσωπικό screen | `src/data/local/staff.ts`, `src/features/staff/StaffScreen.tsx` | Plan 4b (server staff + PIN) |
+| (none) | | |

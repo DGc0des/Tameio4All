@@ -3,13 +3,14 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import type { ComponentType } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/app/App';
-import { loadStaff, saveStaff } from '../../src/data/local/staff';
+import { saveStaffSession } from '../../src/data/local/phone';
 import { memoryStore, shopKey, type KeyValueStore } from '../../src/data/local/storage';
 import { loadSubmissions, saveSubmission, type Submission } from '../../src/data/local/submissions';
 import type { OwnerAppProps } from '../../src/features/owner/OwnerApp';
 import type { ShareFn } from '../../src/features/register/share';
+import { FAKE_SHOP_ID, fakeDeviceApi } from '../features/phone/fakeDeviceApi';
 
-const NOW = () => new Date(2026, 8, 28, 22, 0);
+const NOW = () => new Date(2026, 10, 7, 22, 0);
 let n = 0;
 const newId = () => `id-${++n}`;
 const share = vi.fn<ShareFn>(async () => 'shared');
@@ -23,10 +24,36 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function start(store: KeyValueStore = memoryStore(), persistent = true) {
-  render(<App appStore={{ store, persistent }} now={NOW} newId={newId} share={share} />);
+const OwnerStub: ComponentType<Omit<OwnerAppProps, 'api'>> = ({ route, redirect, onRedirectHandled }) => (
+  <div>
+    <p>
+      owner:{route.name}:{redirect?.kind ?? 'none'}
+    </p>
+    <button type="button" onClick={onRedirectHandled}>
+      handle redirect
+    </button>
+  </div>
+);
+
+/** A paired phone with ΜΑΡΙΑ signed in for the fake context's business date. */
+function signedIn(store: KeyValueStore): KeyValueStore {
+  saveStaffSession(store, { token: 'token-1', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-07', shopId: FAKE_SHOP_ID });
   return store;
 }
+
+/** Renders the app and waits until the register is on screen. */
+async function start(store: KeyValueStore = memoryStore(), persistent = true) {
+  render(
+    <App appStore={{ store: signedIn(store), persistent }} deviceApi={fakeDeviceApi()} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />,
+  );
+  await screen.findByLabelText('100€');
+  return store;
+}
+const go = (hash: string) =>
+  act(() => {
+    window.location.hash = hash;
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  });
 const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 const barAmount = () => document.querySelector('.bar strong')?.textContent;
 const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
@@ -45,16 +72,16 @@ function typeV2Closing() {
 }
 
 describe('register flows', () => {
-  it('reproduces a tameioV2 closing end to end (comma decimals included)', () => {
-    start();
+  it('reproduces a tameioV2 closing end to end (comma decimals included)', async () => {
+    await start();
     typeV2Closing();
     expect(barAmount()).toBe('367,55€');
     expect(screen.getByRole('region', { name: 'Σύνοψη' }).textContent).toContain('1.855,20€');
     expect(screen.getByRole('region', { name: 'Έξοδα' }).textContent).toContain('20,30€');
   });
 
-  it('switching € → # converts what was typed and keeps the totals', () => {
-    start();
+  it('switching € → # converts what was typed and keeps the totals', async () => {
+    await start();
     type('100€', '1500');
     fireEvent.click(button('# Κομμάτια'));
     const field = screen.getByLabelText('100€') as HTMLInputElement;
@@ -63,23 +90,23 @@ describe('register flows', () => {
     expect(barAmount()).toBe('500,00€');
   });
 
-  it('blocks Φάκελος and Υποβολή while a field is wrong, and names it', () => {
-    start();
+  it('blocks Φάκελος and Υποβολή while a field is wrong, and names it', async () => {
+    await start();
     type('10€', '95');
     expect(button('Φάκελος').disabled).toBe(true);
     expect(button('Υποβολή').disabled).toBe(true);
     expect(screen.getByText('Λάθος τιμή: 10€')).toBeTruthy();
   });
 
-  it('flags a Greek thousands separator instead of reading it as 1,50€', () => {
-    start();
+  it('flags a Greek thousands separator instead of reading it as 1,50€', async () => {
+    await start();
     type('100€', '1.500');
     expect(screen.getByLabelText('100€').getAttribute('aria-invalid')).toBe('true');
     expect(button('Φάκελος').disabled).toBe(true);
   });
 
-  it('opens the exact Φάκελος (60€ as 3×20€)', () => {
-    start();
+  it('opens the exact Φάκελος (60€ as 3×20€)', async () => {
+    await start();
     type('50€', '50');
     type('20€', '60');
     type('ΚΕΡΜΑΤΑ', '950');
@@ -89,10 +116,8 @@ describe('register flows', () => {
     expect(within(sheet).getByText('✓ Ακριβές ποσό')).toBeTruthy();
   });
 
-  it('submits once, resets the numbers but keeps the date', () => {
-    const store = memoryStore();
-    saveStaff(store, 'local', ['ΓΚΡΕΖΙΟΣ']);
-    start(store);
+  it('submits once, resets the numbers but keeps the date', async () => {
+    const store = await start();
     // Interim (until Task 6 sets the real author): an expense added now has no author and blocks submit.
     fireEvent.click(button('+ Έξοδο'));
     type('Ποσό εξόδου 1', '24');
@@ -104,19 +129,19 @@ describe('register flows', () => {
 
     fireEvent.click(button('Υποβολή'));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
-    expect(loadSubmissions(store, 'local')).toHaveLength(1);
+    expect(loadSubmissions(store, FAKE_SHOP_ID)).toHaveLength(1);
     // The form resets as soon as the closing is saved; the sheet keeps showing the saved closing.
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
     expect(screen.getByRole('dialog', { name: 'Αποθηκεύτηκε ✓' }).textContent).toContain('1.500,00€');
     fireEvent.click(button('Νέο κλείσιμο'));
 
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
-    expect(screen.getByText('Δευ 28/09')).toBeTruthy();
+    expect(screen.getByText('Σαβ 07/11 · ΜΑΡΙΑ')).toBeTruthy();
     expect(screen.getByText('Το κλείσιμο αποθηκεύτηκε')).toBeTruthy();
-    expect(loadSubmissions(store, 'local')).toHaveLength(1);
+    expect(loadSubmissions(store, FAKE_SHOP_ID)).toHaveLength(1);
   });
 
-  it('says so and keeps the form when the device refuses to save', () => {
+  it('says so and keeps the form when the device refuses to save', async () => {
     const base = memoryStore();
     const failing: KeyValueStore = {
       getItem: (k) => base.getItem(k),
@@ -126,8 +151,7 @@ describe('register flows', () => {
         base.setItem(k, v);
       },
     };
-    saveStaff(failing, 'local', ['ΓΚΡΕΖΙΟΣ']);
-    start(failing);
+    await start(failing);
     type('100€', '1500');
     fireEvent.click(button('Υποβολή'));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Υποβολή' }));
@@ -137,24 +161,23 @@ describe('register flows', () => {
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('1500');
   });
 
-  it('never drops a closing when the fresh draft id collides with an unrelated stored one', () => {
+  it('never drops a closing when the fresh draft id collides with an unrelated stored one', async () => {
     const store = memoryStore();
-    saveStaff(store, 'local', ['ΓΚΡΕΖΙΟΣ']);
     // The very first id a fresh draft gets is 'id-1' (see newId() above) — pre-occupy it with an
     // unrelated closing so the register's own submission collides with it under a different id.
     const stale: Submission = {
-      id: 'id-1', shopId: 'local', staffName: 'ΝΙΚΟΣ', businessDate: '2026-09-27',
+      id: 'id-1', shopId: FAKE_SHOP_ID, staffName: 'ΝΙΚΟΣ', businessDate: '2026-09-27',
       submittedAt: '2026-09-27T21:00:00.000Z',
       inputs: { schema: 1, counts: { '10000': 3 }, channelCents: {}, expenses: [] },
     };
     expect(saveSubmission(store, stale)).toBe('saved');
 
-    start(store);
+    await start(store);
     type('100€', '1500');
     fireEvent.click(button('Υποβολή'));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
 
-    const subs = loadSubmissions(store, 'local');
+    const subs = loadSubmissions(store, FAKE_SHOP_ID);
     expect(subs).toHaveLength(2);
     expect(subs[0]).toEqual(stale);
     const fresh = subs.find((s) => s.id !== 'id-1');
@@ -163,44 +186,55 @@ describe('register flows', () => {
 });
 
 describe('persistence and resilience', () => {
-  it('restores the draft after a reload', () => {
+  it('restores the draft after a reload', async () => {
+    const store = await start();
+    // Faked only after the async load: RTL's findBy polling needs the real setTimeout.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const store = start();
     type('100€', '500');
     act(() => {
       vi.advanceTimersByTime(350);
     });
+    vi.useRealTimers();
     cleanup();
-    start(store);
+    await start(store);
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('500');
   });
 
-  it('starts fresh when the stored draft is corrupt', () => {
+  it('starts fresh when the stored draft is corrupt', async () => {
     const store = memoryStore();
-    store.setItem(shopKey('local', 'draft'), JSON.stringify({ savedAt: NOW().getTime(), draft: { id: 5 } }));
-    start(store);
+    store.setItem(shopKey(FAKE_SHOP_ID, 'draft'), JSON.stringify({ savedAt: NOW().getTime(), draft: { id: 5 } }));
+    await start(store);
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
     expect(screen.getByRole('heading', { name: 'Κλείσιμο ταμείου' })).toBeTruthy();
   });
 
-  it('warns when storage is unavailable', () => {
-    start(memoryStore(), false);
+  it('warns when storage is unavailable', async () => {
+    await start(memoryStore(), false);
     expect(screen.getByText('Η αποθήκευση στη συσκευή δεν είναι διαθέσιμη — τα στοιχεία χάνονται αν κλείσει η σελίδα.')).toBeTruthy();
   });
 });
 
 describe('navigation', () => {
-  it('adds a name in Προσωπικό', () => {
-    const store = start();
+  it('the retired #/staff address opens the register', async () => {
+    window.location.hash = '#/staff';
+    await start();
+    expect(screen.getByRole('heading', { name: 'Κλείσιμο ταμείου' })).toBeTruthy();
     fireEvent.click(button('Μενού'));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Προσωπικό' }));
-    type('Νέο όνομα', 'ΜΑΡΙΑ');
-    fireEvent.click(button('Προσθήκη'));
-    expect(loadStaff(store, 'local')).toEqual(['ΜΑΡΙΑ']);
+    expect(screen.queryByRole('menuitem', { name: 'Προσωπικό' })).toBeNull();
   });
 
-  it('has no Αποβάρα in the menu and fills ΚΕΡΜΑΤΑ from the calculator', () => {
-    start();
+  it('drops a stored draft from another business date', async () => {
+    const store = memoryStore();
+    store.setItem(
+      shopKey(FAKE_SHOP_ID, 'draft'),
+      JSON.stringify({ savedAt: NOW().getTime(), draft: { id: 'old', businessDate: '2026-11-06', mode: 'amount', entries: { '10000': '500' }, channels: {}, expenses: [] } }),
+    );
+    await start(store);
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
+  });
+
+  it('has no Αποβάρα in the menu and fills ΚΕΡΜΑΤΑ from the calculator', async () => {
+    await start();
     fireEvent.click(button('Άθροισμα για ΚΕΡΜΑΤΑ'));
     type('Ποσό 1', '100');
     type('Ποσό 2', '50');
@@ -210,93 +244,59 @@ describe('navigation', () => {
     expect(screen.queryByRole('menuitem', { name: 'Αποβάρα' })).toBeNull();
   });
 
-  it('closes an open sheet when leaving the register via the URL (phone Back)', () => {
-    start();
+  it('closes an open sheet when leaving the register via the URL', async () => {
+    await start();
     fireEvent.click(button('Φάκελος'));
     expect(screen.getByRole('dialog', { name: 'Φάκελος' })).toBeTruthy();
-    act(() => {
-      window.location.hash = '#/staff';
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-    });
+    go('#/owner');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    act(() => {
-      window.location.hash = '#/';
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-    });
+    go('#/');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Κλείσιμο ταμείου' })).toBeTruthy();
   });
 
-  it('stores the next closing even when the person left without tapping Νέο κλείσιμο', () => {
-    const store = memoryStore();
-    saveStaff(store, 'local', ['ΓΚΡΕΖΙΟΣ']);
-    start(store);
+  it('stores the next closing even when the person left without tapping Νέο κλείσιμο', async () => {
+    const store = await start();
     type('100€', '1500');
     fireEvent.click(button('Υποβολή'));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
-    act(() => {
-      window.location.hash = '#/staff';
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-    });
-    act(() => {
-      window.location.hash = '#/';
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-    });
+    go('#/owner');
+    go('#/');
     type('100€', '2000');
     fireEvent.click(button('Υποβολή'));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
-    const subs = loadSubmissions(store, 'local');
+    const subs = loadSubmissions(store, FAKE_SHOP_ID);
     expect(subs).toHaveLength(2);
     expect(subs[1]?.inputs.counts['10000']).toBe(20);
   });
 });
 
-const OwnerStub: ComponentType<Omit<OwnerAppProps, 'api'>> = ({ route, redirect, onRedirectHandled }) => (
-  <div>
-    <p>
-      owner:{route.name}:{redirect?.kind ?? 'none'}
-    </p>
-    <button type="button" onClick={onRedirectHandled}>
-      handle redirect
-    </button>
-  </div>
-);
-
 describe('owner area', () => {
   it('opens from the menu and keeps the register mounted', async () => {
-    render(<App appStore={{ store: memoryStore(), persistent: true }} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
+    await start();
     type('100€', '500');
     fireEvent.click(screen.getByRole('button', { name: 'Μενού' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Διαχείριση καταστήματος' }));
     expect(await screen.findByText('owner:shops:none')).toBeTruthy();
     expect(window.location.hash).toBe('#/owner');
-    act(() => {
-      window.location.hash = '#/';
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-    });
+    go('#/');
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('500');
   });
 
   it('routes an email-link return to the owner area with the parsed redirect', async () => {
     window.history.replaceState(null, '', '/?auth=recovery&code=abc');
-    render(<App appStore={{ store: memoryStore(), persistent: true }} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
+    await start();
     expect(await screen.findByText('owner:shops:recovery')).toBeTruthy();
     window.history.replaceState(null, '', '/');
   });
 
   it('does not keep offering the used-up redirect after leaving and returning to the owner area', async () => {
     window.history.replaceState(null, '', '/?auth=recovery&code=abc');
-    render(<App appStore={{ store: memoryStore(), persistent: true }} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
+    await start();
     expect(await screen.findByText('owner:shops:recovery')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'handle redirect' }));
-    act(() => {
-      window.location.hash = '#/';
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-    });
-    act(() => {
-      window.location.hash = '#/owner';
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-    });
+    go('#/');
+    go('#/owner');
     expect(await screen.findByText('owner:shops:none')).toBeTruthy();
     window.history.replaceState(null, '', '/');
   });

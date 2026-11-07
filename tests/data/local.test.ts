@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ClosingInputs } from '../../src/core/formula';
-import { clearDraft, DRAFT_TTL_MS, loadDraft, saveDraft } from '../../src/data/local/drafts';
+import { clearDraft, loadDraft, saveDraft } from '../../src/data/local/drafts';
 import { loadTheme, saveTheme } from '../../src/data/local/prefs';
-import { loadStaff, normalizeStaff, saveStaff } from '../../src/data/local/staff';
 import {
   memoryStore, readJson, removeKey, shopKey, writeJson, type KeyValueStore,
 } from '../../src/data/local/storage';
@@ -49,35 +48,35 @@ describe('storage', () => {
 describe('drafts', () => {
   const now = 1_790_000_000_000;
 
-  it('restores a draft saved within 10 hours', () => {
+  it('restores a draft of the same business date, whatever its age', () => {
     const s = memoryStore();
     const d = newDraft('d1', '2026-09-28');
     expect(saveDraft(s, 'local', d, now)).toBe(true);
-    expect(loadDraft(s, 'local', now + DRAFT_TTL_MS - 1)).toEqual(d);
+    expect(loadDraft(s, 'local', '2026-09-28')).toEqual(d);
   });
 
-  it('drops an expired draft and deletes it', () => {
+  it('drops a draft of another business date and deletes it', () => {
     const s = memoryStore();
     saveDraft(s, 'local', newDraft('d1', '2026-09-28'), now);
-    expect(loadDraft(s, 'local', now + DRAFT_TTL_MS + 1)).toBeNull();
+    expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
     expect(s.getItem(shopKey('local', 'draft'))).toBeNull();
   });
 
   it('drops a malformed draft', () => {
     const s = memoryStore();
     s.setItem(shopKey('local', 'draft'), JSON.stringify({ savedAt: now, draft: { id: 5 } }));
-    expect(loadDraft(s, 'local', now)).toBeNull();
+    expect(loadDraft(s, 'local', '2026-09-28')).toBeNull();
     s.setItem(shopKey('local', 'draft'), 'not json');
-    expect(loadDraft(s, 'local', now)).toBeNull();
+    expect(loadDraft(s, 'local', '2026-09-28')).toBeNull();
   });
 
   it('clearDraft removes it; failures return null/false', () => {
     const s = memoryStore();
     saveDraft(s, 'local', newDraft('d1', '2026-09-28'), now);
     clearDraft(s, 'local');
-    expect(loadDraft(s, 'local', now)).toBeNull();
+    expect(loadDraft(s, 'local', '2026-09-28')).toBeNull();
     expect(saveDraft(throwing, 'local', newDraft('d1', '2026-09-28'), now)).toBe(false);
-    expect(loadDraft(throwing, 'local', now)).toBeNull();
+    expect(loadDraft(throwing, 'local', '2026-09-28')).toBeNull();
   });
 });
 
@@ -129,21 +128,6 @@ describe('submissions', () => {
     expect(pastExpenses([sub('a', [{ description: 'Nice', cents: 1300 }])])).toEqual([
       { description: 'Nice', cents: 1300, date: '2026-09-28' },
     ]);
-  });
-});
-
-describe('staff', () => {
-  it('normalizes: trims, collapses spaces, drops empties and case-insensitive duplicates', () => {
-    expect(normalizeStaff(['  ΜΑΡΙΑ ', 'Μαρία', 'μαρια', '', 'ΝΙΚΟΣ  Π', 5])).toEqual(['ΜΑΡΙΑ', 'Μαρία', 'ΝΙΚΟΣ Π']);
-  });
-
-  it('saves and loads per shop; junk loads as empty', () => {
-    const s = memoryStore();
-    expect(saveStaff(s, 'local', ['ΓΚΡΕΖΙΟΣ', ' ΓΚΡΕΖΙΟΣ'])).toEqual(['ΓΚΡΕΖΙΟΣ']);
-    expect(loadStaff(s, 'local')).toEqual(['ΓΚΡΕΖΙΟΣ']);
-    s.setItem(shopKey('local', 'staff'), '"x"');
-    expect(loadStaff(s, 'local')).toEqual([]);
-    expect(saveStaff(throwing, 'local', ['A'])).toBeNull();
   });
 });
 

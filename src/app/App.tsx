@@ -1,26 +1,27 @@
 import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react';
 import { loadTheme, saveTheme } from '../data/local/prefs';
-import { loadStaff, normalizeStaff, saveStaff } from '../data/local/staff';
 import { pickStore, type AppStore } from '../data/local/storage';
+import type { DeviceApi } from '../data/remote/deviceApi';
 import type { OwnerAppProps } from '../features/owner/OwnerApp';
-import { RegisterScreen } from '../features/register/RegisterScreen';
+import { PhoneApp, type PhoneAppProps } from '../features/phone/PhoneApp';
 import { shareCard, type ShareFn } from '../features/register/share';
-import { StaffScreen } from '../features/staff/StaffScreen';
 import { parseAuthRedirect } from './authRedirect';
 import { ErrorBoundary } from './ErrorBoundary';
 import { randomId } from './ids';
-import { ownerHash, parseAppRoute, routeHash, useHash, type OwnerRoute, type Route } from './router';
-import { LOCAL_SHOP, type LocalShop } from './shop';
+import { ownerHash, parseAppRoute, routeHash, useHash, type OwnerRoute } from './router';
 import { applyTheme, nextTheme } from './theme';
 
 type OwnerArea = ComponentType<Omit<OwnerAppProps, 'api'>>;
 
-/** Loaded on first visit to #/owner, so supabase-js stays out of the register bundle. */
+/** Loaded on first visit to #/owner, so the owner screens stay out of the register bundle. */
 const LazyOwnerEntry = lazy(() => import('../features/owner/OwnerEntry'));
+/** Builds the real DeviceApi; lazy so supabase-js loads in its own chunk. */
+const LazyPhoneEntry = lazy(() => import('../features/phone/PhoneEntry'));
 
 interface AppProps {
   appStore?: AppStore;
-  shop?: LocalShop;
+  /** Tests pass a fake (null = not configured); omitted, the real one comes from the lazy PhoneEntry. */
+  deviceApi?: DeviceApi | null;
   now?: () => Date;
   newId?: () => string;
   share?: ShareFn;
@@ -29,12 +30,12 @@ interface AppProps {
 }
 
 const systemNow = (): Date => new Date();
+const loadingText = <p className="notice-soft">Φόρτωση…</p>;
 
-export function App({ appStore, shop = LOCAL_SHOP, now = systemNow, newId = randomId, share = shareCard, ownerArea: OwnerAreaComponent = LazyOwnerEntry }: AppProps) {
+export function App({ appStore, deviceApi, now = systemNow, newId = randomId, share = shareCard, ownerArea: OwnerAreaComponent = LazyOwnerEntry }: AppProps) {
   const [{ store, persistent }] = useState(() => appStore ?? pickStore());
   const [hash, setHash] = useHash();
   const [redirect, setRedirect] = useState(() => parseAuthRedirect(window.location.search));
-  const [staff, setStaff] = useState(() => loadStaff(store, shop.id));
   const [themePref, setThemePref] = useState(() => loadTheme(store));
   const appRoute = parseAppRoute(hash);
 
@@ -50,10 +51,18 @@ export function App({ appStore, shop = LOCAL_SHOP, now = systemNow, newId = rand
     saveTheme(store, next);
     setThemePref(next);
   };
-  const changeStaff = (names: string[]) => setStaff(saveStaff(store, shop.id, names) ?? normalizeStaff(names));
-  const navigate = (route: Route) => setHash(routeHash(route));
   const navigateOwner = (route: OwnerRoute, opts?: { replace?: boolean }) => setHash(ownerHash(route), opts);
-  const registerRoute = appRoute.area === 'register' ? appRoute.route : null;
+  const onRegister = appRoute.area === 'register';
+  const phoneProps: Omit<PhoneAppProps, 'api'> = {
+    store,
+    now,
+    newId,
+    share,
+    themePref,
+    active: onRegister,
+    onTheme: cycleTheme,
+    onOwner: () => setHash('#/owner'),
+  };
 
   return (
     <ErrorBoundary>
@@ -62,25 +71,18 @@ export function App({ appStore, shop = LOCAL_SHOP, now = systemNow, newId = rand
           Η αποθήκευση στη συσκευή δεν είναι διαθέσιμη — τα στοιχεία χάνονται αν κλείσει η σελίδα.
         </p>
       )}
-      {/* The register stays mounted (hidden) so switching screens never loses typing. */}
-      <div hidden={registerRoute !== 'register'}>
-        <RegisterScreen
-          shop={shop}
-          store={store}
-          now={now}
-          newId={newId}
-          share={share}
-          staff={staff}
-          themePref={themePref}
-          active={registerRoute === 'register'}
-          onTheme={cycleTheme}
-          onNavigate={navigate}
-          onOwner={() => setHash('#/owner')}
-        />
+      {/* The phone stays mounted (hidden) so visiting the owner area never loses typing. */}
+      <div hidden={!onRegister}>
+        {deviceApi !== undefined ? (
+          <PhoneApp {...phoneProps} api={deviceApi} />
+        ) : (
+          <Suspense fallback={loadingText}>
+            <LazyPhoneEntry {...phoneProps} />
+          </Suspense>
+        )}
       </div>
-      {registerRoute === 'staff' && <StaffScreen staff={staff} onChange={changeStaff} onBack={() => navigate('register')} />}
       {appRoute.area === 'owner' && (
-        <Suspense fallback={<p className="notice-soft">Φόρτωση…</p>}>
+        <Suspense fallback={loadingText}>
           <OwnerAreaComponent
             route={appRoute.route}
             navigate={navigateOwner}
@@ -92,7 +94,7 @@ export function App({ appStore, shop = LOCAL_SHOP, now = systemNow, newId = rand
               setRedirect(null);
             }}
             redirectBase={`${window.location.origin}${window.location.pathname}`}
-            onExit={() => navigate('register')}
+            onExit={() => setHash(routeHash('register'))}
           />
         </Suspense>
       )}

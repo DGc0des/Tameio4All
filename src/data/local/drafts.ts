@@ -1,15 +1,13 @@
 import { isDraft, type Draft } from '../../features/register/draft';
 import { readJson, removeKey, shopKey, writeJson, type KeyValueStore } from './storage';
 
-/** A draft older than one shift (10 h, as in tameioV2) is discarded on load. */
-export const DRAFT_TTL_MS = 10 * 60 * 60 * 1000;
-
-export function loadDraft(store: KeyValueStore, shopId: string, nowMs: number): Draft | null {
+/** A draft belongs to one business date: one for another date (or unreadable) is discarded on load. */
+export function loadDraft(store: KeyValueStore, shopId: string, businessDate: string): Draft | null {
   const key = shopKey(shopId, 'draft');
   const saved = readJson(store, key);
   if (saved === null) return null;
   const s = typeof saved === 'object' ? (saved as Record<string, unknown>) : {};
-  if (typeof s.savedAt !== 'number' || !isDraft(s.draft) || nowMs - s.savedAt > DRAFT_TTL_MS) {
+  if (!isDraft(s.draft) || s.draft.businessDate !== businessDate) {
     removeKey(store, key);
     return null;
   }
