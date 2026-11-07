@@ -40,8 +40,6 @@ exist there.
 
 ## Non-goals (v1 of this feature)
 
-- Owner editing today's *open* closing live — owner's live view is **read-only** [call; corrections
-  happen on shop phones or after submission through goal 5].
 - Keystroke/field-level edit history of the open closing (who changed which box when) beyond the
   per-expense author shown in history [call].
 - Export (Excel/PDF), charts/trends, cross-shop comparison [call].
@@ -84,11 +82,18 @@ exist there.
 - **One open closing per (shop, business_date).** Created on first write of the day. It does **not**
   end on submit — it stays editable for resubmissions until the business day ends.
 - What's shared: denomination entries, channel amounts, expenses (description + amount, add/remove).
+  Not shared: the entry mode (see below) and each phone's signed-in cashier.
+- **The owner edits too [decided]:** in «Σήμερα» the owner can type into any box of today's open
+  closing, live, under the same last-write-wins rule; their presence/edits show as «Ιδιοκτήτης» and
+  their writes are attributed to the owner. Only signed-in staff press Υποβολή [call]; the owner files
+  through corrections.
   Expenses entered in the morning are simply part of that day's open closing.
-- **Entry mode** (Ποσό / Κομμάτια) is **shared for the closing** [call]: switching converts every
-  entry (existing `convertEntry`) for everyone, so a box's text always means the same thing on every
-  phone. (Rejected: per-phone mode — the same box would hold "300" on one phone and "3" on another
-  and last-write-wins becomes ambiguous.)
+- **Entry mode** (Ποσό / Κομμάτια) is **a per-phone view setting, switchable at any time; switching
+  changes only that phone** [decided]. So a denomination box is stored with the mode it was typed in:
+  `{text, mode}`. Each phone displays it converted to its own mode (existing `convertEntry`); a value
+  that can't be converted cleanly (e.g. "30" typed in Ποσό for the 100€ box) is shown as typed with the
+  existing error hint, so nothing is silently rounded. Last-write-wins stays unambiguous because every
+  stored value says which mode it means. `deriveClosing` reads each box in its own stored mode.
 - **Conflict rule: each box saves independently; same box → last write to reach the server wins**
   [decided]. The other phones' box updates to the new value. A write is sent when the person pauses
   typing (~400 ms debounce) or leaves the box [call].
@@ -109,7 +114,7 @@ exist there.
   («Η ημέρα άλλαξε — οι αλλαγές εκτός σύνδεσης δεν αποθηκεύτηκαν»). Edits are never filed under the
   wrong day.
 - Owner area: per shop, a **«Σήμερα» live view** of the open closing — same numbers, totals and
-  Φάκελος as the register, read-only, with presence names.
+  Φάκελος as the register, editable, with presence names.
 
 ### Submission
 
@@ -209,9 +214,9 @@ exist there.
   are a fast path, not the source of truth.
 - **New data (names indicative, builder may rename):**
   - `staff_sessions` — token hash, staff, device, shop, expires_at, revoked_at.
-  - `open_closings` — (shop_id, business_date) unique, `mode`, `revision` (bumped on every write),
+  - `open_closings` — (shop_id, business_date) unique, `config_id`, `revision` (bumped on every write),
     timestamps.
-  - `open_closing_fields` — one row per box: (open_closing, field key), text, `updated_by_staff`,
+  - `open_closing_fields` — one row per box: (open_closing, field key), text (+ mode for denomination boxes), `updated_by` (staff or owner),
     `updated_at`, per-field version. Expense lines are fields keyed by expense id
     (description/amount), with a removed flag so removal propagates.
   - `shops.day_change_time` (time, default 04:00).
@@ -219,9 +224,9 @@ exist there.
     `corrected_by` (owner uid), `corrects_closing_id`, and expense authorship captured at submit.
 - **New functions (indicative):** phone — `staff_sign_in(staff_id, pin) → session`,
   `staff_sign_out`, `get_open_closing`, `set_closing_field(session, key, text, base_version?)`,
-  `set_closing_mode`, `submit_closing(session, config_id, inputs, revision, idempotency_key)`
+  `submit_closing(session, config_id, inputs, revision, idempotency_key)`
   (business_date server-computed; the old PIN-based signature is removed). Owner —
-  `get_open_closing_for_owner(shop)`, `list_closings(shop, from, to)`, `get_closing_day(shop, date)`
+  `get_open_closing_for_owner(shop)`, `owner_set_closing_field(shop, key, value)`, `list_closings(shop, from, to)`, `get_closing_day(shop, date)`
   (all versions), `correct_closing(closing_id, inputs, expected_current_id)`, `set_day_change_time`.
   `private.business_date(shop)` is the one place "today" is computed; `submit_closing`,
   `set_closing_field` and session expiry all use it.
