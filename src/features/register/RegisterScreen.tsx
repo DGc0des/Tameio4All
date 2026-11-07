@@ -111,7 +111,7 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
             {formatDayEl(draft.businessDate)} · {draft.staffName || 'Διάλεξε όνομα'}
           </button>
         </div>
-        {active && <HeaderMenu hasTare={config.tareItems.length > 0} themePref={themePref} onNavigate={onNavigate} onTheme={onTheme} onOwner={onOwner} />}
+        {active && <HeaderMenu themePref={themePref} onNavigate={onNavigate} onTheme={onTheme} onOwner={onOwner} />}
       </header>
       <main className="page">
         <ModeSwitch mode={draft.mode} onChange={(mode) => dispatch({ type: 'setMode', mode, denominations: config.denominations })} />

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 
-export type Route = 'register' | 'tare' | 'staff';
+export type Route = 'register' | 'staff';
 
 export function parseRoute(hash: string): Route {
-  if (hash === '#/tare') return 'tare';
   if (hash === '#/staff') return 'staff';
   return 'register';
 }

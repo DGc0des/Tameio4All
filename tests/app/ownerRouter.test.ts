@@ -33,7 +33,7 @@ describe('owner routes', () => {
 
   it('splits register and owner areas', () => {
     expect(parseAppRoute('')).toEqual({ area: 'register', route: 'register' });
-    expect(parseAppRoute('#/tare')).toEqual({ area: 'register', route: 'tare' });
+    expect(parseAppRoute('#/tare')).toEqual({ area: 'register', route: 'register' });
     expect(parseAppRoute('#/owner')).toEqual({ area: 'owner', route: { name: 'shops' } });
     expect(parseAppRoute('#/ownerx')).toEqual({ area: 'register', route: 'register' });
   });

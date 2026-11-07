@@ -215,7 +215,7 @@ describe('navigation', () => {
     expect(screen.getByRole('radio', { name: 'ΜΑΡΙΑ' })).toBeTruthy();
   });
 
-  it('opens Αποβάρα from the menu and fills ΚΕΡΜΑΤΑ from the calculator', () => {
+  it('has no Αποβάρα in the menu and fills ΚΕΡΜΑΤΑ from the calculator', () => {
     start();
     fireEvent.click(button('Άθροισμα για ΚΕΡΜΑΤΑ'));
     type('Ποσό 1', '100');
@@ -223,8 +223,7 @@ describe('navigation', () => {
     fireEvent.click(button('Καταχώρηση'));
     expect((screen.getByLabelText('ΚΕΡΜΑΤΑ') as HTMLInputElement).value).toBe('150');
     fireEvent.click(button('Μενού'));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Αποβάρα' }));
-    expect(screen.getByRole('heading', { name: 'Αποβάρα' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: 'Αποβάρα' })).toBeNull();
   });
 
   it('closes an open sheet when leaving the register via the URL (phone Back)', () => {

@@ -4,14 +4,13 @@ import { THEME_LABELS } from '../../app/theme';
 import type { ThemePref } from '../../data/local/prefs';
 
 interface Props {
-  hasTare: boolean;
   themePref: ThemePref;
   onNavigate: (route: Route) => void;
   onTheme: () => void;
   onOwner: () => void;
 }
 
-export function HeaderMenu({ hasTare, themePref, onNavigate, onTheme, onOwner }: Props) {
+export function HeaderMenu({ themePref, onNavigate, onTheme, onOwner }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -44,11 +43,6 @@ export function HeaderMenu({ hasTare, themePref, onNavigate, onTheme, onOwner }:
       </button>
       {open && (
         <div className="menu" role="menu">
-          {hasTare && (
-            <button type="button" role="menuitem" onClick={() => go('tare')}>
-              Αποβάρα
-            </button>
-          )}
           <button type="button" role="menuitem" onClick={() => go('staff')}>
             Προσωπικό
           </button>

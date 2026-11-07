@@ -1,10 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { joinJuicePreset } from '../../src/core/presets';
 import { CoinCalcSheet } from '../../src/features/register/CoinCalcSheet';
 import { sumAmounts } from '../../src/features/register/coinCalc';
-import { TareScreen } from '../../src/features/tare/TareScreen';
 
 afterEach(cleanup);
 
@@ -33,18 +31,5 @@ describe('CoinCalcSheet', () => {
     render(<CoinCalcSheet label="ΚΕΡΜΑΤΑ" onApply={vi.fn()} onClose={vi.fn()} />);
     fireEvent.change(screen.getByLabelText('Ποσό 1'), { target: { value: '1.234' } });
     expect((screen.getByRole('button', { name: 'Καταχώρηση' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-});
-
-describe('TareScreen', () => {
-  it('shows net weight per product', () => {
-    const onBack = vi.fn();
-    render(<TareScreen items={joinJuicePreset.tareItems} onBack={onBack} />);
-    fireEvent.change(screen.getByLabelText('Βάρος Σολομός μπροστά (kg)'), { target: { value: '1,2' } });
-    expect(screen.getByLabelText('Καθαρό Σολομός μπροστά').textContent).toBe('0.840');
-    fireEvent.change(screen.getByLabelText('Βάρος Κοτόπουλο (kg)'), { target: { value: '0.1' } });
-    expect(screen.getByLabelText('Καθαρό Κοτόπουλο').textContent).toBe('—');
-    fireEvent.click(screen.getByRole('button', { name: 'Πίσω' }));
-    expect(onBack).toHaveBeenCalled();
   });
 });

@@ -6,7 +6,6 @@ import type { OwnerAppProps } from '../features/owner/OwnerApp';
 import { RegisterScreen } from '../features/register/RegisterScreen';
 import { shareCard, type ShareFn } from '../features/register/share';
 import { StaffScreen } from '../features/staff/StaffScreen';
-import { TareScreen } from '../features/tare/TareScreen';
 import { parseAuthRedirect } from './authRedirect';
 import { ErrorBoundary } from './ErrorBoundary';
 import { randomId } from './ids';
@@ -80,7 +79,6 @@ export function App({ appStore, shop = LOCAL_SHOP, now = systemNow, newId = rand
         />
       </div>
       {registerRoute === 'staff' && <StaffScreen staff={staff} onChange={changeStaff} onBack={() => navigate('register')} />}
-      {registerRoute === 'tare' && <TareScreen items={shop.config.tareItems} onBack={() => navigate('register')} />}
       {appRoute.area === 'owner' && (
         <Suspense fallback={<p className="notice-soft">Φόρτωση…</p>}>
           <OwnerAreaComponent

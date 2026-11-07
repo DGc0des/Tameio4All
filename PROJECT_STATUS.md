@@ -8,6 +8,11 @@
 - [ ] Plan 4b — phone side (pair, server config + staff, PIN sign-in, remove LOCAL_SHOP)
 - [ ] Plan 5 — closings, history, suggestions, PWA, deploy
 
+## Product decisions
+- 2026-11-07: Αποβάρα removed from the register (menu item, `#/tare` route, TareScreen). `tareItems`
+  stays in `ShopConfig`, the owner settings section and `src/core/tare.ts`, but nothing on the phone
+  uses it. Bring it back or remove the field fully later; removing it fully needs a `schema` bump.
+
 ## Issues carried over from tameioV2 (fixed by design; verify when the owning code lands)
 | ID | Issue | Fix | Status |
 |---|---|---|---|

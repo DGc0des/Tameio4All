@@ -108,7 +108,6 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px 
 .toast { position: fixed; left: 50%; bottom: 110px; z-index: 20; transform: translateX(-50%); padding: 10px 16px; border-radius: 12px; background: var(--ink); color: var(--bg); font-size: 14px; }
 .notice { margin: 8px 12px 0; padding: 10px 12px; border-radius: 12px; background: var(--danger-soft); color: var(--danger); font-size: 13px; }
 .notice-soft { margin: 8px 0; font-size: 13px; color: var(--muted); }
-.tare-net { min-width: 64px; text-align: right; }
 
 @media (prefers-reduced-motion: no-preference) {
   .sheet { animation: sheet-in 0.2s ease-out; }
