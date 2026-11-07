@@ -57,7 +57,8 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   migration updating that check, or phones' submissions will be refused as `bad_inputs`.
 - The register submits only through `DeviceApi.submit` as the signed-in cashier; nothing is stored as a
   local "submission". The idempotency key is minted when the submit sheet opens and kept while the inputs are
-  unchanged (retries and a reopened sheet reuse it; any edit gets a new key). The draft is kept after a
+  unchanged and not yet acknowledged (retries and a sheet reopened after a failed/lost submit reuse it; any
+  edit or a successful submit makes the next opening mint a new key). The draft is kept after a
   submit. Every submit/suggestion failure goes to `onServerError` → gate; the draft is written first.
 - Expense suggestions come from `DeviceApi.suggestionData` (refetched after each successful submit).
 - `verify_staff_pin` / `submit_closing` return `{ok:false,error}` for expected failures — never raise

@@ -64,8 +64,9 @@ export function RegisterScreen(props: RegisterProps) {
   const [sheet, setSheet] = useState<SheetName | null>(null);
   const [calcFor, setCalcFor] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  // Idempotency key of the submit sheet, with the inputs it was minted for: reopening the sheet
-  // for an unchanged closing keeps the key (a lost answer is then answered `repeat`), any edit gets a new one.
+  // Idempotency key of the submit sheet, with the inputs it was minted for. Until the server acknowledges
+  // a submit, reopening the sheet for an unchanged closing keeps the key (a lost answer is then answered
+  // `repeat`); any edit, or an acknowledged submit, makes the next opening mint a new one.
   const submitKey = useRef<{ key: string; inputs: string } | null>(null);
   useDraftAutosave(store, ctx.shopId, draft, now);
 
@@ -114,6 +115,7 @@ export function RegisterScreen(props: RegisterProps) {
     const key = submitKey.current?.key ?? newId();
     const r = await api.submit(session.token, ctx.configId, ctx.businessDate, inputs, key);
     if (r.ok) {
+      submitKey.current = null;
       setToast('Το κλείσιμο υποβλήθηκε');
       setHistoryRound((n) => n + 1);
     } else {

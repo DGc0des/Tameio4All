@@ -194,7 +194,7 @@ describe('register flows', () => {
     expect(submitCalls(api)[1]![3]).toEqual(submitCalls(api)[0]![3]);
   });
 
-  it('reuses the key when the sheet is reopened for an unchanged closing', async () => {
+  it('reuses the key when the sheet is reopened for an unchanged closing after a failed submit', async () => {
     const api = fakeDeviceApi({
       submit: vi.fn<DeviceApi['submit']>().mockReturnValueOnce(fail({ code: 'network' })).mockImplementation(() => ok({ closingId: 'c1', repeat: true })),
     });
@@ -206,6 +206,20 @@ describe('register flows', () => {
     const keys = submitCalls(api).map((c) => c[4]);
     expect(keys).toHaveLength(2);
     expect(keys[1]).toBe(keys[0]);
+  });
+
+  it('mints a new key after a successful submit, even for an unchanged closing', async () => {
+    const api = fakeDeviceApi();
+    await start(memoryStore(), true, api);
+    type('100€', '1500');
+    await submitClosing();
+    expect(screen.getByRole('dialog', { name: 'Υποβλήθηκε ✓' })).toBeTruthy();
+    fireEvent.click(button('Τέλος'));
+    await submitClosing();
+    const calls = submitCalls(api);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]![3]).toEqual(calls[0]![3]);
+    expect(calls[1]![4]).not.toBe(calls[0]![4]);
   });
 
   it('an expired session sends the cashier to sign in and keeps the typed draft', async () => {
