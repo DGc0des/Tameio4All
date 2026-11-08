@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
-import { formatDayEl, todayIso } from '../../app/dates';
-import type { Route } from '../../app/router';
-import type { LocalShop } from '../../app/shop';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { formatDayEl, formatDayMonth } from '../../app/dates';
+import type { ShopConfig } from '../../core/config';
 import { isBill } from '../../core/denominations';
-import { buildSupplierHistory } from '../../core/suggestions';
-import { loadDraft } from '../../data/local/drafts';
+import type { ClosingInputs } from '../../core/formula';
+import { buildSupplierHistory, type SupplierHistory } from '../../core/suggestions';
+import { loadDraft, markDraftSubmitted, saveDraft, takeUnsentNotice } from '../../data/local/drafts';
 import type { ThemePref } from '../../data/local/prefs';
 import type { KeyValueStore } from '../../data/local/storage';
-import { loadSubmissions, pastExpenses, saveSubmission, type SaveResult } from '../../data/local/submissions';
+import type { DeviceApi, DeviceContext, DeviceError, StaffSession } from '../../data/remote/deviceApi';
 import { BottomBar } from './BottomBar';
 import { ChannelsCard } from './ChannelsCard';
 import { CoinCalcSheet } from './CoinCalcSheet';
@@ -16,44 +16,79 @@ import { deriveClosing, envelopeBlockReason, submitBlockReason } from './derive'
 import { draftReducer, newDraft, type Draft } from './draft';
 import { EnvelopeSheet } from './EnvelopeSheet';
 import { ExpensesCard } from './ExpensesCard';
-import { HeaderMenu } from './HeaderMenu';
+import { CashierSheet, HeaderMenu } from './HeaderMenu';
 import { ModeSwitch } from './ModeSwitch';
-import { PeopleSheet } from './PeopleSheet';
 import type { ShareFn } from './share';
 import { SubmitSheet } from './SubmitSheet';
 import { SummaryCard } from './SummaryCard';
 import { useDraftAutosave } from './useDraftAutosave';
 
 export interface RegisterProps {
-  shop: LocalShop;
+  /** The server's view of this phone; the draft belongs to `ctx.businessDate`. */
+  ctx: DeviceContext;
+  /** `ctx.config`, already checked with `isShopConfig` by PhoneApp. */
+  config: ShopConfig;
+  /** The signed-in cashier: shown in the header, author of new expense lines, token for submit. */
+  session: StaffSession;
+  api: DeviceApi;
   store: KeyValueStore;
   now: () => Date;
   newId: () => string;
   share: ShareFn;
-  staff: readonly string[];
   themePref: ThemePref;
   active: boolean;
+  /** Showing a cached context: submitting needs the server. */
+  offline: boolean;
   onTheme: () => void;
-  onNavigate: (route: Route) => void;
   onOwner: () => void;
+  onSignOut: () => void;
+  /** Every server failure goes here; the phone gate decides what it means (sign in again, unpair, nothing). */
+  onServerError: (e: DeviceError) => void;
 }
 
-type SheetName = 'envelope' | 'submit' | 'people';
+type SheetName = 'envelope' | 'submit' | 'cashier';
 
-export function RegisterScreen({ shop, store, now, newId, share, staff, themePref, active, onTheme, onNavigate, onOwner }: RegisterProps) {
-  const { config } = shop;
+const OFFLINE_SUBMIT_REASON = 'Χρειάζεται σύνδεση για υποβολή';
+
+export function RegisterScreen(props: RegisterProps) {
+  const { ctx, config, session, api, store, now, newId, share, themePref, active, offline, onTheme, onOwner, onSignOut, onServerError } = props;
   const [draft, dispatch] = useReducer(
     draftReducer,
     null,
-    (): Draft => loadDraft(store, shop.id, now().getTime()) ?? newDraft(newId(), todayIso(now())),
+    (): Draft => loadDraft(store, ctx.shopId, ctx.businessDate) ?? newDraft(newId(), ctx.businessDate),
   );
   const derived = useMemo(() => deriveClosing(config, draft), [config, draft]);
-  const [submissions, setSubmissions] = useState(() => loadSubmissions(store, shop.id));
-  const history = useMemo(() => buildSupplierHistory(pastExpenses(submissions)), [submissions]);
+  const [history, setHistory] = useState<SupplierHistory>({});
+  // Bumped after each successful submit so the just-submitted expense lines start suggesting.
+  const [historyRound, setHistoryRound] = useState(0);
   const [sheet, setSheet] = useState<SheetName | null>(null);
   const [calcFor, setCalcFor] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  useDraftAutosave(store, shop.id, draft, now);
+  // Idempotency key of the submit sheet, with the inputs it was minted for. Until the server acknowledges
+  // a submit, reopening the sheet for an unchanged closing keeps the key (a lost answer is then answered
+  // `repeat`); any edit, or an acknowledged submit, makes the next opening mint a new one.
+  const submitKey = useRef<{ key: string; inputs: string } | null>(null);
+  // Business date of a draft that a day change kept aside before it was submitted (loadDraft moved it).
+  const [unsentDate, setUnsentDate] = useState<string | null>(null);
+  useDraftAutosave(store, ctx.shopId, draft, now);
+
+  // In an effect, not the draft initializer: StrictMode runs initializers twice and keeps only one result.
+  useEffect(() => {
+    const date = takeUnsentNotice(store, ctx.shopId);
+    if (date !== null) setUnsentDate(date);
+  }, [store, ctx.shopId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.suggestionData().then((r) => {
+      if (cancelled) return;
+      if (r.ok) setHistory(buildSupplierHistory(r.data));
+      else onServerError(r.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, onServerError, historyRound]);
 
   useEffect(() => {
     if (toast === null) return;
@@ -61,7 +96,7 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Leaving the register (e.g. phone Back to #/staff) must not leave a sheet mounted-but-hidden
+  // Leaving the register (e.g. into the owner area) must not leave a sheet mounted-but-hidden
   // with its listeners (Escape, outside click) still live.
   useEffect(() => {
     if (!active) {
@@ -75,31 +110,35 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
   const envelopeDef = config.totals.find((t) => t.id === config.envelopeTotalId);
   const calcChannel = config.channels.find((c) => c.id === calcFor);
 
-  const save = (): SaveResult => {
-    const submission = {
-      id: draft.id,
-      shopId: shop.id,
-      staffName: draft.staffName,
-      businessDate: draft.businessDate,
-      submittedAt: now().toISOString(),
-      inputs: derived.inputs,
-    };
-    let result = saveSubmission(store, submission);
-    // The draft id collided with a *different* stored closing (not a duplicate submit) — retry
-    // once under a fresh id so the typed closing is never silently dropped.
-    if (result === 'conflict') result = saveSubmission(store, { ...submission, id: newId() });
-    if (result !== 'failed') {
-      setSubmissions(loadSubmissions(store, shop.id));
-      // Reset right away (new draft id): if the person leaves or reloads instead of tapping
-      // "Νέο κλείσιμο", later edits must not be resubmitted under the saved id ('duplicate').
-      dispatch({ type: 'resetInputs', id: newId() });
-    }
-    return result;
+  // The autosave is debounced; anything that may unmount the register writes the draft first.
+  const persistDraft = () => saveDraft(store, ctx.shopId, draft, now().getTime());
+
+  const openSubmit = () => {
+    const inputs = JSON.stringify(derived.inputs);
+    if (submitKey.current?.inputs !== inputs) submitKey.current = { key: newId(), inputs };
+    setSheet('submit');
   };
 
-  const closeSubmit = (saved: boolean) => {
-    setSheet(null);
-    if (saved) setToast('Το κλείσιμο αποθηκεύτηκε');
+  const submit = async (inputs: ClosingInputs) => {
+    const key = submitKey.current?.key ?? newId();
+    const r = await api.submit(session.token, ctx.configId, ctx.businessDate, inputs, key);
+    if (r.ok) {
+      submitKey.current = null;
+      // An acknowledged, unedited draft needs no warning when the day changes.
+      markDraftSubmitted(store, ctx.shopId, draft);
+      setToast('Το κλείσιμο υποβλήθηκε');
+      setHistoryRound((n) => n + 1);
+    } else {
+      persistDraft();
+      onServerError(r.error);
+    }
+    return r;
+  };
+
+  const signOut = async () => {
+    persistDraft();
+    await api.signOut(session.token);
+    onSignOut();
   };
 
   return (
@@ -107,17 +146,30 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
       <header className="top">
         <div>
           <h1>Κλείσιμο ταμείου</h1>
-          <button type="button" className="meta-btn" onClick={() => setSheet('people')}>
-            {formatDayEl(draft.businessDate)} · {draft.staffName || 'Διάλεξε όνομα'}
+          <button type="button" className="meta-btn" onClick={() => setSheet('cashier')}>
+            {formatDayEl(ctx.businessDate)} · {session.name}
           </button>
         </div>
-        {active && <HeaderMenu themePref={themePref} onNavigate={onNavigate} onTheme={onTheme} onOwner={onOwner} />}
+        {active && <HeaderMenu themePref={themePref} onTheme={onTheme} onOwner={onOwner} />}
       </header>
       <main className="page">
+        {unsentDate !== null && (
+          <p className="notice" role="alert">
+            {`Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της ${formatDayMonth(unsentDate)}. Ενημέρωσε τον ιδιοκτήτη.`}
+          </p>
+        )}
         <ModeSwitch mode={draft.mode} onChange={(mode) => dispatch({ type: 'setMode', mode, denominations: config.denominations })} />
         <CountCard title="Χαρτονομίσματα" denominations={bills} totalCents={derived.billsCents} draft={draft} derived={derived} dispatch={dispatch} />
         <CountCard title="Κέρματα" denominations={coins} totalCents={derived.coinsCents} draft={draft} derived={derived} dispatch={dispatch} />
-        <ExpensesCard maxExpenses={config.maxExpenses} draft={draft} derived={derived} history={history} dispatch={dispatch} newId={newId} />
+        <ExpensesCard
+          maxExpenses={config.maxExpenses}
+          draft={draft}
+          derived={derived}
+          history={history}
+          author={{ kind: 'staff', id: session.staffId }}
+          dispatch={dispatch}
+          newId={newId}
+        />
         <ChannelsCard channels={config.channels} draft={draft} derived={derived} dispatch={dispatch} onCalculator={setCalcFor} />
         <SummaryCard config={config} totals={derived.totals} />
       </main>
@@ -125,30 +177,17 @@ export function RegisterScreen({ shop, store, now, newId, share, staff, themePre
         label={envelopeDef?.label ?? ''}
         amountCents={derived.totals[config.envelopeTotalId] ?? 0}
         envelopeBlocked={envelopeBlockReason(derived)}
-        submitBlocked={submitBlockReason(derived, draft)}
+        submitBlocked={submitBlockReason(derived, draft) ?? (offline ? OFFLINE_SUBMIT_REASON : null)}
         onEnvelope={() => setSheet('envelope')}
-        onSubmit={() => setSheet('submit')}
+        onSubmit={openSubmit}
       />
       {active && sheet === 'envelope' && (
         <EnvelopeSheet denominations={config.denominations} envelope={derived.envelope} onClose={() => setSheet(null)} />
       )}
       {active && sheet === 'submit' && (
-        <SubmitSheet config={config} draft={draft} derived={derived} onSave={save} onShare={share} onClose={closeSubmit} />
+        <SubmitSheet config={config} draft={draft} derived={derived} onSubmit={submit} onShare={share} onClose={() => setSheet(null)} />
       )}
-      {active && sheet === 'people' && (
-        <PeopleSheet
-          staff={staff}
-          staffName={draft.staffName}
-          businessDate={draft.businessDate}
-          onStaff={(name) => dispatch({ type: 'setStaff', name })}
-          onDate={(date) => dispatch({ type: 'setDate', date })}
-          onManage={() => {
-            setSheet(null);
-            onNavigate('staff');
-          }}
-          onClose={() => setSheet(null)}
-        />
-      )}
+      {active && sheet === 'cashier' && <CashierSheet name={session.name} onSignOut={signOut} onClose={() => setSheet(null)} />}
       {active && calcChannel !== undefined && (
         <CoinCalcSheet
           label={calcChannel.label}

@@ -2,9 +2,11 @@ import { useRef, useState } from 'react';
 import { formatDateEl } from '../../app/dates';
 import type { ShopConfig } from '../../core/config';
 import { denomLabel, isBill } from '../../core/denominations';
+import type { ClosingInputs } from '../../core/formula';
 import { formatEuro } from '../../core/money';
-import type { SaveResult } from '../../data/local/submissions';
+import type { DResult } from '../../data/remote/deviceApi';
 import { Sheet } from '../../ui/Sheet';
+import { deviceErrorMessage } from '../phone/model/messages';
 import type { Derived } from './derive';
 import type { Draft } from './draft';
 import type { ShareFn } from './share';
@@ -13,28 +15,36 @@ interface Props {
   config: ShopConfig;
   draft: Draft;
   derived: Derived;
-  onSave: () => SaveResult;
+  /** Sends these inputs under the sheet's idempotency key (bound by the caller). */
+  onSubmit: (inputs: ClosingInputs) => Promise<DResult<{ closingId: string; repeat: boolean }>>;
   onShare: ShareFn;
-  onClose: (saved: boolean) => void;
+  onClose: () => void;
 }
 
-export function SubmitSheet({ config, draft, derived, onSave, onShare, onClose }: Props) {
-  // The form resets as soon as the closing is saved; the card (and the shared image) must keep
-  // showing the closing this sheet was opened for.
+export function SubmitSheet({ config, draft, derived, onSubmit, onShare, onClose }: Props) {
+  // A retry must send exactly what was first sent under this sheet's key, and the card (and the
+  // shared image) must show that same closing: both come from the snapshot taken on open.
   const [snapshot] = useState(() => ({ draft, derived }));
   const cardRef = useRef<HTMLDivElement>(null);
-  const [saved, setSaved] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [photo, setPhoto] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
 
-  const save = () => {
-    if (onSave() === 'failed') {
-      setMessage('Δεν αποθηκεύτηκε. Δοκίμασε ξανά.');
+  const submit = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    const r = await onSubmit(snapshot.derived.inputs);
+    inFlight.current = false;
+    setBusy(false);
+    if (!r.ok) {
+      setMessage(deviceErrorMessage(r.error));
       return;
     }
     setMessage(null);
-    setSaved(true);
+    setSubmitted(true);
   };
 
   const share = async () => {
@@ -46,7 +56,7 @@ export function SubmitSheet({ config, draft, derived, onSave, onShare, onClose }
   };
 
   return (
-    <Sheet title={saved ? 'Αποθηκεύτηκε ✓' : 'Υποβολή'} onClose={() => onClose(saved)}>
+    <Sheet title={submitted ? 'Υποβλήθηκε ✓' : 'Υποβολή'} onClose={onClose}>
       <div ref={cardRef}>
         <ShareCard config={config} draft={snapshot.draft} derived={snapshot.derived} />
       </div>
@@ -60,17 +70,17 @@ export function SubmitSheet({ config, draft, derived, onSave, onShare, onClose }
           {photo ? '✓ Φωτογραφία Ζ' : 'Φωτογραφία Ζ'}
           <input type="file" accept="image/*" className="sr-only" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
         </label>
-        {saved ? (
+        {submitted ? (
           <>
             <button type="button" className="btn btn-text" disabled={busy} onClick={() => void share()}>
               Κοινοποίηση
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => onClose(true)}>
-              Νέο κλείσιμο
+            <button type="button" className="btn btn-primary" onClick={onClose}>
+              Τέλος
             </button>
           </>
         ) : (
-          <button type="button" className="btn btn-primary" onClick={save}>
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void submit()}>
             Υποβολή
           </button>
         )}
@@ -93,7 +103,6 @@ function ShareCard({ config, draft, derived }: { config: ShopConfig; draft: Draf
   return (
     <div className="share-card">
       <div className="share-head">
-        <strong>{draft.staffName}</strong>
         <span>{formatDateEl(draft.businessDate)}</span>
       </div>
       {config.totals

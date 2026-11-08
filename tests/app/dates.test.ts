@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateEl, formatDayEl, isIsoDate, todayIso } from '../../src/app/dates';
+import { formatDateEl, formatDayEl, formatDayMonth, isIsoDate, todayIso } from '../../src/app/dates';
 
 describe('dates', () => {
   it('todayIso uses the local calendar date', () => {
@@ -19,5 +19,7 @@ describe('dates', () => {
     expect(formatDayEl('2026-09-27')).toBe('Κυρ 27/09');
     expect(formatDateEl('2026-09-28')).toBe('28/09/2026');
     expect(formatDayEl('nonsense')).toBe('nonsense');
+    expect(formatDayMonth('2026-11-07')).toBe('07/11');
+    expect(formatDayMonth('nonsense')).toBe('nonsense');
   });
 });

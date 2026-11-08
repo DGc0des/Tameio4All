@@ -1,7 +1,7 @@
 import type { ShopConfig } from '../../core/config';
 import { denomLabel, entryToCount, isBill } from '../../core/denominations';
 import { planEnvelope, type EnvelopePlan } from '../../core/envelope';
-import { evaluateTotals, type ClosingInputs, type ExpenseEntry } from '../../core/formula';
+import { CLOSING_INPUTS_SCHEMA, evaluateTotals, type ClosingInputs, type ExpenseEntry } from '../../core/formula';
 import { parseAmount, type Cents } from '../../core/money';
 import type { Draft } from './draft';
 
@@ -85,7 +85,12 @@ export function deriveClosing(config: ShopConfig, draft: Draft): Derived {
     const r = parseAmount(e.amountText);
     if (r.ok) {
       if (r.value > 0) {
-        expenses.push({ description: e.description.trim(), cents: r.value });
+        expenses.push({
+          id: e.id,
+          description: e.description.trim(),
+          cents: r.value,
+          ...(e.addedBy !== null ? { addedBy: e.addedBy } : {}),
+        });
         expenseRowCents[e.id] = r.value;
       }
     } else if (r.reason !== 'empty') {
@@ -93,8 +98,12 @@ export function deriveClosing(config: ShopConfig, draft: Draft): Derived {
     }
   });
 
-  const inputs: ClosingInputs = { schema: 1, counts, channelCents, expenses };
-  const totals = evaluateTotals(config, inputs);
+  const inputs: ClosingInputs = { schema: CLOSING_INPUTS_SCHEMA, counts, channelCents, expenses };
+  // An expense without an author (draft from before sign-in) makes schema-2 inputs invalid, but
+  // totals only read cents: compute them on the schema-1 view so the screen still renders.
+  // submitBlockReason keeps such a closing from being submitted.
+  const unauthored = expenses.some((e) => e.addedBy === undefined);
+  const totals = evaluateTotals(config, unauthored ? { ...inputs, schema: 1 } : inputs);
   const envelope = planEnvelope(totals[config.envelopeTotalId] ?? 0, counts, config.denominations);
   const expensesCents = expenses.reduce((sum, e) => sum + e.cents, 0);
 
@@ -109,6 +118,9 @@ export function envelopeBlockReason(derived: Derived): string | null {
   return derived.errors.length > 0 ? `Λάθος τιμή: ${derived.errors.map((e) => e.label).join(', ')}` : null;
 }
 
-export function submitBlockReason(derived: Derived, draft: Draft): string | null {
-  return envelopeBlockReason(derived) ?? (draft.staffName === '' ? 'Διάλεξε όνομα για υποβολή' : null);
+export function submitBlockReason(derived: Derived, _draft: Draft): string | null {
+  return (
+    envelopeBlockReason(derived) ??
+    (derived.inputs.expenses.some((e) => e.addedBy === undefined) ? 'Συνδέσου ξανά για υποβολή' : null)
+  );
 }

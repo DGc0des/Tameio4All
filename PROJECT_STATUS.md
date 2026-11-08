@@ -5,7 +5,7 @@
 - [ ] Plan 2 — register UI on local preset (code complete; pending real-phone test + Vercel URL)
 - [x] Plan 3 — Supabase schema, RLS, RPCs (dev project)
 - [ ] Plan 4a — owner app: auth, shop, settings + formula builder, staff/PIN, pairing codes, devices (code complete; pending the manual end-to-end check on the dev project)
-- [ ] Plan 4b — phone side (pair, server config + staff, PIN sign-in, remove LOCAL_SHOP)
+- [ ] Plan 4b / stage 1 — phone side (pair, server config + staff, PIN sign-in, server submit, business day, day-change setting; LOCAL_SHOP removed): code complete; pending the manual two-browser check (see Not verified)
 - [ ] Plan 5 — closings, history, suggestions, PWA, deploy
 
 ## Product decisions
@@ -90,6 +90,52 @@ Whole-branch review of Supabase schema, RLS policies, and RPCs for security. Con
 - Telling "revoked" from "not paired" on the phone: a `device_status()` RPC, or document `verify_staff_pin(null, null)`. → moved to Plan 4b.
 - Device label in closing history: `closings.device_user_id` has no FK to `devices`. → moved to Plan 5.
 
+## Stage 1 findings (phone sign-in + server submit)
+Whole-stage review round by round (Tasks 1-8). Continues the severity scheme above. Fixed items keep their "why".
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| H8 | `submit_closing` checked the business day before the idempotency key, so a retry whose first response was lost across the day change errored (`wrong_day`) on an already stored closing | Key lookup now runs before the day check (migration `20261107215127_submit_retry_before_day_check`); test T9 in 070 | fixed — but only a fresh same-device session re-sending the old key reaches it; the stage-1 client cannot (see L48) |
+| H9 | After `signed_in` from offline, or after `wrong_day`/`session_invalid`, the gate kept a stale cached context (old business date, session `shopId` `''`) | One reload path: gate re-enters `loading` and re-runs `context()` when offline / date or shop mismatch / those server errors (also clears the stored session) | fixed |
+| M13 | Register reused the idempotency key after a successful submit, so a deliberate resubmit would collapse into the old row | Key kept only for unacknowledged attempts; dropped after success | fixed |
+| M14 | Dev project had migration `session_submit_inputs_fix` applied without a repo file (drift) | Repo file `20261107214213_session_submit_inputs_fix.sql` added with dev's exact version and name (idempotent create-or-replace); the idempotency fix ships as a separate later migration. Dev history versions are Supabase-chosen timestamps, not the plan's file names | fixed - note: replaying from the repo reproduces dev's history |
+| L30 | Concurrent sign-ins of two staff on one phone could leave two live sessions | Lock the devices row before revoking in `staff_sign_in` | open |
+| L31 | `set_day_change_time(null)` raises a raw not-null error instead of a named one | Add a named error + map it | open |
+| L32 | No SQL test that phones cannot call `private.staff_session` | Add to 060 | open |
+| L33 | Day-change time inside a DST gap/overlap resolves by Postgres default | Decide a rule if a shop picks 03:xx | open |
+| L34 | Re-pairing a phone to another shop leaves old-shop sessions unrevoked (unusable, untested) | Revoke on re-pair + test | open |
+| L35 | Owner-kind author with a non-uuid id relies on OR short-circuit before the uuid cast | Make the guard explicit | open |
+| L36 | Schema-2 cents only checked as a number in SQL (not integer / non-negative) | Tighten SQL and keep the TS validator in step | open |
+| L37 | No SQL tests for a deactivated-staff author or an owner author with an id | Add to 070 | open |
+| L38 | Draft `isAuthor` accepts staff id `''` (validator needs non-empty), so `evaluateTotals` could throw on such a stored draft | Draft `isAuthor` now requires a non-empty staff id, the same rule as `validateClosingInputs` (a stored draft that breaks it is discarded on load); test in draft.test | fixed — final-review wave |
+| L39 | `deriveClosing` does not guard expense id > 64 chars | Guard or cap id length | open |
+| L40 | `submitBlockReason` keeps an unused `draft` param; old unauthored lines still block submit | Clean up signature; decide migration of old drafts | open |
+| L41 | `suggestionData` `Number(cents)` may yield NaN on a malformed row | Rows whose cents is not a safe non-negative integer (NaN, null, `''`, fractional, negative, huge) are skipped in `device.ts`; test in deviceApi.test | fixed — final-review wave |
+| L42 | Postgres 42501 not raised as `not_a_device_session` maps to `unknown`; PGRST/session-code branches of `mapDeviceError` and `getSupabase` memoisation untested | 42501 → `not_a_device` (device functions are granted to `authenticated` only, so an anon caller gets 42501); PGRST301/303 and session-code branches now tested | fixed except `getSupabase` memoisation (still untested) |
+| L43 | Gate shows non-network `load_failed` as offline; `config_mismatch` is a gate no-op (manual reload needed); reload briefly shows «Φόρτωση…» and unmounts sign-in/register (drafts persisted) | load_failed distinguished (see H10). Still open: RELOAD on config_mismatch; the «Φόρτωση…» flash on reload | partly fixed |
+| L44 | Revoked-phone test does not assert `clearCachedContext`; `phoneLocal` lacks a `clearCachedContext` test | Add assertions | open |
+| L45 | Unconfigured screen shows env var names to cashiers; PairScreen owner-confirm persists if the code is edited | Hide names behind dev flag; reset confirm on edit | open |
+| L46 | `CashierSheet` lives in `HeaderMenu.tsx`; dead fallback `?? newId()` in submit | Move / remove | open |
+| L47 | Day-change settings screen: error test asserts only truthy text; load-error/retry and disabled-when-unchanged untested; loading state not a Card; `formKey` remount drops a typed time; import order | Add tests, polish | open |
+
+## Final-review fix wave (stage 1)
+Whole-branch review after all 8 stage-1 tasks. Continues the severity scheme above.
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| H10 | A browser with no auth session but a cached context was stuck: owner signs in on the paired browser (unpairs it) then out; on reload `device_context` ran as anon → 42501 → `unknown` → the gate showed the previous cashier's register "offline", and «Αλλαγή ατόμου» could never reach pairing. A fresh browser hit the same path (→ «Δεν υπάρχει σύνδεση») | `PhoneApp` load calls `session()` first: `null` → `loaded ctx:null` → pairing, stored session + cached context cleared. 42501 → `not_a_device`. Only `network` falls back to the cache; any other failure is the new `load_error` gate (message + «Δοκίμασε ξανά», no cached register). Tests in gate/phoneApp/deviceErrors | fixed |
+| H11 | An offline register never came back online: nothing re-ran `context()`, so Υποβολή stayed disabled until a manual page reload | Gate `retry` event moves offline states (and `load_error`) to `loading`, the one reload path. Triggered by the `online` event, the page becoming visible (only while offline), and a «Δοκίμασε ξανά» button on the «Εκτός σύνδεσης» banner. The register's draft is flushed as it unmounts (M15). Tests in gate/phoneApp | fixed |
+| H12 | A day change silently deleted the typed, unsubmitted draft (`loadDraft` removed any draft of another date) | `loadDraft` moves it to a per-shop `unsent` key (latest only) and the register shows once «Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της DD/MM. Ενημέρωσε τον ιδιοκτήτη.». A draft exactly as the server last acknowledged it (`markDraftSubmitted`) is dropped silently — otherwise every normal day (submit, keep the draft, next morning) would raise a false alarm. The owner cannot read the unsent draft yet (Plan 5). Tests in local/app | fixed |
+| M15 | `useDraftAutosave` dropped the pending 300 ms save when the register unmounted (sign-out is covered by `persistDraft`, but a gate reload or unpair was not) | The hook flushes a pending save on unmount; test in useDraftAutosave.test | fixed |
+| L48 | CLAUDE.md claimed the repeat-before-`wrong_day` path (H8) covers a retry lost across the day change; the stage-1 client cannot reach it — its previous-day token is `session_invalid` first, and the key is forgotten with the register. 070 T9 actually simulates a fresh same-device session re-sending yesterday's key | Doc-only: CLAUDE.md and the T9 comment corrected, no SQL change. User-visible mitigation: the H12 notice (the closing is kept aside and the cashier tells the owner) | open — accepted for stage 1; revisit with Plan 5 history/owner edits |
+
+## Residual fixes (stage 1, after the final-review wave)
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| H13 | An offline paired phone whose stored access token had expired was unpaired and its caches wiped: auth-js `getSession` refreshes an expired token first and, when the refresh fails (offline), returns `{session:null, error}` while the refresh token stays stored; `device.ts` read only `data`, so `PhoneApp` took it as "no auth session" → `loaded ctx:null` → pairing, stored staff session + cached context cleared. Next morning, offline, the cashier lost the register | `DeviceApi.session()` now returns `DResult<{anonymous} \| null>`: `ok` + `null` only when getSession succeeded with no session; a returned or thrown error is a failure ("couldn't tell", mapped by `mapDeviceError`). `PhoneApp` load unpairs only on definite no-session; a failed lookup falls through to `context()` (offline → cached register). `pair` returns the lookup error instead of signing in anonymously over a session it could not identify (could be an owner's). Tests in deviceApi/phoneApp | fixed |
+| L49 | An empty, never-typed draft left over from the previous day raised the day-change notice («Η ημέρα άλλαξε…») — a false alarm every morning a register was opened and not used | `loadDraft` drops silently a stale draft whose entries, channels and expense fields are all empty/whitespace (it also does not replace an already kept-aside draft). Test in local.test | fixed |
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped
@@ -101,7 +147,8 @@ tare, core purity (side-effect imports, `require()`, directory escape).
 UI (jsdom + Testing Library): primitives, counting cards, expenses + learned suggestions, Φάκελος, Υποβολή/share, staff/date/menu/theme, Αποβάρα, coin calculator, end-to-end register flows (V2 parity, mode switch, blocking, thousands separator, submit once + reset + learning, storage failure, draft restore, corrupt draft, no-storage notice, navigation), owner area wiring (menu entry, lazy load, email-link redirect to #/owner).
 Owner model — pure, no supabase-js loaded (`tests/app/ownerRouter.test.ts`, `tests/data/ownerApi.test.ts`, `tests/data/ownerLocal.test.ts`, `tests/data/remoteErrors.test.ts`, `tests/features/owner/{model,messages,preview,settingsDraft}.test.ts`): settings reducer, terms, preview, limits, pairing, messages, `mapError`, owner API parameter names, owner drafts, auth storage.
 Owner UI (`tests/features/owner/*.test.tsx`, jsdom + Testing Library against `fakeApi.ts`, never loads supabase-js): auth + link errors, shops, new shop, settings publish/conflict/draft, formula builder + preview, staff, devices + pairing countdown.
-Database: supabase/tests 010–050 (RLS, owner functions, pairing/PIN lockout, submit/idempotency/suggestions) — run against the dev project, all passing after applying migration 20260929000006 (2026-09-29, pairing code cleanup).
+Database: supabase/tests 010–070 (RLS, owner functions, pairing/PIN lockout, submit/idempotency/suggestions, owner app, staff sessions + business date + day change, session submit + schema 2) — all seven run against the dev project on 2026-11-08 after the stage-1 migrations, all passing (each ends in ROLLBACK; afterwards no test users, shops or sessions remained).
+Phone: gate reducer, phone local storage, DeviceApi mapping, sign-in/pair screens, register submit flow, owner day-change screen (`tests/features/phone/*`, `tests/data/*`, `tests/features/owner/*`) — `npm test` 482/482 on 47 files, `npm run typecheck` clean (2026-11-08, after the stage-1 residual fixes H13/L49; `npm run build` last run ok after the final-review wave).
 
 CI (GitHub Actions: `npm ci` → typecheck → test on Node 22) ran green on GitHub for `b281da3` —
 https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
@@ -123,3 +170,17 @@ CI now runs the production build (`npm run build`) as well, after test.
 - Owner UI on a real phone.
 - The anonymous-session (paired phone) warning on owner sign-in, against a real paired phone — Plan 4b.
 - Supabase free-tier auth email rate limits under real use.
+- Stage 1 (phone sign-in + server submit) end-to-end in a real browser pair, NOT run. Needs the user:
+  1. Supabase dashboard (project `fstfuhogvsdaiwpfdmep`) -> Authentication -> Providers (Sign In / Providers) -> enable **Anonymous sign-ins**. Not done by the agent; without it pairing fails.
+  2. `npm run dev`. Browser profile 1: sign in as owner at `#/owner`, create/open the shop, add staff ΜΑΡΙΑ with a PIN, create a pairing code.
+  3. Browser profile 2 (a clean profile, no owner session): open the app, enter the code, sign in as ΜΑΡΙΑ with the PIN, fill a closing, submit.
+  4. In the SQL editor: `select inputs, business_date, staff_id from public.closings order by created_at desc limit 2;` -> inputs has `schema: 2` and each expense has `id` and `addedBy {kind:'staff', id}`.
+  5. Submit again (reopen the submit sheet) -> a second row exists.
+  6. Sign out on the phone -> only the sign-in screen is shown (no register fields). Also check a wrong PIN x5 locks the cashier.
+  7. Owner settings: set the day-change time -> the screen shows «Ισχύει από» (the first day it applies); the phone's next load keeps today's date until then.
+  8. Live PostgREST error codes (`invalid_code`, `not_a_device_session`, 42501 for a browser without an auth session) as mapped by `mapDeviceError` were never seen against the real API.
+  9. Shared browser: on the paired browser (profile 2), sign in as owner at `#/owner` (confirm the unpairing warning), then sign out; reload the app -> the pairing screen (not the old cashier's register, not «Εκτός σύνδεσης»).
+  10. Offline return: with the register open, go offline (devtools) and reload -> «Εκτός σύνδεσης», Υποβολή disabled; go online -> the banner disappears without a manual reload and Υποβολή works.
+  11. H13 against real auth-js: a paired phone left closed past its access-token expiry (~1 h), opened in airplane mode -> the cached register with «Εκτός σύνδεσης», not the pairing screen; back online -> live register. Only covered by fakes/stubs so far.
+- Stage 1 on real phones: iOS Safari / Android Chrome pairing and sign-in, offline cached context on a real device, the sign-in screen with the on-screen keyboard.
+- Stage 1 SQL tests were pasted into `execute_sql` with comment lines stripped (content otherwise identical); they ran as the connector's role, as the README describes.

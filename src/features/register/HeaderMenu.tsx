@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Route } from '../../app/router';
 import { THEME_LABELS } from '../../app/theme';
 import type { ThemePref } from '../../data/local/prefs';
+import { Sheet } from '../../ui/Sheet';
 
 interface Props {
   themePref: ThemePref;
-  onNavigate: (route: Route) => void;
   onTheme: () => void;
   onOwner: () => void;
 }
 
-export function HeaderMenu({ themePref, onNavigate, onTheme, onOwner }: Props) {
+export function HeaderMenu({ themePref, onTheme, onOwner }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -32,10 +31,6 @@ export function HeaderMenu({ themePref, onNavigate, onTheme, onOwner }: Props) {
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [open]);
 
-  const go = (route: Route) => {
-    setOpen(false);
-    onNavigate(route);
-  };
   return (
     <div className="menu-wrap" ref={wrapRef}>
       <button type="button" className="icon-btn" aria-label="Μενού" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -43,9 +38,6 @@ export function HeaderMenu({ themePref, onNavigate, onTheme, onOwner }: Props) {
       </button>
       {open && (
         <div className="menu" role="menu">
-          <button type="button" role="menuitem" onClick={() => go('staff')}>
-            Προσωπικό
-          </button>
           <button
             type="button"
             role="menuitem"
@@ -62,5 +54,27 @@ export function HeaderMenu({ themePref, onNavigate, onTheme, onOwner }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Opened from the header's date · cashier button: hands the phone to another person. */
+export function CashierSheet({ name, onSignOut, onClose }: { name: string; onSignOut: () => Promise<void>; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Sheet title={name} onClose={onClose}>
+      <div className="sheet-actions">
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void onSignOut();
+          }}
+        >
+          Αλλαγή ατόμου
+        </button>
+      </div>
+    </Sheet>
   );
 }

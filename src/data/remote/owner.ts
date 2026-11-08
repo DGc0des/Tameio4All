@@ -28,6 +28,9 @@ const oneRow = (r: Result<unknown[] | null>): Result<void> =>
 const toInfo = (s: Session | null): SessionInfo | null =>
   s ? { email: s.user.email ?? null, anonymous: s.user.is_anonymous === true } : null;
 
+/** en-CA formats as YYYY-MM-DD. */
+const ATHENS_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' });
+
 /** The one path for owner reads and writes. */
 export function createOwnerApi(client: SupabaseClient): OwnerApi {
   return {
@@ -75,6 +78,19 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
     },
     publishConfig: (shopId, expectedVersion, config) =>
       run(client.rpc('publish_config', { p_shop_id: shopId, p_expected_version: expectedVersion, p_config: config })),
+    async dayChange(shopId) {
+      const r = await run(client.from('shops').select('day_change_time, day_change_switch_at').eq('id', shopId).limit(1));
+      if (!r.ok) return r;
+      const row = (r.data as { day_change_time: string; day_change_switch_at: string | null }[] | null)?.[0];
+      if (!row) return { ok: false, error: { code: 'not_owner' } };
+      const switchAt = row.day_change_switch_at ? new Date(row.day_change_switch_at) : null;
+      const pending = switchAt !== null && switchAt.getTime() > Date.now();
+      return {
+        ok: true,
+        data: { time: row.day_change_time.slice(0, 5), fromDate: pending ? ATHENS_DATE.format(switchAt) : null },
+      };
+    },
+    setDayChange: (shopId, time) => run(client.rpc('set_day_change_time', { p_shop_id: shopId, p_time: time })),
     async listStaff(shopId) {
       const r = await run(client.from('staff').select('id, name, active, locked_until').eq('shop_id', shopId).order('name'));
       if (!r.ok) return r;

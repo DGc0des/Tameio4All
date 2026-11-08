@@ -1,14 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { ClosingInputs } from '../../src/core/formula';
-import { clearDraft, DRAFT_TTL_MS, loadDraft, saveDraft } from '../../src/data/local/drafts';
+import { clearDraft, loadDraft, loadUnsentDraft, markDraftSubmitted, saveDraft, takeUnsentNotice } from '../../src/data/local/drafts';
 import { loadTheme, saveTheme } from '../../src/data/local/prefs';
-import { loadStaff, normalizeStaff, saveStaff } from '../../src/data/local/staff';
 import {
   memoryStore, readJson, removeKey, shopKey, writeJson, type KeyValueStore,
 } from '../../src/data/local/storage';
-import {
-  loadSubmissions, MAX_SUBMISSIONS, pastExpenses, saveSubmission, type Submission,
-} from '../../src/data/local/submissions';
 import { newDraft } from '../../src/features/register/draft';
 
 const throwing: KeyValueStore = {
@@ -16,14 +11,6 @@ const throwing: KeyValueStore = {
   setItem: () => { throw new Error('QuotaExceededError'); },
   removeItem: () => { throw new Error('denied'); },
 };
-
-const inputs = (expenses: ClosingInputs['expenses'] = []): ClosingInputs => ({
-  schema: 1, counts: { '10000': 5 }, channelCents: {}, expenses,
-});
-const sub = (id: string, expenses: ClosingInputs['expenses'] = []): Submission => ({
-  id, shopId: 'local', staffName: 'ΓΚΡΕΖΙΟΣ', businessDate: '2026-09-28',
-  submittedAt: '2026-09-28T21:00:00.000Z', inputs: inputs(expenses),
-});
 
 describe('storage', () => {
   it('namespaces keys per shop', () => {
@@ -49,101 +36,109 @@ describe('storage', () => {
 describe('drafts', () => {
   const now = 1_790_000_000_000;
 
-  it('restores a draft saved within 10 hours', () => {
+  it('restores a draft of the same business date, whatever its age', () => {
     const s = memoryStore();
-    const d = newDraft('d1', '2026-09-28', 'ΓΚΡΕΖΙΟΣ');
+    const d = newDraft('d1', '2026-09-28');
     expect(saveDraft(s, 'local', d, now)).toBe(true);
-    expect(loadDraft(s, 'local', now + DRAFT_TTL_MS - 1)).toEqual(d);
+    expect(loadDraft(s, 'local', '2026-09-28')).toEqual(d);
   });
 
-  it('drops an expired draft and deletes it', () => {
+  it('moves an unsubmitted draft of another business date to the unsent key, announced once', () => {
     const s = memoryStore();
-    saveDraft(s, 'local', newDraft('d1', '2026-09-28'), now);
-    expect(loadDraft(s, 'local', now + DRAFT_TTL_MS + 1)).toBeNull();
+    const d = { ...newDraft('d1', '2026-09-28'), entries: { '10000': '3' } };
+    saveDraft(s, 'local', d, now);
+    expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
     expect(s.getItem(shopKey('local', 'draft'))).toBeNull();
+    expect(loadUnsentDraft(s, 'local')).toEqual(d);
+    expect(takeUnsentNotice(s, 'local')).toBe('2026-09-28');
+    expect(takeUnsentNotice(s, 'local')).toBeNull();
+    // The draft itself stays kept after the notice.
+    expect(loadUnsentDraft(s, 'local')).toEqual(d);
+  });
+
+  it('drops silently a never-typed draft of another business date (blank fields count as empty)', () => {
+    const s = memoryStore();
+    const blank = {
+      ...newDraft('d1', '2026-09-28'),
+      entries: { '10000': '', '5000': ' ' },
+      channels: { card: '' },
+      expenses: [{ id: 'e1', description: ' ', amountText: '', addedBy: null }],
+    };
+    saveDraft(s, 'local', blank, now);
+    expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
+    expect(s.getItem(shopKey('local', 'draft'))).toBeNull();
+    expect(loadUnsentDraft(s, 'local')).toBeNull();
+    expect(takeUnsentNotice(s, 'local')).toBeNull();
+    // An empty draft does not replace one already kept aside.
+    const typed = { ...newDraft('d0', '2026-09-27'), channels: { card: '5' } };
+    saveDraft(s, 'local', typed, now);
+    loadDraft(s, 'local', '2026-09-28');
+    saveDraft(s, 'local', newDraft('d2', '2026-09-28'), now);
+    loadDraft(s, 'local', '2026-09-29');
+    expect(loadUnsentDraft(s, 'local')).toEqual(typed);
+  });
+
+  it('a draft with only an expense description is not empty', () => {
+    const s = memoryStore();
+    const d = { ...newDraft('d1', '2026-09-28'), expenses: [{ id: 'e1', description: 'ΓΑΛΑ', amountText: '', addedBy: null }] };
+    saveDraft(s, 'local', d, now);
+    loadDraft(s, 'local', '2026-09-29');
+    expect(loadUnsentDraft(s, 'local')).toEqual(d);
+  });
+
+  it('keeps only the latest unsent draft', () => {
+    const s = memoryStore();
+    saveDraft(s, 'local', { ...newDraft('d1', '2026-09-27'), entries: { '10000': '1' } }, now);
+    loadDraft(s, 'local', '2026-09-28');
+    const later = { ...newDraft('d2', '2026-09-28'), entries: { '10000': '2' } };
+    saveDraft(s, 'local', later, now);
+    loadDraft(s, 'local', '2026-09-29');
+    expect(loadUnsentDraft(s, 'local')).toEqual(later);
+    expect(takeUnsentNotice(s, 'local')).toBe('2026-09-28');
+  });
+
+  it('discards silently a draft that was submitted and not edited since', () => {
+    const s = memoryStore();
+    const d = { ...newDraft('d1', '2026-09-28'), entries: { '10000': '3' } };
+    saveDraft(s, 'local', d, now);
+    markDraftSubmitted(s, 'local', d);
+    expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
+    expect(loadUnsentDraft(s, 'local')).toBeNull();
+    expect(takeUnsentNotice(s, 'local')).toBeNull();
+  });
+
+  it('moves a draft edited after its last submit', () => {
+    const s = memoryStore();
+    const d = { ...newDraft('d1', '2026-09-28'), entries: { '10000': '3' } };
+    markDraftSubmitted(s, 'local', d);
+    const edited = { ...d, entries: { '10000': '4' } };
+    saveDraft(s, 'local', edited, now);
+    expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
+    expect(loadUnsentDraft(s, 'local')).toEqual(edited);
+    expect(takeUnsentNotice(s, 'local')).toBe('2026-09-28');
+  });
+
+  it('unsent storage is failure-safe', () => {
+    expect(() => markDraftSubmitted(throwing, 'local', newDraft('d1', '2026-09-28'))).not.toThrow();
+    expect(loadUnsentDraft(throwing, 'local')).toBeNull();
+    expect(takeUnsentNotice(throwing, 'local')).toBeNull();
   });
 
   it('drops a malformed draft', () => {
     const s = memoryStore();
     s.setItem(shopKey('local', 'draft'), JSON.stringify({ savedAt: now, draft: { id: 5 } }));
-    expect(loadDraft(s, 'local', now)).toBeNull();
+    expect(loadDraft(s, 'local', '2026-09-28')).toBeNull();
     s.setItem(shopKey('local', 'draft'), 'not json');
-    expect(loadDraft(s, 'local', now)).toBeNull();
+    expect(loadDraft(s, 'local', '2026-09-28')).toBeNull();
   });
 
   it('clearDraft removes it; failures return null/false', () => {
     const s = memoryStore();
     saveDraft(s, 'local', newDraft('d1', '2026-09-28'), now);
     clearDraft(s, 'local');
-    expect(loadDraft(s, 'local', now)).toBeNull();
+    expect(loadDraft(s, 'local', '2026-09-28')).toBeNull();
     expect(saveDraft(throwing, 'local', newDraft('d1', '2026-09-28'), now)).toBe(false);
-    expect(loadDraft(throwing, 'local', now)).toBeNull();
-  });
-});
-
-describe('submissions', () => {
-  it('saves once per id (double tap / retry safe)', () => {
-    const s = memoryStore();
-    expect(saveSubmission(s, sub('a'))).toBe('saved');
-    expect(saveSubmission(s, sub('a'))).toBe('duplicate');
-    expect(loadSubmissions(s, 'local')).toHaveLength(1);
-  });
-
-  it('reports failure when storage refuses the write', () => {
-    expect(saveSubmission(throwing, sub('a'))).toBe('failed');
-  });
-
-  it('reports duplicate only when the same id carries the same inputs', () => {
-    const s = memoryStore();
-    expect(saveSubmission(s, sub('a'))).toBe('saved');
-    expect(saveSubmission(s, sub('a'))).toBe('duplicate');
-    expect(loadSubmissions(s, 'local')).toHaveLength(1);
-  });
-
-  it('reports conflict and keeps the stored record when the same id carries different inputs', () => {
-    const s = memoryStore();
-    expect(saveSubmission(s, sub('a'))).toBe('saved');
-    const changed = { ...sub('a', [{ description: 'X', cents: 500 }]) };
-    expect(saveSubmission(s, changed)).toBe('conflict');
-    const stored = loadSubmissions(s, 'local');
-    expect(stored).toHaveLength(1);
-    expect(stored[0]?.inputs.expenses).toEqual([]);
-  });
-
-  it('skips malformed records', () => {
-    const s = memoryStore();
-    s.setItem(shopKey('local', 'submissions'), JSON.stringify([sub('a'), { id: 1 }, null, { ...sub('b'), inputs: 3 }]));
-    expect(loadSubmissions(s, 'local').map((x) => x.id)).toEqual(['a']);
-  });
-
-  it(`keeps only the newest ${MAX_SUBMISSIONS}`, () => {
-    const s = memoryStore();
-    for (let i = 0; i <= MAX_SUBMISSIONS; i++) saveSubmission(s, sub(`s${i}`));
-    const ids = loadSubmissions(s, 'local').map((x) => x.id);
-    expect(ids).toHaveLength(MAX_SUBMISSIONS);
-    expect(ids[0]).toBe('s1');
-    expect(ids.at(-1)).toBe(`s${MAX_SUBMISSIONS}`);
-  });
-
-  it('turns submissions into past expenses dated by business date', () => {
-    expect(pastExpenses([sub('a', [{ description: 'Nice', cents: 1300 }])])).toEqual([
-      { description: 'Nice', cents: 1300, date: '2026-09-28' },
-    ]);
-  });
-});
-
-describe('staff', () => {
-  it('normalizes: trims, collapses spaces, drops empties and case-insensitive duplicates', () => {
-    expect(normalizeStaff(['  ΜΑΡΙΑ ', 'Μαρία', 'μαρια', '', 'ΝΙΚΟΣ  Π', 5])).toEqual(['ΜΑΡΙΑ', 'Μαρία', 'ΝΙΚΟΣ Π']);
-  });
-
-  it('saves and loads per shop; junk loads as empty', () => {
-    const s = memoryStore();
-    expect(saveStaff(s, 'local', ['ΓΚΡΕΖΙΟΣ', ' ΓΚΡΕΖΙΟΣ'])).toEqual(['ΓΚΡΕΖΙΟΣ']);
-    expect(loadStaff(s, 'local')).toEqual(['ΓΚΡΕΖΙΟΣ']);
-    s.setItem(shopKey('local', 'staff'), '"x"');
-    expect(loadStaff(s, 'local')).toEqual([]);
-    expect(saveStaff(throwing, 'local', ['A'])).toBeNull();
+    expect(loadDraft(throwing, 'local', '2026-09-28')).toBeNull();
   });
 });
 

@@ -9,6 +9,7 @@ import { configErrorMessage, configErrorSection, ownerErrorMessage, type Setting
 import { applySettings, isEditableConfig, type SettingsAction } from '../model/settingsDraft';
 import { ErrorText } from '../OwnerUi';
 import { useAction } from '../useAction';
+import { DayChangeCard } from './DayChangeCard';
 import { ChannelsSection } from './ChannelsSection';
 import { GeneralSection } from './GeneralSection';
 import { PreviewCard } from './PreviewCard';
@@ -160,6 +161,7 @@ export function SettingsScreen({ api, shopId, store, now }: Props) {
 
   return (
     <div key={formKey}>
+      <DayChangeCard api={api} shopId={shopId} />
       <p className="notice-soft">
         Έκδοση {server.version}
         {dirty ? ' · μη δημοσιευμένες αλλαγές' : ''}

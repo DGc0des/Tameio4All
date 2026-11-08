@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 
-export type Route = 'register' | 'staff';
+export type Route = 'register';
 
-export function parseRoute(hash: string): Route {
-  if (hash === '#/staff') return 'staff';
+/** The phone area has one screen; any non-owner hash (including the retired `#/staff`) is the register. */
+export function parseRoute(_hash: string): Route {
   return 'register';
 }
 
-export function routeHash(route: Route): string {
-  return route === 'register' ? '#/' : `#/${route}`;
+export function routeHash(_route: Route): string {
+  return '#/';
 }
 
 export type ShopTab = 'settings' | 'staff' | 'devices';

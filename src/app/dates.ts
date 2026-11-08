@@ -22,6 +22,13 @@ export function formatDayEl(iso: string): string {
   return `${DAYS_EL[new Date(y, mo - 1, d).getDay()]} ${pad(d)}/${pad(mo)}`;
 }
 
+/** "2026-09-28" → "28/09". Unknown input is returned unchanged. */
+export function formatDayMonth(iso: string): string {
+  if (!isIsoDate(iso)) return iso;
+  const [, mo, d] = iso.split('-');
+  return `${d}/${mo}`;
+}
+
 /** "2026-09-28" → "28/09/2026". Unknown input is returned unchanged. */
 export function formatDateEl(iso: string): string {
   if (!isIsoDate(iso)) return iso;
