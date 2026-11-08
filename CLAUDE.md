@@ -14,7 +14,10 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   Every call is failure-safe; `pickStore()` falls back to memory when storage is unavailable.
 - `src/data/remote/` — the only code importing supabase-js. `owner.ts` (`createOwnerApi`) is the
   one path for owner reads/writes; `errors.ts` maps every failure into the closed `OwnerError`
-  union; `client.ts` builds the PKCE client.
+  union; `client.ts` builds the PKCE client. `supabase.ts` exports `getSupabase()`: the ONE shared
+  client (owner and phone use the same instance). `deviceApi.ts` (the `DeviceApi` interface),
+  `device.ts` (`createDeviceApi`, the one path for phone reads/writes: context, staff list, pair,
+  sign in/out, submit, suggestions) and `deviceErrors.ts` (`mapDeviceError` → closed `DeviceError`).
 - `src/features/owner/` — owner area (lazy-loaded from `#/owner`): `model/` is pure (settings
   reducer, terms, preview, limits, pairing, messages); screens get an injected `OwnerApi`.
 - `src/features/phone/` — phone shell (lazy `PhoneEntry` builds the real `DeviceApi`): `model/gate.ts` is the
@@ -87,6 +90,23 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 - `publish_config` conflicts are never retried automatically; the owner chooses «Φόρτωση νέας» or
   «Δημοσίευση πάνω της».
 - The settings preview computes only through `previewTotals` → `evaluateTotals`.
+- Business day: the shop's business date comes only from `private.business_date` (Europe/Athens, the owner's
+  day-change time, default 04:00; a new time takes effect from the next business day, via
+  `prev_day_change_time`/`day_change_switch_at`). The phone never computes it; it reads `business_date` from
+  `device_context()` and `staff_sign_in`. `submit_closing` accepts only the session's business date (`wrong_day`),
+  except that an idempotency-key repeat is answered before that check.
+- Staff session (`staff_sessions`): `staff_sign_in` verifies the PIN and returns a random token; only its sha256
+  is stored (the PIN is never stored; the raw token only lives on the phone). One live session per phone (a new
+  sign-in revokes the phone's earlier ones), valid for its business date only; it dies on sign-out, device
+  revocation or staff deactivation. `submit_closing`/`staff_session` authorize from the token + `auth.uid()`, never a
+  client-sent staff or shop id. Phones cannot read `staff_sessions` or call `private.*`.
+- Submit idempotency: key minted per submit sheet (see the register rule above); same key + same inputs → repeat
+  (same closing id), same key + different inputs → `idempotency_conflict`; a resubmit with a new key stores a
+  second row (suggestions use the latest non-voided closing per day).
+- Schema 2 is a cross-file invariant: `validateClosingInputs` and `private.inputs_shape_ok` both accept 1|2;
+  `submit_closing` accepts only 2 (`bad_inputs` otherwise); schema-2 expenses need `id` (1–64 chars) and `addedBy`
+  (`{kind:'staff',id: uuid of a staff of the shop}`; phones may not send `{kind:'owner'}` — that is for owner edits).
+  Change one side and the other needs a migration/commit in the same change.
 - Phone: a stored `StaffSession` is used only when its `shopId` and `businessDate` match the device context;
   it is saved while the gate is `ready` and cleared on `signed_out`/`unpaired`. The gate entering `loading` is the
   one reload path (PhoneApp re-runs `context()`): after pairing, after a sign-in that was offline or doesn't match

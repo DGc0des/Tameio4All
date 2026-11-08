@@ -13,3 +13,7 @@ A pass finishes without error. A failure raises an exception whose message start
 
 Test user ids: owner A `…a1`, owner B `…b1`, stranger `…51` (regular users); phones `…d1`, `…d2`
 (anonymous users). All use the `@test.local` domain.
+
+Files: `010` table access/RLS, `020` owner functions, `030` pairing and phone functions, `040` closings and
+suggestions, `050` owner app support, `060` staff sessions, business date and day-change time, `070` session
+submit and inputs schema 2. `060`/`070` also create a throwaway phone `…d1`; `060` uses `…d2` as an unpaired phone.
