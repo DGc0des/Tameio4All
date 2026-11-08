@@ -177,12 +177,28 @@ describe('PhoneApp', () => {
     const store = memoryStore();
     saveStaffSession(store, SESSION);
     saveCachedContext(store, CTX);
-    const api = fakeDeviceApi({ session: vi.fn(() => Promise.resolve(null)) });
+    const api = fakeDeviceApi({ session: vi.fn(() => ok(null)) });
     start(api, store);
     expect(await screen.findByRole('button', { name: 'Σύνδεση συσκευής' })).toBeTruthy();
     expect(api.context).not.toHaveBeenCalled();
     expect(loadStaffSession(store)).toBeNull();
     expect(loadCachedContext(store)).toBeNull();
+  });
+
+  it('offline with an expired access token: the failed session lookup opens the cached register, caches kept', async () => {
+    const store = memoryStore();
+    saveStaffSession(store, SESSION);
+    saveCachedContext(store, CTX);
+    const api = fakeDeviceApi({
+      session: vi.fn(() => fail<{ anonymous: boolean } | null>({ code: 'network' })),
+      context: vi.fn(() => fail<DeviceContext | null>({ code: 'network' })),
+    });
+    start(api, store);
+    expect(await screen.findByText('Εκτός σύνδεσης')).toBeTruthy();
+    expect(screen.getByLabelText('100€')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Σύνδεση συσκευής' })).toBeNull();
+    expect(loadStaffSession(store)).toEqual(SESSION);
+    expect(loadCachedContext(store)).toEqual(CTX);
   });
 
   it('a non-network load error shows an error screen with retry, never the cached register', async () => {

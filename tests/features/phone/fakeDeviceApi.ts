@@ -16,7 +16,7 @@ export const FAKE_STAFF = [
 /** A paired phone for shop «Join Juice»; PIN 1234 signs in. Every method is a vi.fn. */
 export function fakeDeviceApi(overrides: Partial<DeviceApi> = {}): DeviceApi {
   const base: DeviceApi = {
-    session: vi.fn(() => Promise.resolve({ anonymous: true })),
+    session: vi.fn(() => ok({ anonymous: true })),
     pair: vi.fn(() => ok(undefined)),
     context: vi.fn(() =>
       ok({

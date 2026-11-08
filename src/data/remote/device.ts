@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import type { PastExpense } from '../../core/suggestions';
 import type { DResult, DeviceApi, DeviceContext, StaffSession } from './deviceApi';
 import { fromServerResult, mapDeviceError } from './deviceErrors';
@@ -23,20 +23,23 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
   /** Remembered from the last successful context() so a StaffSession can carry its shop. */
   let shopId = '';
 
+  // auth-js answers {session:null, error} when an expired access token could not be refreshed (e.g. offline)
+  // while the refresh token stays stored: that is "couldn't tell", never "no session".
   const session: DeviceApi['session'] = async () => {
-    try {
-      const { data } = await client.auth.getSession();
-      return data.session ? { anonymous: data.session.user.is_anonymous === true } : null;
-    } catch {
-      return null;
-    }
+    const r = await run<{ session: Session | null }>(client.auth.getSession());
+    if (!r.ok) return r;
+    const s = r.data.session;
+    return { ok: true, data: s ? { anonymous: s.user.is_anonymous === true } : null };
   };
 
   return {
     session,
     async pair(code, label, opts) {
+      const looked = await session();
+      // Without knowing who is signed in here, an anonymous sign-in could replace an owner's session unasked.
+      if (!looked.ok) return looked;
+      const current = looked.data;
       try {
-        const current = await session();
         if (current && !current.anonymous && !opts?.force) return { ok: false, error: { code: 'owner_signed_in' } };
         if (current && !current.anonymous) await client.auth.signOut({ scope: 'local' });
         if (!current || !current.anonymous) {

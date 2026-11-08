@@ -14,17 +14,28 @@ function readStored(store: KeyValueStore, key: string): { draft: Draft; noticed:
   return isDraft(s.draft) ? { draft: s.draft, noticed: s.noticed } : null;
 }
 
+const blank = (text: string): boolean => text.trim() === '';
+
+/** Nothing was ever typed: every entry, channel and expense field is empty or whitespace. */
+function isEmptyDraft(d: Draft): boolean {
+  return (
+    Object.values(d.entries).every(blank) &&
+    Object.values(d.channels).every(blank) &&
+    d.expenses.every((e) => blank(e.description) && blank(e.amountText))
+  );
+}
+
 /**
  * A draft belongs to one business date. One for another date is never silently lost: unless it was
- * submitted and not edited since, it moves to the shop's "unsent" key (only the latest is kept) and
- * `takeUnsentNotice` reports it once. An unreadable draft is discarded.
+ * submitted and not edited since, or nothing was ever typed in it, it moves to the shop's "unsent" key
+ * (only the latest is kept) and `takeUnsentNotice` reports it once. An unreadable draft is discarded.
  */
 export function loadDraft(store: KeyValueStore, shopId: string, businessDate: string): Draft | null {
   const key = draftKey(shopId);
   if (readJson(store, key) === null) return null;
   const stored = readStored(store, key);
   if (stored !== null && stored.draft.businessDate === businessDate) return stored.draft;
-  if (stored !== null && JSON.stringify(readJson(store, submittedKey(shopId))) !== JSON.stringify(stored.draft)) {
+  if (stored !== null && !isEmptyDraft(stored.draft) && JSON.stringify(readJson(store, submittedKey(shopId))) !== JSON.stringify(stored.draft)) {
     writeJson(store, unsentKey(shopId), { draft: stored.draft, noticed: false });
   }
   removeKey(store, key);

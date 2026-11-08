@@ -38,8 +38,11 @@ export interface StaffSession {
 
 /** The one path for phone reads and writes. Never throws. */
 export interface DeviceApi {
-  /** null = no auth session at all; anonymous=false means an owner is signed in in this browser. */
-  session(): Promise<{ anonymous: boolean } | null>;
+  /**
+   * null data = definitely no auth session; anonymous=false means an owner is signed in in this browser.
+   * A failure means "couldn't tell" (e.g. offline with an expired access token) — never treat it as no session.
+   */
+  session(): Promise<DResult<{ anonymous: boolean } | null>>;
   /** Signs in anonymously if needed, then redeems. `force` signs an owner out first. */
   pair(code: string, label: string, opts?: { force?: boolean }): Promise<DResult<void>>;
   /** null data = signed in but not paired. */

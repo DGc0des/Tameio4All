@@ -114,14 +114,15 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   one reload path (PhoneApp re-runs `context()`): after pairing, after a sign-in that was offline or doesn't match
   the context, on `session_invalid`/`wrong_day` (which also clear the stored session), and on the gate's `retry`
   (while offline: the `online` event, the page becoming visible, «Δοκίμασε ξανά»; also from `load_error`). Load
-  order: `session()` first — no auth session at all means unpaired (stored session + cached context cleared);
-  then `context()`. Only a `network` failure falls back to the cached context (offline); `device_revoked`/
+  order: `session()` first — only a lookup that succeeded with no session means unpaired (stored session + cached
+  context cleared); a failed lookup is "couldn't tell" (auth-js returns `{session:null, error}` when an expired
+  access token can't be refreshed offline) and falls through to `context()`. `pair` refuses on a failed lookup. Only a `network` failure falls back to the cached context (offline); `device_revoked`/
   `not_a_device` (incl. Postgres 42501) unpair; any other failure is `load_error` (message + retry, never a cached
   register). A paired phone with nobody signed in renders only the sign-in screen (no register fields, no amounts).
 - Drafts: `useDraftAutosave` debounces 300 ms and flushes on pagehide/hidden and on unmount (so a gate reload never
   loses typing). A draft whose `businessDate` differs from the server's is never silently deleted: `loadDraft` moves
   it to the shop's `unsent` key (latest only) unless it is exactly the draft last acknowledged by the server
-  (`markDraftSubmitted`), and the register shows «Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της DD/MM. Ενημέρωσε
+  (`markDraftSubmitted`) or never typed in (every entry/channel/expense field blank — dropped silently), and the register shows «Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της DD/MM. Ενημέρωσε
   τον ιδιοκτήτη.» once (`takeUnsentNotice`, called from an effect because StrictMode runs initializers twice). No TTL.
 
 ## Conventions

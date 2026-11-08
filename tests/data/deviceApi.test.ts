@@ -4,18 +4,52 @@ import { createDeviceApi } from '../../src/data/remote/device';
 
 type Reply = { data: unknown; error: unknown };
 
-function stub(opts: { user?: { is_anonymous: boolean } | null; rpc?: Record<string, Reply> } = {}) {
+function stub(
+  opts: { user?: { is_anonymous: boolean } | null; rpc?: Record<string, Reply>; getSession?: () => Promise<unknown> } = {},
+) {
   const user = opts.user === undefined ? { is_anonymous: true } : opts.user;
   const rpc = vi.fn((name: string) => Promise.resolve(opts.rpc?.[name] ?? { data: null, error: null }));
   const auth = {
-    getSession: vi.fn(() => Promise.resolve({ data: { session: user ? { user } : null } })),
+    getSession: vi.fn(opts.getSession ?? (() => Promise.resolve({ data: { session: user ? { user } : null }, error: null }))),
     signInAnonymously: vi.fn(() => Promise.resolve({ data: {}, error: null })),
     signOut: vi.fn(() => Promise.resolve({ error: null })),
   };
   return { client: { rpc, auth } as unknown as SupabaseClient, rpc, auth };
 }
 
+// auth-js returns this when the stored access token expired and refreshing it failed (e.g. offline);
+// the refresh token stays stored, so the phone is still paired.
+const refreshFailed = () =>
+  Promise.resolve({ data: { session: null }, error: { name: 'AuthRetryableFetchError', message: 'Failed to fetch' } });
+
 describe('createDeviceApi', () => {
+  it('session: no session and no error is "definitely none"; a session reports anonymity', async () => {
+    expect(await createDeviceApi(stub({ user: null }).client).session()).toEqual({ ok: true, data: null });
+    expect(await createDeviceApi(stub().client).session()).toEqual({ ok: true, data: { anonymous: true } });
+    expect(await createDeviceApi(stub({ user: { is_anonymous: false } }).client).session()).toEqual({
+      ok: true,
+      data: { anonymous: false },
+    });
+  });
+
+  it('session: a failed refresh ({session:null, error}) is not "no session"', async () => {
+    const r = await createDeviceApi(stub({ getSession: refreshFailed }).client).session();
+    expect(r).toEqual({ ok: false, error: { code: 'network' } });
+  });
+
+  it('session: a throwing getSession is not "no session"', async () => {
+    const r = await createDeviceApi(stub({ getSession: () => Promise.reject(new TypeError('Failed to fetch')) }).client).session();
+    expect(r).toEqual({ ok: false, error: { code: 'network' } });
+  });
+
+  it('pair does not sign in anonymously when the session lookup fails', async () => {
+    const s = stub({ getSession: refreshFailed });
+    expect(await createDeviceApi(s.client).pair('A', 'L')).toEqual({ ok: false, error: { code: 'network' } });
+    expect(s.auth.signInAnonymously).not.toHaveBeenCalled();
+    expect(s.auth.signOut).not.toHaveBeenCalled();
+    expect(s.rpc).not.toHaveBeenCalled();
+  });
+
   it('pair refuses an owner session without force, calling nothing', async () => {
     const s = stub({ user: { is_anonymous: false } });
     const r = await createDeviceApi(s.client).pair('ABCD', 'Phone');

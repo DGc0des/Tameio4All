@@ -76,9 +76,12 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
 
   const load = useCallback(async () => {
     if (api === null) return dispatch({ t: 'no_client' });
-    // No auth session at all (e.g. an owner signed in here and out again): not a paired device, whatever
+    // Definitely no auth session (e.g. an owner signed in here and out again): not a paired device, whatever
     // the cache says. As `loaded ctx:null` the gate goes to pairing and the cached session/context are cleared.
-    if ((await api.session()) === null) return dispatch({ t: 'loaded', ctx: null, stored: null });
+    // A failed lookup only means "couldn't tell" (offline with an expired access token): context() decides,
+    // falling back to the cached register when offline.
+    const auth = await api.session();
+    if (auth.ok && auth.data === null) return dispatch({ t: 'loaded', ctx: null, stored: null });
     const r = await api.context();
     if (r.ok) {
       if (r.data !== null) saveCachedContext(store, r.data);

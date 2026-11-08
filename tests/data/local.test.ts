@@ -56,11 +56,41 @@ describe('drafts', () => {
     expect(loadUnsentDraft(s, 'local')).toEqual(d);
   });
 
+  it('drops silently a never-typed draft of another business date (blank fields count as empty)', () => {
+    const s = memoryStore();
+    const blank = {
+      ...newDraft('d1', '2026-09-28'),
+      entries: { '10000': '', '5000': ' ' },
+      channels: { card: '' },
+      expenses: [{ id: 'e1', description: ' ', amountText: '', addedBy: null }],
+    };
+    saveDraft(s, 'local', blank, now);
+    expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
+    expect(s.getItem(shopKey('local', 'draft'))).toBeNull();
+    expect(loadUnsentDraft(s, 'local')).toBeNull();
+    expect(takeUnsentNotice(s, 'local')).toBeNull();
+    // An empty draft does not replace one already kept aside.
+    const typed = { ...newDraft('d0', '2026-09-27'), channels: { card: '5' } };
+    saveDraft(s, 'local', typed, now);
+    loadDraft(s, 'local', '2026-09-28');
+    saveDraft(s, 'local', newDraft('d2', '2026-09-28'), now);
+    loadDraft(s, 'local', '2026-09-29');
+    expect(loadUnsentDraft(s, 'local')).toEqual(typed);
+  });
+
+  it('a draft with only an expense description is not empty', () => {
+    const s = memoryStore();
+    const d = { ...newDraft('d1', '2026-09-28'), expenses: [{ id: 'e1', description: 'ΓΑΛΑ', amountText: '', addedBy: null }] };
+    saveDraft(s, 'local', d, now);
+    loadDraft(s, 'local', '2026-09-29');
+    expect(loadUnsentDraft(s, 'local')).toEqual(d);
+  });
+
   it('keeps only the latest unsent draft', () => {
     const s = memoryStore();
-    saveDraft(s, 'local', newDraft('d1', '2026-09-27'), now);
+    saveDraft(s, 'local', { ...newDraft('d1', '2026-09-27'), entries: { '10000': '1' } }, now);
     loadDraft(s, 'local', '2026-09-28');
-    const later = newDraft('d2', '2026-09-28');
+    const later = { ...newDraft('d2', '2026-09-28'), entries: { '10000': '2' } };
     saveDraft(s, 'local', later, now);
     loadDraft(s, 'local', '2026-09-29');
     expect(loadUnsentDraft(s, 'local')).toEqual(later);
