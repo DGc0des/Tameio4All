@@ -129,9 +129,11 @@ begin
 end $$;
 reset role;
 
--- T9 a retry whose first response was lost across the day change is still a repeat: the key lookup
--- runs before the day check. (The stored row is moved back a day to simulate it.) A fresh key for
--- that past date is still wrong_day.
+-- T9 the key lookup runs before the day check. Simulated: the stored row is moved back a day, then a
+-- FRESH session (signed in for today, on the same device) re-sends yesterday's key + inputs + date ->
+-- repeat. This is not the stage-1 client's path: its token from the previous business day is
+-- session_invalid first, and the phone forgets the key with the register. A fresh key for that past
+-- date is still wrong_day.
 update public.closings set business_date = business_date - 1 where id = current_setting('t.closing')::uuid;
 set local role authenticated;
 select set_config('t.token3', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);

@@ -57,6 +57,28 @@ describe('gateReducer — loading', () => {
     expect(notDevice.s).toBe('unpaired');
     expect(notDevice.s === 'unpaired' && notDevice.notice).toBeTruthy();
   });
+
+  it('a non-network load failure never opens the cached register: load_error', () => {
+    const unknown = { code: 'unknown', detail: 'boom' } as const;
+    expect(gateReducer(loading, { t: 'load_failed', error: unknown, cached: ctx, stored: session })).toEqual({ s: 'load_error', error: unknown });
+    expect(gateReducer(loading, { t: 'load_failed', error: unknown, cached: null, stored: null })).toEqual({ s: 'load_error', error: unknown });
+  });
+});
+
+describe('gateReducer — retry', () => {
+  it('offline states and load_error → loading', () => {
+    expect(gateReducer({ s: 'offline_no_cache' }, { t: 'retry' })).toEqual(loading);
+    expect(gateReducer({ ...ready, offline: true }, { t: 'retry' })).toEqual(loading);
+    expect(gateReducer({ ...signedOut, offline: true }, { t: 'retry' })).toEqual(loading);
+    expect(gateReducer({ s: 'load_error', error: { code: 'unknown', detail: 'x' } }, { t: 'retry' })).toEqual(loading);
+  });
+
+  it('is ignored when online or in any other state', () => {
+    const unpaired: Gate = { s: 'unpaired', notice: null };
+    for (const g of [ready, signedOut, unpaired, loading, { s: 'unconfigured' } as Gate]) {
+      expect(gateReducer(g, { t: 'retry' })).toBe(g);
+    }
+  });
 });
 
 describe('gateReducer — transitions', () => {

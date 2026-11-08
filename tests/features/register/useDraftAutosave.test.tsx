@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadDraft } from '../../../src/data/local/drafts';
 import { memoryStore, shopKey } from '../../../src/data/local/storage';
 import { newDraft } from '../../../src/features/register/draft';
 import { useDraftAutosave } from '../../../src/features/register/useDraftAutosave';
@@ -27,5 +28,20 @@ describe('useDraftAutosave', () => {
     } finally {
       Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
     }
+  });
+
+  it('flushes the pending debounced save on unmount', () => {
+    vi.useFakeTimers();
+    const store = memoryStore();
+    const now = () => new Date(1_790_000_000_000);
+    const first = newDraft('d1', '2026-09-28');
+    const { rerender, unmount } = renderHook(({ draft }) => useDraftAutosave(store, 'local', draft, now), {
+      initialProps: { draft: first },
+    });
+    vi.advanceTimersByTime(300);
+    const edited = { ...first, entries: { '10000': '7' } };
+    rerender({ draft: edited });
+    unmount();
+    expect(loadDraft(store, 'local', '2026-09-28')).toEqual(edited);
   });
 });

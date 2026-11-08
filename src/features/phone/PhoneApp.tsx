@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useReducer, type ReactNode } from 'react';
 import { isShopConfig } from '../../core/config';
 import { clearCachedContext, clearStaffSession, loadCachedContext, loadStaffSession, saveCachedContext, saveStaffSession } from '../../data/local/phone';
 import type { ThemePref } from '../../data/local/prefs';
@@ -8,6 +8,7 @@ import { RegisterScreen } from '../register/RegisterScreen';
 import type { ShareFn } from '../register/share';
 import { Card } from '../../ui/Card';
 import { gateReducer } from './model/gate';
+import { deviceErrorMessage } from './model/messages';
 import { PairScreen } from './PairScreen';
 import { SignInScreen } from './SignInScreen';
 
@@ -38,30 +39,34 @@ function Message({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function RetryScreen({ onRetry }: { onRetry: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false);
+function RetryScreen({ onRetry }: { onRetry: () => void }) {
   return (
     <Message title="Δεν υπάρχει σύνδεση">
       <p className="sub">Το ταμείο χρειάζεται σύνδεση την πρώτη φορά που ανοίγει σε αυτή τη συσκευή.</p>
-      <button
-        type="button"
-        className="btn btn-primary"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          await onRetry();
-          setBusy(false);
-        }}
-      >
+      <button type="button" className="btn btn-primary" onClick={onRetry}>
         Δοκίμασε ξανά
       </button>
     </Message>
   );
 }
 
-const OfflineBanner = () => (
+function LoadErrorScreen({ error, onRetry }: { error: DeviceError; onRetry: () => void }) {
+  return (
+    <Message title="Ταμείο">
+      <p role="alert">{deviceErrorMessage(error)}</p>
+      <button type="button" className="btn btn-primary" onClick={onRetry}>
+        Δοκίμασε ξανά
+      </button>
+    </Message>
+  );
+}
+
+const OfflineBanner = ({ onRetry }: { onRetry: () => void }) => (
   <p className="notice" role="status">
-    Εκτός σύνδεσης
+    Εκτός σύνδεσης{' '}
+    <button type="button" className="btn btn-text" onClick={onRetry}>
+      Δοκίμασε ξανά
+    </button>
   </p>
 );
 
@@ -71,6 +76,9 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
 
   const load = useCallback(async () => {
     if (api === null) return dispatch({ t: 'no_client' });
+    // No auth session at all (e.g. an owner signed in here and out again): not a paired device, whatever
+    // the cache says. As `loaded ctx:null` the gate goes to pairing and the cached session/context are cleared.
+    if ((await api.session()) === null) return dispatch({ t: 'loaded', ctx: null, stored: null });
     const r = await api.context();
     if (r.ok) {
       if (r.data !== null) saveCachedContext(store, r.data);
@@ -92,6 +100,23 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
     if (gate.s === 'signed_out' || gate.s === 'unpaired') clearStaffSession(store);
     if (gate.s === 'unpaired') clearCachedContext(store);
   }, [gate, store]);
+
+  // While offline, re-check the server when the browser regains its connection or comes back into view.
+  // The retry enters `loading` (the one reload path); the register flushes its draft as it unmounts.
+  const offline = gate.s === 'offline_no_cache' || ((gate.s === 'ready' || gate.s === 'signed_out') && gate.offline);
+  const retry = useCallback(() => dispatch({ t: 'retry' }), []);
+  useEffect(() => {
+    if (!offline) return;
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') retry();
+    };
+    window.addEventListener('online', retry);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('online', retry);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [offline, retry]);
 
   const onPaired = useCallback(() => dispatch({ t: 'paired' }), []);
   const signedOutShopId = gate.s === 'signed_out' ? gate.ctx.shopId : '';
@@ -125,7 +150,9 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
         </Message>
       );
     case 'offline_no_cache':
-      return <RetryScreen onRetry={load} />;
+      return <RetryScreen onRetry={retry} />;
+    case 'load_error':
+      return <LoadErrorScreen error={gate.error} onRetry={retry} />;
     case 'unpaired':
       // api is non-null here: without a client the gate is `unconfigured`.
       return api && <PairScreen api={api} notice={gate.notice} onPaired={onPaired} onOwner={onOwner} />;
@@ -133,7 +160,7 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
       return (
         api && (
           <>
-            {gate.offline && <OfflineBanner />}
+            {gate.offline && <OfflineBanner onRetry={retry} />}
             <SignInScreen api={api} shopName={gate.ctx.shopName} onSignedIn={onSignedIn} onServerError={onServerError} onOwner={onOwner} />
           </>
         )
@@ -151,7 +178,7 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
       }
       return (
         <>
-          {gate.offline && <OfflineBanner />}
+          {gate.offline && <OfflineBanner onRetry={retry} />}
           <RegisterScreen
             key={`${ctx.shopId}:${ctx.businessDate}`}
             ctx={ctx}

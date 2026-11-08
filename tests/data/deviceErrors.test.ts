@@ -12,6 +12,13 @@ describe('mapDeviceError', () => {
     expect(mapDeviceError({ message: 'invalid_code', code: '22023' })).toEqual({ code: 'invalid_code' });
     expect(mapDeviceError({ message: 'not_a_device_session', code: '42501' })).toEqual({ code: 'not_a_device' });
   });
+  it('maps a permission refusal (no auth session, or anon) and lost auth sessions to not_a_device', () => {
+    expect(mapDeviceError({ message: 'permission denied for function device_context', code: '42501' })).toEqual({ code: 'not_a_device' });
+    expect(mapDeviceError({ message: 'JWT expired', code: 'PGRST301' })).toEqual({ code: 'not_a_device' });
+    expect(mapDeviceError({ message: 'x', code: 'PGRST303' })).toEqual({ code: 'not_a_device' });
+    expect(mapDeviceError({ message: 'x', code: 'session_not_found' })).toEqual({ code: 'not_a_device' });
+    expect(mapDeviceError({ message: 'x', code: 'refresh_token_not_found' })).toEqual({ code: 'not_a_device' });
+  });
   it('never throws on garbage', () => {
     expect(mapDeviceError(null).code).toBe('unknown');
     expect(mapDeviceError(undefined).code).toBe('unknown');

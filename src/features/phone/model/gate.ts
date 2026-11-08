@@ -6,6 +6,8 @@ export type Gate =
   | { s: 'loading' }
   | { s: 'unconfigured' }
   | { s: 'offline_no_cache' }
+  /** The context load failed for a reason other than the network: no cached register, only a retry. */
+  | { s: 'load_error'; error: DeviceError }
   | { s: 'unpaired'; notice: string | null }
   | { s: 'signed_out'; ctx: DeviceContext; offline: boolean }
   | { s: 'ready'; ctx: DeviceContext; session: StaffSession; offline: boolean };
@@ -17,7 +19,9 @@ export type GateEvent =
   | { t: 'paired' }
   | { t: 'signed_in'; session: StaffSession }
   | { t: 'signed_out' }
-  | { t: 'server_error'; error: DeviceError };
+  | { t: 'server_error'; error: DeviceError }
+  /** Re-check the server: the browser came back online or visible, or the person tapped «Δοκίμασε ξανά». */
+  | { t: 'retry' };
 
 /** A session counts only for the same shop and the same business date as the context. */
 const matches = (ctx: DeviceContext, session: StaffSession): boolean =>
@@ -40,7 +44,8 @@ export function gateReducer(g: Gate, e: GateEvent): Gate {
       return e.ctx === null ? { s: 'unpaired', notice: null } : fromContext(e.ctx, e.stored, false);
     case 'load_failed':
       if (e.error.code === 'device_revoked' || e.error.code === 'not_a_device') return unpairedBy(e.error);
-      // Any other failure (network, or a server hiccup) falls back to the cache like a dropped connection.
+      // Only a dropped connection falls back to the cache; any other failure must not show a stale register.
+      if (e.error.code !== 'network') return { s: 'load_error', error: e.error };
       return e.cached === null ? { s: 'offline_no_cache' } : fromContext(e.cached, e.stored, true);
     case 'paired':
       return RELOAD;
@@ -50,6 +55,9 @@ export function gateReducer(g: Gate, e: GateEvent): Gate {
       return g.offline || !matches(g.ctx, e.session) ? RELOAD : { s: 'ready', ctx: g.ctx, session: e.session, offline: false };
     case 'signed_out':
       return g.s === 'ready' ? { s: 'signed_out', ctx: g.ctx, offline: g.offline } : g;
+    case 'retry':
+      if (g.s === 'offline_no_cache' || g.s === 'load_error') return RELOAD;
+      return (g.s === 'ready' || g.s === 'signed_out') && g.offline ? RELOAD : g;
     case 'server_error':
       switch (e.error.code) {
         case 'device_revoked':

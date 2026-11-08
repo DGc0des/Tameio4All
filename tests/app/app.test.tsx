@@ -4,7 +4,7 @@ import type { ComponentType } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/app/App';
 import type { ClosingInputs } from '../../src/core/formula';
-import { loadDraft } from '../../src/data/local/drafts';
+import { loadDraft, loadUnsentDraft } from '../../src/data/local/drafts';
 import { loadStaffSession, saveCachedContext, saveStaffSession } from '../../src/data/local/phone';
 import { memoryStore, shopKey, type KeyValueStore } from '../../src/data/local/storage';
 import type { DeviceApi } from '../../src/data/remote/deviceApi';
@@ -307,7 +307,7 @@ describe('navigation', () => {
     expect(screen.queryByRole('menuitem', { name: 'Προσωπικό' })).toBeNull();
   });
 
-  it('drops a stored draft from another business date', async () => {
+  it('keeps a stored draft from another business date aside and says so once', async () => {
     const store = memoryStore();
     store.setItem(
       shopKey(FAKE_SHOP_ID, 'draft'),
@@ -315,6 +315,50 @@ describe('navigation', () => {
     );
     await start(store);
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
+    expect(await screen.findByText('Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της 06/11. Ενημέρωσε τον ιδιοκτήτη.')).toBeTruthy();
+    expect(loadUnsentDraft(store, FAKE_SHOP_ID)?.entries['10000']).toBe('500');
+  });
+
+  it('a day change found at submit reloads; the typed closing is kept aside with the notice', async () => {
+    const tomorrow = { shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-08' };
+    const context = vi
+      .fn<DeviceApi['context']>()
+      .mockReturnValueOnce(ok({ ...tomorrow, businessDate: '2026-11-07' }))
+      .mockReturnValue(ok(tomorrow));
+    const api = fakeDeviceApi({
+      context,
+      submit: vi.fn(() => fail<{ closingId: string; repeat: boolean }>({ code: 'wrong_day' })),
+      signIn: vi.fn(() => ok({ token: 'token-2', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-08', shopId: FAKE_SHOP_ID })),
+    });
+    const store = await start(memoryStore(), true, api);
+    type('100€', '1500');
+    await submitClosing();
+    fireEvent.click(await screen.findByRole('radio', { name: 'ΜΑΡΙΑ' }));
+    type('PIN', '1234');
+    fireEvent.click(button('Είσοδος'));
+    expect(await screen.findByText('Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της 07/11. Ενημέρωσε τον ιδιοκτήτη.')).toBeTruthy();
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
+    expect(loadUnsentDraft(store, FAKE_SHOP_ID)?.entries['10000']).toBe('1500');
+  });
+
+  it('a submitted, unedited draft is dropped on the next day without a notice', async () => {
+    const tomorrow = { shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-08' };
+    const context = vi
+      .fn<DeviceApi['context']>()
+      .mockReturnValueOnce(ok({ ...tomorrow, businessDate: '2026-11-07' }))
+      .mockReturnValue(ok(tomorrow));
+    const store = await start(memoryStore(), true, fakeDeviceApi({ context }));
+    type('100€', '1500');
+    await submitClosing();
+    fireEvent.click(button('Τέλος'));
+    cleanup();
+    saveStaffSession(store, { token: 'token-2', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-08', shopId: FAKE_SHOP_ID });
+    render(<App appStore={{ store, persistent: true }} deviceApi={fakeDeviceApi({ context })} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
+    await screen.findByLabelText('100€');
+    await act(async () => {}); // let the notice effect run
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
+    expect(screen.queryByText(/Η ημέρα άλλαξε/)).toBeNull();
+    expect(loadUnsentDraft(store, FAKE_SHOP_ID)).toBeNull();
   });
 
   it('has no Αποβάρα in the menu and fills ΚΕΡΜΑΤΑ from the calculator', async () => {

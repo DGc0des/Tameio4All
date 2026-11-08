@@ -108,11 +108,14 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
       const r = await run(client.rpc('expense_suggestion_data'));
       if (!r.ok) return r;
       const rows = (Array.isArray(r.data) ? r.data : []) as Record<string, unknown>[];
-      const data: PastExpense[] = rows.map((x) => ({
-        description: str(x.description),
-        cents: typeof x.cents === 'number' ? x.cents : Number(x.cents),
-        date: str(x.business_date),
-      }));
+      const data: PastExpense[] = rows
+        .map((x) => ({
+          description: str(x.description),
+          cents: typeof x.cents === 'number' ? x.cents : typeof x.cents === 'string' && x.cents !== '' ? Number(x.cents) : NaN,
+          date: str(x.business_date),
+        }))
+        // A malformed row (NaN, fractional, negative, unsafe) is skipped, never passed on as money.
+        .filter((x) => Number.isSafeInteger(x.cents) && x.cents >= 0);
       return { ok: true, data };
     },
   };

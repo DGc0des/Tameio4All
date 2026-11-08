@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { joinJuicePreset } from '../../../src/core/presets';
 import { loadCachedContext, loadStaffSession, saveCachedContext, saveStaffSession } from '../../../src/data/local/phone';
@@ -171,6 +171,78 @@ describe('PhoneApp', () => {
     expect(await screen.findByLabelText('100€')).toBeTruthy();
     expect(screen.queryByText('Εκτός σύνδεσης')).toBeNull();
     expect(context).toHaveBeenCalledTimes(2);
+  });
+
+  it('a browser with no auth session goes to pairing and forgets the cached session and context', async () => {
+    const store = memoryStore();
+    saveStaffSession(store, SESSION);
+    saveCachedContext(store, CTX);
+    const api = fakeDeviceApi({ session: vi.fn(() => Promise.resolve(null)) });
+    start(api, store);
+    expect(await screen.findByRole('button', { name: 'Σύνδεση συσκευής' })).toBeTruthy();
+    expect(api.context).not.toHaveBeenCalled();
+    expect(loadStaffSession(store)).toBeNull();
+    expect(loadCachedContext(store)).toBeNull();
+  });
+
+  it('a non-network load error shows an error screen with retry, never the cached register', async () => {
+    const store = memoryStore();
+    saveStaffSession(store, SESSION);
+    saveCachedContext(store, CTX);
+    const context = vi.fn<DeviceApi['context']>().mockReturnValueOnce(fail({ code: 'unknown', detail: 'boom' })).mockReturnValue(ok(CTX));
+    start(fakeDeviceApi({ context }), store);
+    expect(await screen.findByText('Κάτι πήγε στραβά.')).toBeTruthy();
+    expect(document.querySelector('input.field')).toBeNull();
+    expect(screen.queryByText('Εκτός σύνδεσης')).toBeNull();
+    fireEvent.click(button('Δοκίμασε ξανά'));
+    expect(await screen.findByLabelText('100€')).toBeTruthy();
+    expect(context).toHaveBeenCalledTimes(2);
+  });
+
+  it('an offline register comes back online on the online event: banner gone, Υποβολή enabled', async () => {
+    const store = memoryStore();
+    saveStaffSession(store, SESSION);
+    saveCachedContext(store, CTX);
+    const context = vi.fn<DeviceApi['context']>().mockReturnValueOnce(fail({ code: 'network' })).mockReturnValue(ok(CTX));
+    start(fakeDeviceApi({ context }), store);
+    expect(await screen.findByText('Εκτός σύνδεσης')).toBeTruthy();
+    type('100€', '1500');
+    expect(button('Υποβολή').disabled).toBe(true);
+    fireEvent(window, new Event('online'));
+    expect(await screen.findByLabelText('100€')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText('Εκτός σύνδεσης')).toBeNull());
+    expect(context).toHaveBeenCalledTimes(2);
+    // The draft typed offline survives the reload (flushed on unmount).
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('1500');
+    expect(button('Υποβολή').disabled).toBe(false);
+  });
+
+  it('an offline phone re-checks when it becomes visible again, and from the banner button', async () => {
+    const store = memoryStore();
+    saveCachedContext(store, CTX);
+    const context = vi
+      .fn<DeviceApi['context']>()
+      .mockReturnValueOnce(fail({ code: 'network' }))
+      .mockReturnValueOnce(fail({ code: 'network' }))
+      .mockReturnValue(ok(CTX));
+    start(fakeDeviceApi({ context }), store);
+    expect(await screen.findByText('Εκτός σύνδεσης')).toBeTruthy();
+    fireEvent(document, new Event('visibilitychange'));
+    await waitFor(() => expect(context).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Εκτός σύνδεσης')).toBeTruthy();
+    fireEvent.click(button('Δοκίμασε ξανά'));
+    await waitFor(() => expect(screen.queryByText('Εκτός σύνδεσης')).toBeNull());
+    expect(context).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
+  });
+
+  it('an online phone does not reload on online / visibility events', async () => {
+    const api = fakeDeviceApi();
+    start(api);
+    expect(await screen.findByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
+    fireEvent(window, new Event('online'));
+    fireEvent(document, new Event('visibilitychange'));
+    expect(api.context).toHaveBeenCalledTimes(1);
   });
 
   it('caches the context after a successful load', async () => {

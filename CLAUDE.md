@@ -21,7 +21,7 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 - `src/features/owner/` — owner area (lazy-loaded from `#/owner`): `model/` is pure (settings
   reducer, terms, preview, limits, pairing, messages); screens get an injected `OwnerApi`.
 - `src/features/phone/` — phone shell (lazy `PhoneEntry` builds the real `DeviceApi`): `model/gate.ts` is the
-  pure gate reducer (loading → unconfigured | offline_no_cache | unpaired → signed_out → ready); `PhoneApp`
+  pure gate reducer (loading → unconfigured | offline_no_cache | load_error | unpaired → signed_out → ready); `PhoneApp`
   renders only from it; `PairScreen`, `SignInScreen`. App tests pass `deviceApi={fakeDeviceApi()}`.
 - `src/ui/` primitives, `src/features/*` screens and sheets, `src/app/` composition (App, hash
   router, theme, error boundary).
@@ -94,7 +94,9 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   day-change time, default 04:00; a new time takes effect from the next business day, via
   `prev_day_change_time`/`day_change_switch_at`). The phone never computes it; it reads `business_date` from
   `device_context()` and `staff_sign_in`. `submit_closing` accepts only the session's business date (`wrong_day`),
-  except that an idempotency-key repeat is answered before that check.
+  except that an idempotency-key repeat is answered before that check. That exception only helps a fresh session
+  (signed in on the new day) on the same device re-sending the old key; the stage-1 client never does that — its
+  token from the previous business day is `session_invalid` first, and the key lives only in the open register.
 - Staff session (`staff_sessions`): `staff_sign_in` verifies the PIN and returns a random token; only its sha256
   is stored (the PIN is never stored; the raw token only lives on the phone). One live session per phone (a new
   sign-in revokes the phone's earlier ones), valid for its business date only; it dies on sign-out, device
@@ -110,9 +112,17 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 - Phone: a stored `StaffSession` is used only when its `shopId` and `businessDate` match the device context;
   it is saved while the gate is `ready` and cleared on `signed_out`/`unpaired`. The gate entering `loading` is the
   one reload path (PhoneApp re-runs `context()`): after pairing, after a sign-in that was offline or doesn't match
-  the context, and on `session_invalid`/`wrong_day` (which also clear the stored session). A paired phone with nobody
-  signed in renders only the sign-in screen (no register fields, no amounts). A draft is discarded when its
-  `businessDate` differs from the server's (`loadDraft(store, shopId, businessDate)`; no TTL).
+  the context, on `session_invalid`/`wrong_day` (which also clear the stored session), and on the gate's `retry`
+  (while offline: the `online` event, the page becoming visible, «Δοκίμασε ξανά»; also from `load_error`). Load
+  order: `session()` first — no auth session at all means unpaired (stored session + cached context cleared);
+  then `context()`. Only a `network` failure falls back to the cached context (offline); `device_revoked`/
+  `not_a_device` (incl. Postgres 42501) unpair; any other failure is `load_error` (message + retry, never a cached
+  register). A paired phone with nobody signed in renders only the sign-in screen (no register fields, no amounts).
+- Drafts: `useDraftAutosave` debounces 300 ms and flushes on pagehide/hidden and on unmount (so a gate reload never
+  loses typing). A draft whose `businessDate` differs from the server's is never silently deleted: `loadDraft` moves
+  it to the shop's `unsent` key (latest only) unless it is exactly the draft last acknowledged by the server
+  (`markDraftSubmitted`), and the register shows «Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της DD/MM. Ενημέρωσε
+  τον ιδιοκτήτη.» once (`takeUnsentNotice`, called from an effect because StrictMode runs initializers twice). No TTL.
 
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.

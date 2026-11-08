@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { formatDayEl } from '../../app/dates';
+import { formatDayEl, formatDayMonth } from '../../app/dates';
 import type { ShopConfig } from '../../core/config';
 import { isBill } from '../../core/denominations';
 import type { ClosingInputs } from '../../core/formula';
 import { buildSupplierHistory, type SupplierHistory } from '../../core/suggestions';
-import { loadDraft, saveDraft } from '../../data/local/drafts';
+import { loadDraft, markDraftSubmitted, saveDraft, takeUnsentNotice } from '../../data/local/drafts';
 import type { ThemePref } from '../../data/local/prefs';
 import type { KeyValueStore } from '../../data/local/storage';
 import type { DeviceApi, DeviceContext, DeviceError, StaffSession } from '../../data/remote/deviceApi';
@@ -68,7 +68,15 @@ export function RegisterScreen(props: RegisterProps) {
   // a submit, reopening the sheet for an unchanged closing keeps the key (a lost answer is then answered
   // `repeat`); any edit, or an acknowledged submit, makes the next opening mint a new one.
   const submitKey = useRef<{ key: string; inputs: string } | null>(null);
+  // Business date of a draft that a day change kept aside before it was submitted (loadDraft moved it).
+  const [unsentDate, setUnsentDate] = useState<string | null>(null);
   useDraftAutosave(store, ctx.shopId, draft, now);
+
+  // In an effect, not the draft initializer: StrictMode runs initializers twice and keeps only one result.
+  useEffect(() => {
+    const date = takeUnsentNotice(store, ctx.shopId);
+    if (date !== null) setUnsentDate(date);
+  }, [store, ctx.shopId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +124,8 @@ export function RegisterScreen(props: RegisterProps) {
     const r = await api.submit(session.token, ctx.configId, ctx.businessDate, inputs, key);
     if (r.ok) {
       submitKey.current = null;
+      // An acknowledged, unedited draft needs no warning when the day changes.
+      markDraftSubmitted(store, ctx.shopId, draft);
       setToast('Το κλείσιμο υποβλήθηκε');
       setHistoryRound((n) => n + 1);
     } else {
@@ -143,6 +153,11 @@ export function RegisterScreen(props: RegisterProps) {
         {active && <HeaderMenu themePref={themePref} onTheme={onTheme} onOwner={onOwner} />}
       </header>
       <main className="page">
+        {unsentDate !== null && (
+          <p className="notice" role="alert">
+            {`Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της ${formatDayMonth(unsentDate)}. Ενημέρωσε τον ιδιοκτήτη.`}
+          </p>
+        )}
         <ModeSwitch mode={draft.mode} onChange={(mode) => dispatch({ type: 'setMode', mode, denominations: config.denominations })} />
         <CountCard title="Χαρτονομίσματα" denominations={bills} totalCents={derived.billsCents} draft={draft} derived={derived} dispatch={dispatch} />
         <CountCard title="Κέρματα" denominations={coins} totalCents={derived.coinsCents} draft={draft} derived={derived} dispatch={dispatch} />

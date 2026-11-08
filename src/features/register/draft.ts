@@ -79,7 +79,8 @@ type Obj = Record<string, unknown>;
 const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
 const isStringRecord = (x: unknown): boolean => isObj(x) && Object.values(x).every((v) => typeof v === 'string');
 const isAuthor = (x: unknown): boolean =>
-  isObj(x) && (x.kind === 'owner' || (x.kind === 'staff' && typeof x.id === 'string'));
+  isObj(x) && (x.kind === 'owner' || (x.kind === 'staff' && typeof x.id === 'string' && x.id.length > 0));
+// Same author rule as validateClosingInputs, so a stored draft can never make evaluateTotals throw.
 // `addedBy` must be present (null or an author): drafts saved before it existed are discarded on load.
 const isExpenseDraft = (x: unknown): boolean =>
   isObj(x) &&

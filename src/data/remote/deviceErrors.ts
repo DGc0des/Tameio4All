@@ -31,7 +31,9 @@ export function mapDeviceError(err: unknown): DeviceError {
 
   if (name === 'AuthRetryableFetchError' || NETWORK_RE.test(message)) return { code: 'network' };
   if (RAISED.has(message)) return message === 'invalid_code' ? { code: 'invalid_code' } : { code: 'not_a_device' };
-  if (code === 'PGRST301' || code === 'PGRST303' || code === 'session_not_found' || code === 'refresh_token_not_found') {
+  // 42501 = insufficient privilege: device functions are granted to `authenticated` only, so a browser with
+  // no auth session (calling as anon) lands here. Such a browser is not a paired device.
+  if (code === '42501' || code === 'PGRST301' || code === 'PGRST303' || code === 'session_not_found' || code === 'refresh_token_not_found') {
     return { code: 'not_a_device' };
   }
   return { code: 'unknown', detail: message || code || name || 'error' };

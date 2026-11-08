@@ -69,5 +69,7 @@ describe('isDraft', () => {
     expect(isDraft({ ...base(), expenses: [{ ...ex, addedBy: { kind: 'staff', id: 's1' } }] })).toBe(true);
     expect(isDraft({ ...base(), expenses: [ex] })).toBe(false);
     expect(isDraft({ ...base(), expenses: [{ ...ex, addedBy: { kind: 'x' } }] })).toBe(false);
+    // Matches validateClosingInputs: a staff author needs a non-empty id.
+    expect(isDraft({ ...base(), expenses: [{ ...ex, addedBy: { kind: 'staff', id: '' } }] })).toBe(false);
   });
 });

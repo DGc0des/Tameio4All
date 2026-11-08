@@ -112,6 +112,26 @@ describe('createDeviceApi', () => {
     });
   });
 
+  it('suggestionData skips rows whose cents is not a safe non-negative integer', async () => {
+    const rows = [
+      { description: 'A', cents: 'abc', business_date: '2026-11-06' },
+      { description: 'B', cents: null, business_date: '2026-11-06' },
+      { description: 'C', cents: -5, business_date: '2026-11-06' },
+      { description: 'D', cents: 1.5, business_date: '2026-11-06' },
+      { description: 'E', cents: 1e20, business_date: '2026-11-06' },
+      { description: 'F', cents: '700', business_date: '2026-11-06' },
+      { description: 'G', cents: 0, business_date: '2026-11-06' },
+    ];
+    const s = stub({ rpc: { expense_suggestion_data: { data: rows, error: null } } });
+    expect(await createDeviceApi(s.client).suggestionData()).toEqual({
+      ok: true,
+      data: [
+        { description: 'F', cents: 700, date: '2026-11-06' },
+        { description: 'G', cents: 0, date: '2026-11-06' },
+      ],
+    });
+  });
+
   it('never throws: a rejected call becomes a network error; signOut swallows failures', async () => {
     const s = stub();
     s.rpc.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')));

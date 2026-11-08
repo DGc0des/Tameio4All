@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearDraft, loadDraft, saveDraft } from '../../src/data/local/drafts';
+import { clearDraft, loadDraft, loadUnsentDraft, markDraftSubmitted, saveDraft, takeUnsentNotice } from '../../src/data/local/drafts';
 import { loadTheme, saveTheme } from '../../src/data/local/prefs';
 import {
   memoryStore, readJson, removeKey, shopKey, writeJson, type KeyValueStore,
@@ -43,11 +43,55 @@ describe('drafts', () => {
     expect(loadDraft(s, 'local', '2026-09-28')).toEqual(d);
   });
 
-  it('drops a draft of another business date and deletes it', () => {
+  it('moves an unsubmitted draft of another business date to the unsent key, announced once', () => {
     const s = memoryStore();
-    saveDraft(s, 'local', newDraft('d1', '2026-09-28'), now);
+    const d = { ...newDraft('d1', '2026-09-28'), entries: { '10000': '3' } };
+    saveDraft(s, 'local', d, now);
     expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
     expect(s.getItem(shopKey('local', 'draft'))).toBeNull();
+    expect(loadUnsentDraft(s, 'local')).toEqual(d);
+    expect(takeUnsentNotice(s, 'local')).toBe('2026-09-28');
+    expect(takeUnsentNotice(s, 'local')).toBeNull();
+    // The draft itself stays kept after the notice.
+    expect(loadUnsentDraft(s, 'local')).toEqual(d);
+  });
+
+  it('keeps only the latest unsent draft', () => {
+    const s = memoryStore();
+    saveDraft(s, 'local', newDraft('d1', '2026-09-27'), now);
+    loadDraft(s, 'local', '2026-09-28');
+    const later = newDraft('d2', '2026-09-28');
+    saveDraft(s, 'local', later, now);
+    loadDraft(s, 'local', '2026-09-29');
+    expect(loadUnsentDraft(s, 'local')).toEqual(later);
+    expect(takeUnsentNotice(s, 'local')).toBe('2026-09-28');
+  });
+
+  it('discards silently a draft that was submitted and not edited since', () => {
+    const s = memoryStore();
+    const d = { ...newDraft('d1', '2026-09-28'), entries: { '10000': '3' } };
+    saveDraft(s, 'local', d, now);
+    markDraftSubmitted(s, 'local', d);
+    expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
+    expect(loadUnsentDraft(s, 'local')).toBeNull();
+    expect(takeUnsentNotice(s, 'local')).toBeNull();
+  });
+
+  it('moves a draft edited after its last submit', () => {
+    const s = memoryStore();
+    const d = { ...newDraft('d1', '2026-09-28'), entries: { '10000': '3' } };
+    markDraftSubmitted(s, 'local', d);
+    const edited = { ...d, entries: { '10000': '4' } };
+    saveDraft(s, 'local', edited, now);
+    expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
+    expect(loadUnsentDraft(s, 'local')).toEqual(edited);
+    expect(takeUnsentNotice(s, 'local')).toBe('2026-09-28');
+  });
+
+  it('unsent storage is failure-safe', () => {
+    expect(() => markDraftSubmitted(throwing, 'local', newDraft('d1', '2026-09-28'))).not.toThrow();
+    expect(loadUnsentDraft(throwing, 'local')).toBeNull();
+    expect(takeUnsentNotice(throwing, 'local')).toBeNull();
   });
 
   it('drops a malformed draft', () => {
