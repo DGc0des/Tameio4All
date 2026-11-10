@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { loadEntryMode, loadPending, savePending } from '../../../src/data/local/openClosing';
+import { loadEntryMode, loadPending, savePending, saveSnapshot } from '../../../src/data/local/openClosing';
 import { memoryStore, type KeyValueStore } from '../../../src/data/local/storage';
 import type { DResult, DeviceApi, DeviceContext, StaffSession } from '../../../src/data/remote/deviceApi';
 import type { FieldAck, Snapshot } from '../../../src/features/register/live/fields';
@@ -280,6 +280,21 @@ describe('after a failure the gate does not take over', () => {
     expect(field(p, '100€').value).toBe('800');
     expect(barSubmit(p).disabled).toBe(false);
     expect(server.openChannels()).toBe(1);
+  });
+
+  it('M2: online, a cached snapshot of another day shows no boxes until today\'s load arrives', async () => {
+    const store = memoryStore();
+    const server = fakeServer();
+    saveSnapshot(store, FAKE_SHOP_ID, { ...server.snapshot(), id: 'oc-0', businessDate: '2026-11-06' });
+    let answer!: (r: DResult<Snapshot>) => void;
+    const getOpenClosing = vi.fn(() => new Promise<DResult<Snapshot>>((r) => { answer = r; }));
+    const p = phone(server, MARIA, store, { getOpenClosing });
+    await settle();
+    expect(p.q.queryByLabelText('100€')).toBeNull();
+    expect(p.q.getByText('Φόρτωση…')).toBeTruthy();
+    await act(async () => { answer({ ok: true, data: server.snapshot() }); });
+    await settle();
+    expect(field(p, '100€')).toBeTruthy();
   });
 
   it("I1: another cashier's unsent edits on this phone are never sent as the signed-in one", async () => {

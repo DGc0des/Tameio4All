@@ -74,8 +74,12 @@ export function RegisterScreen(props: RegisterProps) {
       onServerError(e);
     },
   });
-  const { state, draft, edit, flush, focus, resync, drain, clearNotice, restart } = live;
-  const snapshot = state.snapshot;
+  const { state, draft: liveDraft, edit, flush, focus, resync, drain, clearNotice, restart } = live;
+  // Online, a cached snapshot of another business date (yesterday's, at startup) is not shown: anything
+  // typed into it would be tagged with that day and dropped. The register waits for today's load instead.
+  const staleDay = !offline && state.snapshot !== null && state.snapshot.businessDate !== ctx.businessDate;
+  const snapshot = staleDay ? null : state.snapshot;
+  const draft = staleDay ? null : liveDraft;
   // The closing's pinned config, never device_context's (an older/newer config would compute other totals).
   const config = snapshot !== null && isShopConfig(snapshot.config) ? snapshot.config : null;
   const derived = useMemo(() => (config !== null && draft !== null ? deriveClosing(config, draft) : null), [config, draft]);

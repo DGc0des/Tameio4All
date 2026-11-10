@@ -10,7 +10,9 @@ import type { DeviceError } from '../../data/remote/deviceApi';
 import type { OwnerApi } from '../../data/remote/ownerApi';
 import { Card } from '../../ui/Card';
 import { deviceErrorMessage } from '../phone/model/messages';
-import { deriveClosing } from '../register/derive';
+import { BottomBar } from '../register/BottomBar';
+import { deriveClosing, envelopeBlockReason } from '../register/derive';
+import { EnvelopeSheet } from '../register/EnvelopeSheet';
 import { OWNER_QUEUE_AUTHOR } from '../register/live/fields';
 import { useLiveClosing } from '../register/live/useLiveClosing';
 import { LiveClosingView } from '../register/LiveClosingView';
@@ -30,7 +32,7 @@ const OWNER = { name: OWNER_PRESENCE_NAME, id: OWNER_QUEUE_AUTHOR };
 const OWNER_AUTHOR = { kind: 'owner' } as const;
 const NO_HISTORY: SupplierHistory = {};
 
-/** The shop's open closing, live: same boxes and totals as the register, edited as «Ιδιοκτήτης». No submit here. */
+/** The shop's open closing, live: same boxes, totals and Φάκελος as the register, edited as «Ιδιοκτήτης». No submit here. */
 export function TodayScreen({ api, shopId, store, now, newId = randomId }: TodayScreenProps) {
   const writer = useMemo(() => createTodayWriter(api, shopId), [api, shopId]);
   const [fatal, setFatal] = useState<DeviceError | null>(null);
@@ -46,6 +48,7 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
   };
 
   const [toast, setToast] = useState<string | null>(null);
+  const [envelopeOpen, setEnvelopeOpen] = useState(false);
   useEffect(() => {
     if (state.notice === null) return;
     setToast(state.notice);
@@ -113,6 +116,16 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
         now={now}
         history={NO_HISTORY}
       />
+      <BottomBar
+        label={config.totals.find((t) => t.id === config.envelopeTotalId)?.label ?? ''}
+        amountCents={derived.totals[config.envelopeTotalId] ?? 0}
+        envelopeBlocked={envelopeBlockReason(derived)}
+        submitBlocked={null}
+        onEnvelope={() => setEnvelopeOpen(true)}
+      />
+      {envelopeOpen && (
+        <EnvelopeSheet denominations={config.denominations} envelope={derived.envelope} onClose={() => setEnvelopeOpen(false)} />
+      )}
       {toast !== null && (
         <div className="toast" role="status">
           {toast}

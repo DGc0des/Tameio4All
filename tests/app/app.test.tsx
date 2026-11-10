@@ -369,7 +369,8 @@ describe('navigation', () => {
     type('PIN', '1234');
     fireEvent.click(button('Είσοδος'));
     expect(await screen.findByRole('button', { name: 'Κυρ 08/11 · ΜΑΡΙΑ' })).toBeTruthy();
-    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
+    // The cached 07/11 closing is not shown on the new day (M2): the boxes appear with the 08/11 load.
+    expect(((await screen.findByLabelText('100€')) as HTMLInputElement).value).toBe('');
   });
 
   it('has no Αποβάρα in the menu and fills ΚΕΡΜΑΤΑ from the calculator', async () => {

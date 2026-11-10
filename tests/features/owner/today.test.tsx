@@ -2,6 +2,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { joinJuicePreset } from '../../../src/core/presets';
+import { formatEuro } from '../../../src/core/money';
+import { deriveClosing } from '../../../src/features/register/derive';
+import { draftFromFields } from '../../../src/features/register/live/merge';
 import { WRONG_DAY_NOTICE } from '../../../src/features/register/live/syncEngine';
 import { loadEntryMode } from '../../../src/data/local/openClosing';
 import { memoryStore } from '../../../src/data/local/storage';
@@ -115,6 +118,20 @@ describe('TodayScreen', () => {
     await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(3));
     await waitFor(() => expect(box('100€').value).toBe(''));
     expect(screen.queryByRole('alert')).toBeNull(); // not fatal
+  });
+
+  it('M5: the owner can open the Φάκελος breakdown, computed by planEnvelope like the register', async () => {
+    const fields = { 'd:10000': { key: 'd:10000', value: { text: '1500', mode: 'amount' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '' } };
+    const s = snap({ fields });
+    setup({ todayClosing: vi.fn(() => ok(s)) });
+    await loaded();
+    const expected = deriveClosing(joinJuicePreset, draftFromFields(s, [])).envelope;
+    expect(expected.targetCents).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Φάκελος' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain(formatEuro(expected.targetCents));
+    expect(dialog.textContent).toContain(`× ${expected.put['10000']}`);
+    expect(screen.queryByRole('button', { name: 'Υποβολή' })).toBeNull();
   });
 
   it('not_owner shows its message with a retry', async () => {

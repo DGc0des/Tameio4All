@@ -6,7 +6,8 @@ interface Props {
   envelopeBlocked: string | null;
   submitBlocked: string | null;
   onEnvelope: () => void;
-  onSubmit: () => void;
+  /** Without it there is no Υποβολή button (the owner's «Σήμερα» view). */
+  onSubmit?: () => void;
 }
 
 export function BottomBar({ label, amountCents, envelopeBlocked, submitBlocked, onEnvelope, onSubmit }: Props) {
@@ -26,9 +27,11 @@ export function BottomBar({ label, amountCents, envelopeBlocked, submitBlocked, 
         <button type="button" className="btn btn-text" disabled={envelopeBlocked !== null} onClick={onEnvelope}>
           Φάκελος
         </button>
-        <button type="button" className="btn btn-primary" disabled={submitBlocked !== null} onClick={onSubmit}>
-          Υποβολή
-        </button>
+        {onSubmit !== undefined && (
+          <button type="button" className="btn btn-primary" disabled={submitBlocked !== null} onClick={onSubmit}>
+            Υποβολή
+          </button>
+        )}
       </div>
     </footer>
   );
