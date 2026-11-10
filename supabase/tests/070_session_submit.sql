@@ -28,6 +28,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 select public.redeem_pairing_code(current_setting('t.code'), 'Ταμείο');
 select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select public.get_open_closing(current_setting('t.token'));   -- creates today's open closing (revision 0)
 reset role;
 select set_config('t.bd', private.business_date(current_setting('t.shop_a')::uuid)::text, true);
 select set_config('t.good', jsonb_build_object(
@@ -46,7 +47,7 @@ declare
   r jsonb;
 begin
   -- T1 happy path, schema 2
-  r := public.submit_closing(tok, cfg, bd, good, 'key-1');
+  r := public.submit_closing(tok, cfg, bd, good, 0, 'key-1');
   if r is distinct from jsonb_build_object('ok', true, 'closing_id', r -> 'closing_id', 'repeat', false) or r ->> 'closing_id' is null then
     raise exception 'T1 submit failed: %', r;
   end if;
@@ -56,37 +57,37 @@ begin
   r := public.submit_closing(tok, cfg, bd, jsonb_build_object(
         'expenses', jsonb_build_array(jsonb_build_object('addedBy', jsonb_build_object('id', current_setting('t.maria'), 'kind', 'staff'),
                                                          'cents', 1300, 'description', 'Nice', 'id', 'e1')),
-        'channelCents', jsonb_build_object('wolt', 4560), 'counts', jsonb_build_object('10000', 5), 'schema', 2), 'key-1');
+        'channelCents', jsonb_build_object('wolt', 4560), 'counts', jsonb_build_object('10000', 5), 'schema', 2), 0, 'key-1');
   if r is distinct from jsonb_build_object('ok', true, 'closing_id', current_setting('t.closing')::uuid, 'repeat', true) then
     raise exception 'T2 repeat not recognised: %', r;
   end if;
-  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{"10000":9},"channelCents":{},"expenses":[]}', 'key-1');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{"10000":9},"channelCents":{},"expenses":[]}', 0, 'key-1');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'idempotency_conflict') then raise exception 'T2b expected idempotency_conflict: %', r; end if;
 
   -- T3 only the session's business date is accepted
-  r := public.submit_closing(tok, cfg, bd - 1, good, 'key-3a');
+  r := public.submit_closing(tok, cfg, bd - 1, good, 0, 'key-3a');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'wrong_day') then raise exception 'T3 yesterday accepted: %', r; end if;
-  r := public.submit_closing(tok, cfg, bd + 1, good, 'key-3b');
+  r := public.submit_closing(tok, cfg, bd + 1, good, 0, 'key-3b');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'wrong_day') then raise exception 'T3 tomorrow accepted: %', r; end if;
 
   -- T4 new submissions must be schema 2
-  r := public.submit_closing(tok, cfg, bd, '{"schema":1,"counts":{},"channelCents":{},"expenses":[{"description":"Nice","cents":1300}]}', 'key-4');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":1,"counts":{},"channelCents":{},"expenses":[{"description":"Nice","cents":1300}]}', 0, 'key-4');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T4 schema 1 accepted: %', r; end if;
 
   -- T5 another shop's config is refused
-  r := public.submit_closing(tok, current_setting('t.cfg_b')::uuid, bd, good, 'key-5');
+  r := public.submit_closing(tok, current_setting('t.cfg_b')::uuid, bd, good, 0, 'key-5');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'config_mismatch') then raise exception 'T5 expected config_mismatch: %', r; end if;
 
   -- T6 expense authors: owner kind refused from phones, other shop's staff refused, id required
-  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{},"channelCents":{},"expenses":[{"id":"e1","description":"X","cents":1,"addedBy":{"kind":"owner"}}]}', 'key-6a');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{},"channelCents":{},"expenses":[{"id":"e1","description":"X","cents":1,"addedBy":{"kind":"owner"}}]}', 0, 'key-6a');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T6 owner author accepted: %', r; end if;
   r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
         'expenses', jsonb_build_array(jsonb_build_object('id', 'e1', 'description', 'X', 'cents', 1,
-          'addedBy', jsonb_build_object('kind', 'staff', 'id', current_setting('t.nikos'))))), 'key-6b');
+          'addedBy', jsonb_build_object('kind', 'staff', 'id', current_setting('t.nikos'))))), 0, 'key-6b');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T6 other shop author accepted: %', r; end if;
   r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
         'expenses', jsonb_build_array(jsonb_build_object('description', 'X', 'cents', 1,
-          'addedBy', jsonb_build_object('kind', 'staff', 'id', current_setting('t.maria'))))), 'key-6c');
+          'addedBy', jsonb_build_object('kind', 'staff', 'id', current_setting('t.maria'))))), 0, 'key-6c');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T6 expense without id accepted: %', r; end if;
 end $$;
 reset role;
@@ -113,7 +114,7 @@ begin
   r := public.submit_closing(current_setting('t.token'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date,
         jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
           'expenses', jsonb_build_array(jsonb_build_object('id', 'e2', 'description', 'Μεβγάλ', 'cents', 2160,
-            'addedBy', jsonb_build_object('kind', 'staff', 'id', current_setting('t.eleni'))))), 'key-7');
+            'addedBy', jsonb_build_object('kind', 'staff', 'id', current_setting('t.eleni'))))), 0, 'key-7');
   if (r ->> 'ok')::boolean is not true or (r ->> 'repeat')::boolean or r ->> 'closing_id' = current_setting('t.closing') then
     raise exception 'T7 resubmit failed: %', r;
   end if;
@@ -124,7 +125,7 @@ begin
   -- T5b a signed-out token is refused
   perform public.staff_sign_out(current_setting('t.token'));
   r := public.submit_closing(current_setting('t.token'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date,
-        current_setting('t.good')::jsonb, 'key-5b');
+        current_setting('t.good')::jsonb, 0, 'key-5b');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'session_invalid') then raise exception 'T5b expected session_invalid: %', r; end if;
 end $$;
 reset role;
@@ -141,12 +142,12 @@ do $$
 declare r jsonb;
 begin
   r := public.submit_closing(current_setting('t.token3'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date - 1,
-        current_setting('t.good')::jsonb, 'key-1');
+        current_setting('t.good')::jsonb, 0, 'key-1');
   if r is distinct from jsonb_build_object('ok', true, 'closing_id', current_setting('t.closing')::uuid, 'repeat', true) then
     raise exception 'T9 retry after day change not a repeat: %', r;
   end if;
   r := public.submit_closing(current_setting('t.token3'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date - 1,
-        current_setting('t.good')::jsonb, 'key-9-fresh');
+        current_setting('t.good')::jsonb, 0, 'key-9-fresh');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'wrong_day') then raise exception 'T9 fresh key for a past day accepted: %', r; end if;
 end $$;
 reset role;

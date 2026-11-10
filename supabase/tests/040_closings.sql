@@ -29,6 +29,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 select public.redeem_pairing_code(current_setting('t.code'), 'Ταμείο');
 select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select public.get_open_closing(current_setting('t.token'));   -- creates today's open closing (revision 0)
 
 do $$
 declare
@@ -43,52 +44,52 @@ begin
             'expenses', jsonb_build_array(jsonb_build_object('id', 'e1', 'description', 'Nice', 'cents', 1300, 'addedBy', author)));
 
   -- T1 happy path
-  r := public.submit_closing(tok, cfg, bd, good, 'key-1');
+  r := public.submit_closing(tok, cfg, bd, good, 0, 'key-1');
   if (r ->> 'ok')::boolean is not true then raise exception 'T1 submit failed: %', r; end if;
   perform set_config('t.closing', r ->> 'closing_id', true);
 
   -- T2 same key, same inputs (key order different) → harmless repeat, same id
   r := public.submit_closing(tok, cfg, bd, jsonb_build_object(
         'expenses', jsonb_build_array(jsonb_build_object('addedBy', author, 'cents', 1300, 'description', 'Nice', 'id', 'e1')),
-        'channelCents', '{"wolt":4560}'::jsonb, 'counts', '{"10000":5}'::jsonb, 'schema', 2), 'key-1');
+        'channelCents', '{"wolt":4560}'::jsonb, 'counts', '{"10000":5}'::jsonb, 'schema', 2), 0, 'key-1');
   if (r ->> 'ok')::boolean is not true or r ->> 'closing_id' <> current_setting('t.closing') or (r ->> 'repeat')::boolean is not true then
     raise exception 'T2 repeat not recognised: %', r;
   end if;
 
   -- T3 same key, different inputs → idempotency_conflict
-  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{"10000":9},"channelCents":{},"expenses":[]}', 'key-1');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{"10000":9},"channelCents":{},"expenses":[]}', 0, 'key-1');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'idempotency_conflict') then raise exception 'T3 expected idempotency_conflict: %', r; end if;
 
   -- T4 another shop's config / staff are refused
-  r := public.submit_closing(tok, current_setting('t.cfg_b')::uuid, bd, good, 'key-2');
+  r := public.submit_closing(tok, current_setting('t.cfg_b')::uuid, bd, good, 0, 'key-2');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'config_mismatch') then raise exception 'T4 expected config_mismatch: %', r; end if;
   r := public.staff_sign_in(current_setting('t.nikos')::uuid, '1234');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'staff_not_found') then raise exception 'T4b expected staff_not_found: %', r; end if;
 
   -- T5 malformed inputs are refused (checked against the full expected shape, so a silent success
   -- with a null 'error' key can't slip past an `<>` comparison that would itself evaluate to null)
-  r := public.submit_closing(tok, cfg, bd, '{"schema":3,"counts":{},"channelCents":{},"expenses":[]}', 'key-3');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":3,"counts":{},"channelCents":{},"expenses":[]}', 0, 'key-3');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 schema 3 accepted: %', r; end if;
-  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{},"channelCents":{}}', 'key-3');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{},"channelCents":{}}', 0, 'key-3');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 missing expenses accepted: %', r; end if;
-  r := public.submit_closing(tok, cfg, bd, '{"schema":"2","counts":{},"channelCents":{},"expenses":[]}', 'key-3');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":"2","counts":{},"channelCents":{},"expenses":[]}', 0, 'key-3');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 string schema accepted: %', r; end if;
-  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{},"channelCents":{},"expenses":[{"description":7,"cents":"x"}]}', 'key-3');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{},"channelCents":{},"expenses":[{"description":7,"cents":"x"}]}', 0, 'key-3');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 malformed expense accepted: %', r; end if;
-  r := public.submit_closing(tok, cfg, null, good, 'key-3');
+  r := public.submit_closing(tok, cfg, null, good, 0, 'key-3');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 null date accepted: %', r; end if;
-  r := public.submit_closing(tok, cfg, bd, good, '');
+  r := public.submit_closing(tok, cfg, bd, good, 0, '');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 empty key accepted: %', r; end if;
 
   -- T6 a missing or unknown session token stores nothing
-  r := public.submit_closing(null, cfg, bd, good, 'key-4');
+  r := public.submit_closing(null, cfg, bd, good, 0, 'key-4');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'session_invalid') then raise exception 'T6 null token accepted: %', r; end if;
-  r := public.submit_closing(repeat('0', 64), cfg, bd, good, 'key-4');
+  r := public.submit_closing(repeat('0', 64), cfg, bd, good, 0, 'key-4');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'session_invalid') then raise exception 'T6 unknown token accepted: %', r; end if;
 
   -- T7 a second real closing of the same day stores fine
   r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
-        'expenses', jsonb_build_array(jsonb_build_object('id', 'e2', 'description', 'Μεβγάλ', 'cents', 2160, 'addedBy', author))), 'key-5');
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'e2', 'description', 'Μεβγάλ', 'cents', 2160, 'addedBy', author))), 0, 'key-5');
   if (r ->> 'ok')::boolean is not true then raise exception 'T7 second closing failed: %', r; end if;
   perform set_config('t.closing2', r ->> 'closing_id', true);
 end $$;
@@ -133,7 +134,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 do $$ begin
   if public.submit_closing(current_setting('t.token'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date,
-       '{"schema":2,"counts":{},"channelCents":{},"expenses":[]}', 'owner-key') is distinct from jsonb_build_object('ok', false, 'error', 'not_a_device') then
+       '{"schema":2,"counts":{},"channelCents":{},"expenses":[]}', 0, 'owner-key') is distinct from jsonb_build_object('ok', false, 'error', 'not_a_device') then
     raise exception 'T10 owner submitted a closing';
   end if;
   if (select count(*) from public.expense_suggestion_data()) <> 0 then raise exception 'T10 owner got phone suggestion data'; end if;
@@ -146,7 +147,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 do $$ begin
   if public.submit_closing(current_setting('t.token'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date,
-       '{"schema":2,"counts":{},"channelCents":{},"expenses":[]}', 'revoked-key') is distinct from jsonb_build_object('ok', false, 'error', 'device_revoked') then
+       '{"schema":2,"counts":{},"channelCents":{},"expenses":[]}', 0, 'revoked-key') is distinct from jsonb_build_object('ok', false, 'error', 'device_revoked') then
     raise exception 'T11 revoked phone submitted';
   end if;
   if (select count(*) from public.expense_suggestion_data()) <> 0 then raise exception 'T11 revoked phone got suggestion data'; end if;
