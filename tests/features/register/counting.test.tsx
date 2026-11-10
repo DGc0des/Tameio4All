@@ -9,12 +9,14 @@ import { deriveClosing } from '../../../src/features/register/derive';
 import { newDraft, type Draft } from '../../../src/features/register/draft';
 import { ModeSwitch } from '../../../src/features/register/ModeSwitch';
 import { SummaryCard } from '../../../src/features/register/SummaryCard';
+import type { FieldBinding } from '../../../src/features/register/FieldBinding';
 import { boxes } from './boxes';
 
 afterEach(cleanup);
 
 const BILLS = [10000, 5000, 2000, 1000, 500];
 const draft = (changes: Partial<Draft>): Draft => ({ ...newDraft('2026-09-28'), ...changes });
+const binding = (editing: FieldBinding['editing'] = {}) => ({ edit: vi.fn(), flush: vi.fn(), focus: vi.fn(), editing });
 
 describe('ModeSwitch', () => {
   it('marks the active mode and reports changes', () => {
@@ -29,7 +31,7 @@ describe('ModeSwitch', () => {
 describe('CountCard', () => {
   it('in € mode shows only the typed amount — no piece count beside it', () => {
     const d = draft({ entries: boxes({ '10000': '500' }) });
-    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={50000} draft={d} derived={deriveClosing(cfg, d)} dispatch={vi.fn()} viewMode="amount" />);
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={50000} draft={d} derived={deriveClosing(cfg, d)} binding={binding()} viewMode="amount" />);
     const row = screen.getByLabelText('100€').closest('.row') as HTMLElement;
     expect(row.querySelector('.row-hint')).toBeNull();
     expect(screen.getByRole('region', { name: 'Χαρτονομίσματα' }).textContent).toContain('500,00€');
@@ -37,7 +39,7 @@ describe('CountCard', () => {
 
   it('in # mode shows the row value in euros beside the count', () => {
     const d = draft({ entries: boxes({ '10000': '5' }, 'count') });
-    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={50000} draft={d} derived={deriveClosing(cfg, d)} dispatch={vi.fn()} viewMode="count" />);
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={50000} draft={d} derived={deriveClosing(cfg, d)} binding={binding()} viewMode="count" />);
     const row = screen.getByLabelText('100€').closest('.row') as HTMLElement;
     expect(within(row).getByText('500,00€')).toBeTruthy();
     expect(screen.getByLabelText('100€').getAttribute('inputmode')).toBe('numeric');
@@ -45,7 +47,7 @@ describe('CountCard', () => {
 
   it('marks an invalid row and shows why', () => {
     const d = draft({ entries: boxes({ '1000': '95' }) });
-    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} dispatch={vi.fn()} viewMode="amount" />);
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} binding={binding()} viewMode="amount" />);
     const input = screen.getByLabelText('10€');
     expect(input.getAttribute('aria-invalid')).toBe('true');
     const hint = within(input.closest('.row') as HTMLElement).getByText('όχι πολλαπλάσιο');
@@ -53,18 +55,31 @@ describe('CountCard', () => {
     expect(input.getAttribute('aria-describedby')).toBe(hint.id);
   });
 
-  it('dispatches setEntry on typing', () => {
-    const dispatch = vi.fn();
+  it('writes the box (sanitized text + mode) on typing; focus/blur drive presence and flush', () => {
+    const b = binding();
     const d = draft({});
-    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} dispatch={dispatch} viewMode="amount" />);
-    fireEvent.change(screen.getByLabelText('50€'), { target: { value: '300' } });
-    expect(dispatch).toHaveBeenCalledWith({ type: 'setEntry', denom: 5000, text: '300', mode: 'amount' });
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} binding={b} viewMode="amount" />);
+    fireEvent.focus(screen.getByLabelText('50€'));
+    expect(b.focus).toHaveBeenCalledWith('d:5000');
+    fireEvent.change(screen.getByLabelText('50€'), { target: { value: '3,00' } });
+    expect(b.edit).toHaveBeenCalledWith('d:5000', { text: '3.00', mode: 'amount' });
+    fireEvent.blur(screen.getByLabelText('50€'));
+    expect(b.focus).toHaveBeenLastCalledWith(null);
+    expect(b.flush).toHaveBeenCalledWith('d:5000');
+  });
+
+  it('shows who else is in a box, inside its row', () => {
+    const d = draft({});
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} binding={binding({ 'd:2000': ['ΝΙΚΟΣ'] })} viewMode="amount" />);
+    const row = screen.getByLabelText('20€').closest('.row') as HTMLElement;
+    expect(within(row).getByLabelText('Επεξεργάζεται: ΝΙΚΟΣ').textContent).toBe('ΝΙΚΟΣ');
+    expect(screen.getAllByLabelText(/^Επεξεργάζεται/)).toHaveLength(1);
   });
 });
 
 describe('CountCard per-box mode', () => {
-  const show = (d: Draft, viewMode: 'amount' | 'count', dispatch = vi.fn()) =>
-    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} dispatch={dispatch} viewMode={viewMode} />);
+  const show = (d: Draft, viewMode: 'amount' | 'count', b = binding()) =>
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} binding={b} viewMode={viewMode} />);
 
   it('shows an amount-mode box converted to pieces in count view, and derives from its own mode', () => {
     const d = draft({ entries: boxes({ '10000': '300' }) });
@@ -84,21 +99,24 @@ describe('CountCard per-box mode', () => {
   });
 
   it('typing stores the text in the current view mode', () => {
-    const dispatch = vi.fn();
-    show(draft({}), 'count', dispatch);
+    const b = binding();
+    show(draft({}), 'count', b);
     fireEvent.change(screen.getByLabelText('50€'), { target: { value: '4' } });
-    expect(dispatch).toHaveBeenCalledWith({ type: 'setEntry', denom: 5000, text: '4', mode: 'count' });
+    expect(b.edit).toHaveBeenCalledWith('d:5000', { text: '4', mode: 'count' });
   });
 });
 
 describe('ChannelsCard', () => {
-  it('lists channels, offers the calculator only for cash_extra, dispatches setChannel', () => {
-    const dispatch = vi.fn();
+  it('lists channels, offers the calculator only for cash_extra, writes the channel box', () => {
+    const b = binding({ 'c:efood': ['Ιδιοκτήτης'] });
     const onCalculator = vi.fn();
     const d = draft({});
-    render(<ChannelsCard channels={cfg.channels} draft={d} derived={deriveClosing(cfg, d)} dispatch={dispatch} onCalculator={onCalculator} />);
+    render(<ChannelsCard channels={cfg.channels} draft={d} derived={deriveClosing(cfg, d)} binding={b} onCalculator={onCalculator} />);
     fireEvent.change(screen.getByLabelText('WOLT'), { target: { value: '45,60' } });
-    expect(dispatch).toHaveBeenCalledWith({ type: 'setChannel', id: 'wolt', text: '45,60' });
+    expect(b.edit).toHaveBeenCalledWith('c:wolt', { text: '45.60' });
+    fireEvent.blur(screen.getByLabelText('WOLT'));
+    expect(b.flush).toHaveBeenCalledWith('c:wolt');
+    expect(within(screen.getByLabelText('EFOOD').closest('.row') as HTMLElement).getByLabelText('Επεξεργάζεται: Ιδιοκτήτης')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /^Άθροισμα για/ })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Άθροισμα για ΚΕΡΜΑΤΑ' }));
     expect(onCalculator).toHaveBeenCalledWith('kermata');

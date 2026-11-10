@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useReducer, type ReactNode } from 'react';
-import { isShopConfig } from '../../core/config';
 import { clearCachedContext, clearStaffSession, loadCachedContext, loadStaffSession, saveCachedContext, saveStaffSession } from '../../data/local/phone';
 import type { ThemePref } from '../../data/local/prefs';
 import type { KeyValueStore } from '../../data/local/storage';
@@ -105,7 +104,7 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
   }, [gate, store]);
 
   // While offline, re-check the server when the browser regains its connection or comes back into view.
-  // The retry enters `loading` (the one reload path); the register flushes its draft as it unmounts.
+  // The retry enters `loading` (the one reload path); the register's unsent edits stay in its persisted queue.
   const offline = gate.s === 'offline_no_cache' || ((gate.s === 'ready' || gate.s === 'signed_out') && gate.offline);
   const retry = useCallback(() => dispatch({ t: 'retry' }), []);
   useEffect(() => {
@@ -172,20 +171,13 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
       const { ctx, session } = gate;
       // api is non-null here: without a client the gate is `unconfigured`.
       if (api === null) return null;
-      if (!isShopConfig(ctx.config)) {
-        return (
-          <Message title={ctx.shopName}>
-            <p role="alert">Οι ρυθμίσεις του καταστήματος δεν είναι έγκυρες</p>
-          </Message>
-        );
-      }
+      // The register computes with the open closing's pinned config (from its snapshot), not ctx.config.
       return (
         <>
           {gate.offline && <OfflineBanner onRetry={retry} />}
           <RegisterScreen
             key={`${ctx.shopId}:${ctx.businessDate}`}
             ctx={ctx}
-            config={ctx.config}
             session={session}
             api={api}
             store={store}

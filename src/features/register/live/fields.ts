@@ -1,6 +1,6 @@
 import type { EntryMode } from '../../../core/denominations';
 import type { ExpenseAuthor } from '../../../core/formula';
-import type { Cents } from '../../../core/money';
+import { sanitizeAmountInput, type Cents } from '../../../core/money';
 
 /**
  * The shared field model (SQL `private.closing_field_ok` is the server twin; keep them in step):
@@ -68,6 +68,16 @@ const isAuthor = (x: unknown): x is ExpenseAuthor =>
   isObj(x) && (x.kind === 'owner' || (x.kind === 'staff' && typeof x.id === 'string' && x.id.length > 0));
 export const isExpenseMeta = (v: unknown): v is ExpenseMeta =>
   isObj(v) && hasKeys(v, ['addedBy', 'order', 'removed']) && typeof v.removed === 'boolean' && typeof v.order === 'number' && Number.isFinite(v.order) && isAuthor(v.addedBy);
+
+// Value builders for what a box writes (exact key sets, text cut to MAX_TEXT code points).
+const cut = (text: string): string => [...text].slice(0, MAX_TEXT).join('');
+/** A denomination box: amount text sanitized, stored with the mode it was typed in. */
+export const denomValue = (text: string, mode: EntryMode): { text: string; mode: EntryMode } => ({ text: cut(sanitizeAmountInput(text)), mode });
+/** A channel or expense-amount box. */
+export const amountValue = (text: string): { text: string } => ({ text: cut(sanitizeAmountInput(text)) });
+/** An expense description (free text). */
+export const textValue = (text: string): { text: string } => ({ text: cut(text) });
+export const expenseMetaValue = (addedBy: ExpenseAuthor, order: number, removed: boolean): ExpenseMeta => ({ addedBy, order, removed });
 
 /** True when `value` has the shape the server accepts for `key`. */
 export function isFieldValue(key: FieldKey, value: unknown): boolean {

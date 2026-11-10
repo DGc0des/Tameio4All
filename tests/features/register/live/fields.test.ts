@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  channelKey, denomKey, expenseAmountKey, expenseDescKey, expenseKey, isFieldKey, isFieldValue, KEY_RE, parseKey,
+  amountValue, channelKey, denomKey, denomValue, expenseAmountKey, expenseMetaValue, textValue, expenseDescKey, expenseKey, isFieldKey, isFieldValue, KEY_RE, parseKey,
 } from '../../../../src/features/register/live/fields';
 
 describe('key builders', () => {
@@ -67,5 +67,23 @@ describe('R11 twin-of-SQL strictness', () => {
     expect(parseKey('d:0')).toBeNull();
     expect(parseKey('d:100')).toEqual({ kind: 'denom', denom: 100 });
     expect(isFieldValue('d:0100', { text: '', mode: 'amount' })).toBe(false);
+  });
+});
+
+describe('value builders', () => {
+  it('build exactly the shapes the server accepts', () => {
+    expect(denomValue('1,5a', 'amount')).toEqual({ text: '1.5', mode: 'amount' });
+    expect(isFieldValue('d:100', denomValue('3', 'count'))).toBe(true);
+    expect(amountValue('45,60')).toEqual({ text: '45.60' });
+    expect(textValue(' Nice ')).toEqual({ text: ' Nice ' });
+    const meta = expenseMetaValue({ kind: 'staff', id: 's1' }, 42, true);
+    expect(meta).toEqual({ addedBy: { kind: 'staff', id: 's1' }, order: 42, removed: true });
+    expect(isFieldValue('e:x1', meta)).toBe(true);
+  });
+
+  it('cut text to 200 code points so a long description is never silently refused', () => {
+    const long = 'α'.repeat(250);
+    expect([...textValue(long).text]).toHaveLength(200);
+    expect(isFieldValue('e:x1:d', textValue(long))).toBe(true);
   });
 });

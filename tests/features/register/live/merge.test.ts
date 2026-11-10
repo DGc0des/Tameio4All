@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { joinJuicePreset as cfg } from '../../../../src/core/presets';
 import { deriveClosing } from '../../../../src/features/register/derive';
-import { applyServerField, draftFromFields, fieldLabel } from '../../../../src/features/register/live/merge';
+import { applyServerField, draftFromFields, fieldLabel, presenceTags } from '../../../../src/features/register/live/merge';
 import type { PendingEdit, ServerField, Snapshot } from '../../../../src/features/register/live/fields';
 
 const field = (key: string, value: unknown, version = 1): ServerField => ({ key, value, version, updatedByName: 'Μαρία', updatedAt: '2026-11-08T10:00:00Z' });
@@ -120,5 +120,20 @@ describe('fieldLabel', () => {
     expect(fieldLabel('e:b:a', cfg, d)).toBe('Έξοδο 2');
     expect(fieldLabel('e:b:d', cfg, d)).toBe('Έξοδο 2');
     expect(fieldLabel('e:gone', cfg, d)).toBe('Έξοδο');
+  });
+});
+
+describe('presenceTags', () => {
+  it('maps each box to the names of the other clients in it, without repeats; no box → no tag', () => {
+    expect(
+      presenceTags([
+        { name: 'ΝΙΚΟΣ', focus: 'd:5000' },
+        { name: 'Ιδιοκτήτης', focus: 'd:5000' },
+        { name: 'ΝΙΚΟΣ', focus: 'd:5000' },
+        { name: 'ΕΛΕΝΗ', focus: 'c:wolt' },
+        { name: 'ΑΝΝΑ', focus: null },
+      ]),
+    ).toEqual({ 'd:5000': ['ΝΙΚΟΣ', 'Ιδιοκτήτης'], 'c:wolt': ['ΕΛΕΝΗ'] });
+    expect(presenceTags([])).toEqual({});
   });
 });

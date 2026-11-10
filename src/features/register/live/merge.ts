@@ -70,3 +70,17 @@ export function fieldLabel(key: FieldKey, config: ShopConfig, draft?: Draft): st
     }
   }
 }
+
+/**
+ * Presence → tags: the names of the other clients in each box (a client in no box shows nowhere).
+ * Names are kept in arrival order without repeats (one person on two devices shows once).
+ */
+export function presenceTags(presence: readonly { name: string; focus: FieldKey | null }[]): Record<FieldKey, string[]> {
+  const out: Record<FieldKey, string[]> = {};
+  for (const p of presence) {
+    if (p.focus === null) continue;
+    const names = (out[p.focus] ??= []);
+    if (!names.includes(p.name)) names.push(p.name);
+  }
+  return out;
+}

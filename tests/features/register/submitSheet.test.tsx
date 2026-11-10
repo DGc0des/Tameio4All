@@ -23,12 +23,12 @@ const d: Draft = {
 };
 const derived = deriveClosing(cfg, d);
 
-type SubmitFn = (inputs: ClosingInputs) => Promise<DResult<{ closingId: string; repeat: boolean }>>;
+type SubmitFn = (inputs: ClosingInputs, revision: number) => Promise<DResult<{ closingId: string; repeat: boolean }>>;
 const submitted: SubmitFn = async () => ({ ok: true, data: { closingId: 'c1', repeat: false } });
 
 function setup(onSubmit: SubmitFn = vi.fn(submitted), onShare: ShareFn = vi.fn(async () => 'shared' as const)) {
   const onClose = vi.fn();
-  render(<SubmitSheet config={cfg} draft={d} derived={derived} onSubmit={onSubmit} onShare={onShare} onClose={onClose} />);
+  render(<SubmitSheet config={cfg} draft={d} derived={derived} revision={7} blocked={null} onSubmit={onSubmit} onShare={onShare} onClose={onClose} />);
   return { onSubmit, onShare, onClose, dialog: () => screen.getByRole('dialog') };
 }
 const tapSubmit = () =>
@@ -55,14 +55,42 @@ describe('SubmitSheet', () => {
     const onSubmit = vi.fn(submitted);
     const noop = vi.fn();
     const share: ShareFn = async () => 'shared';
-    const { rerender } = render(<SubmitSheet config={cfg} draft={d} derived={derived} onSubmit={onSubmit} onShare={share} onClose={noop} />);
+    const { rerender } = render(<SubmitSheet config={cfg} draft={d} derived={derived} revision={7} blocked={null} onSubmit={onSubmit} onShare={share} onClose={noop} />);
     const fresh = newDraft('2026-09-29');
-    rerender(<SubmitSheet config={cfg} draft={fresh} derived={deriveClosing(cfg, fresh)} onSubmit={onSubmit} onShare={share} onClose={noop} />);
+    rerender(<SubmitSheet config={cfg} draft={fresh} derived={deriveClosing(cfg, fresh)} revision={8} blocked={null} onSubmit={onSubmit} onShare={share} onClose={noop} />);
     const text = screen.getByRole('dialog').textContent ?? '';
     expect(text).toContain('28/09/2026');
     expect(text).not.toContain('29/09/2026');
     await tapSubmit();
-    expect(onSubmit).toHaveBeenCalledWith(derived.inputs);
+    expect(onSubmit).toHaveBeenCalledWith(derived.inputs, 7);
+  });
+
+  it('after draft_changed shows the live closing, asks to check, and sends it with its revision on the next tap', async () => {
+    const onSubmit = vi
+      .fn<SubmitFn>()
+      .mockResolvedValueOnce({ ok: false, error: { code: 'draft_changed', revision: 8 } })
+      .mockImplementation(submitted);
+    const noop = vi.fn();
+    const share: ShareFn = async () => 'shared';
+    const { rerender } = render(<SubmitSheet config={cfg} draft={d} derived={derived} revision={7} blocked={null} onSubmit={onSubmit} onShare={share} onClose={noop} />);
+    await tapSubmit();
+    expect(screen.getByRole('alert').textContent).toBe('Κάποιος άλλαξε κάτι — έλεγξε και πάτα ξανά Υποβολή');
+    const fresh: Draft = { ...d, entries: boxes({ '10000': '100' }) };
+    const freshDerived = deriveClosing(cfg, fresh);
+    rerender(<SubmitSheet config={cfg} draft={fresh} derived={freshDerived} revision={8} blocked="Περιμένει αποθήκευση…" onSubmit={onSubmit} onShare={share} onClose={noop} />);
+    // Following the live closing: the card shows it, and a blocked closing can't be sent.
+    expect(screen.getByRole('status').textContent).toBe('Περιμένει αποθήκευση…');
+    expect((within(screen.getByRole('dialog')).getByRole('button', { name: 'Υποβολή' }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(<SubmitSheet config={cfg} draft={fresh} derived={freshDerived} revision={8} blocked={null} onSubmit={onSubmit} onShare={share} onClose={noop} />);
+    await tapSubmit();
+    expect(onSubmit).toHaveBeenLastCalledWith(freshDerived.inputs, 8);
+    expect(screen.getByRole('dialog', { name: 'Υποβλήθηκε ✓' })).toBeTruthy();
+    // Frozen again after the tap: a later change underneath doesn't change the submitted card.
+    const card = () => document.querySelector('.share-card')?.textContent;
+    const sent = card();
+    rerender(<SubmitSheet config={cfg} draft={d} derived={derived} revision={9} blocked={null} onSubmit={onSubmit} onShare={share} onClose={noop} />);
+    expect(card()).toBe(sent);
+    expect(sent).not.toBe(undefined);
   });
 
   it('submits, then offers sharing and closing the sheet', async () => {

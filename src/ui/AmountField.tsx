@@ -6,11 +6,12 @@ interface Props {
   invalid?: boolean;
   inputMode?: 'decimal' | 'numeric';
   placeholder?: string;
+  onFocus?: () => void;
   onBlur?: () => void;
   describedBy?: string;
 }
 
-export function AmountField({ id, label, value, onChange, invalid = false, inputMode = 'decimal', placeholder = '0', onBlur, describedBy }: Props) {
+export function AmountField({ id, label, value, onChange, invalid = false, inputMode = 'decimal', placeholder = '0', onFocus, onBlur, describedBy }: Props) {
   return (
     <input
       id={id}
@@ -24,6 +25,7 @@ export function AmountField({ id, label, value, onChange, invalid = false, input
       placeholder={placeholder}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onFocus={onFocus}
       onBlur={onBlur}
     />
   );

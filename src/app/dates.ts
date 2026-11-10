@@ -35,3 +35,14 @@ export function formatDateEl(iso: string): string {
   const [y, mo, d] = iso.split('-');
   return `${d}/${mo}/${y}`;
 }
+
+const TIME_EL = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Athens', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+/** An ISO timestamp → "21:42", shop time (Europe/Athens, like the business day). Unknown input is returned unchanged. */
+export function formatTimeEl(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  const parts = TIME_EL.formatToParts(new Date(t));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('hour')}:${get('minute')}`;
+}

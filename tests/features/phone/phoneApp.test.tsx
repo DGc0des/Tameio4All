@@ -3,9 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { joinJuicePreset } from '../../../src/core/presets';
 import { loadCachedContext, loadStaffSession, saveCachedContext, saveStaffSession } from '../../../src/data/local/phone';
+import { saveSnapshot } from '../../../src/data/local/openClosing';
 import { memoryStore, type KeyValueStore } from '../../../src/data/local/storage';
 import type { DeviceApi, DeviceContext, StaffSession } from '../../../src/data/remote/deviceApi';
 import { PhoneApp } from '../../../src/features/phone/PhoneApp';
+import type { Snapshot } from '../../../src/features/register/live/fields';
 import { fail, FAKE_CONFIG_ID, FAKE_SHOP_ID, fakeDeviceApi, ok } from './fakeDeviceApi';
 
 afterEach(cleanup);
@@ -13,6 +15,7 @@ afterEach(cleanup);
 const CTX: DeviceContext = {
   shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-07',
 };
+const SNAPSHOT: Snapshot = { id: 'oc-1', businessDate: '2026-11-07', configId: FAKE_CONFIG_ID, config: joinJuicePreset, revision: 1, lastSubmit: null, fields: {} };
 const SESSION: StaffSession = { token: 'token-1', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-07', shopId: FAKE_SHOP_ID };
 let n = 0;
 
@@ -139,9 +142,28 @@ describe('PhoneApp', () => {
     const store = memoryStore();
     saveStaffSession(store, SESSION);
     saveCachedContext(store, CTX);
-    start(fakeDeviceApi({ context: vi.fn(() => fail<DeviceContext | null>({ code: 'network' })) }), store);
+    saveSnapshot(store, FAKE_SHOP_ID, { ...SNAPSHOT, fields: { 'd:10000': { key: 'd:10000', value: { text: '500', mode: 'amount' }, version: 1, updatedByName: 'ΝΙΚΟΣ', updatedAt: '' } } });
+    const api = fakeDeviceApi({
+      context: vi.fn(() => fail<DeviceContext | null>({ code: 'network' })),
+      getOpenClosing: vi.fn(() => fail<Snapshot>({ code: 'network' })),
+    });
+    start(api, store);
     expect(await screen.findByText('Εκτός σύνδεσης')).toBeTruthy();
-    expect(screen.getByLabelText('100€')).toBeTruthy();
+    // The register shows the last closing it saw, from the device's cache.
+    expect(((await screen.findByLabelText('100€')) as HTMLInputElement).value).toBe('500');
+    expect(screen.getAllByText('Εκτός σύνδεσης')).toHaveLength(1);
+  });
+
+  it('offline with no cached closing says it will load once connected (no boxes)', async () => {
+    const store = memoryStore();
+    saveStaffSession(store, SESSION);
+    saveCachedContext(store, CTX);
+    start(fakeDeviceApi({
+      context: vi.fn(() => fail<DeviceContext | null>({ code: 'network' })),
+      getOpenClosing: vi.fn(() => fail<Snapshot>({ code: 'network' })),
+    }), store);
+    expect(await screen.findByText('Το ταμείο θα φορτώσει μόλις υπάρξει σύνδεση.')).toBeTruthy();
+    expect(document.querySelector('input.field')).toBeNull();
   });
 
   it('signing in offline reloads the context: today replaces yesterday\'s cache', async () => {
@@ -195,7 +217,7 @@ describe('PhoneApp', () => {
     });
     start(api, store);
     expect(await screen.findByText('Εκτός σύνδεσης')).toBeTruthy();
-    expect(screen.getByLabelText('100€')).toBeTruthy();
+    expect(await screen.findByLabelText('100€')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Σύνδεση συσκευής' })).toBeNull();
     expect(loadStaffSession(store)).toEqual(SESSION);
     expect(loadCachedContext(store)).toEqual(CTX);
@@ -222,15 +244,16 @@ describe('PhoneApp', () => {
     const context = vi.fn<DeviceApi['context']>().mockReturnValueOnce(fail({ code: 'network' })).mockReturnValue(ok(CTX));
     start(fakeDeviceApi({ context }), store);
     expect(await screen.findByText('Εκτός σύνδεσης')).toBeTruthy();
+    await screen.findByLabelText('100€');
     type('100€', '1500');
     expect(button('Υποβολή').disabled).toBe(true);
     fireEvent(window, new Event('online'));
     expect(await screen.findByLabelText('100€')).toBeTruthy();
     await waitFor(() => expect(screen.queryByText('Εκτός σύνδεσης')).toBeNull());
     expect(context).toHaveBeenCalledTimes(2);
-    // The draft typed offline survives the reload (flushed on unmount).
+    // What was typed survives the reload (saved to the live closing, or still in the persisted queue).
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('1500');
-    expect(button('Υποβολή').disabled).toBe(false);
+    await waitFor(() => expect(button('Υποβολή').disabled).toBe(false));
   });
 
   it('an offline phone re-checks when it becomes visible again, and from the banner button', async () => {
@@ -268,10 +291,10 @@ describe('PhoneApp', () => {
     expect(loadCachedContext(store)).toEqual(CTX);
   });
 
-  it('refuses to open the register on an invalid shop config', async () => {
+  it('refuses to open the register on an invalid config pinned to the open closing', async () => {
     const store = memoryStore();
     saveStaffSession(store, SESSION);
-    start(fakeDeviceApi({ context: vi.fn(() => ok({ ...CTX, config: { schema: 99 } })) }), store);
+    start(fakeDeviceApi({ getOpenClosing: vi.fn(() => ok<Snapshot>({ ...SNAPSHOT, config: { schema: 99 } })) }), store);
     expect(await screen.findByText('Οι ρυθμίσεις του καταστήματος δεν είναι έγκυρες')).toBeTruthy();
     expect(document.querySelector('input.field')).toBeNull();
   });

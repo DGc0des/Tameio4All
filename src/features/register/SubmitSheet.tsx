@@ -15,16 +15,25 @@ interface Props {
   config: ShopConfig;
   draft: Draft;
   derived: Derived;
-  /** Sends these inputs under the sheet's idempotency key (bound by the caller). */
-  onSubmit: (inputs: ClosingInputs) => Promise<DResult<{ closingId: string; repeat: boolean }>>;
+  /** Revision of the live closing that `draft` shows. */
+  revision: number;
+  /** Why Υποβολή can't be sent right now (unsaved edits, offline, a wrong value), or null. */
+  blocked: string | null;
+  /** Sends these inputs as derived from closing `revision` (the caller picks the idempotency key). */
+  onSubmit: (inputs: ClosingInputs, revision: number) => Promise<DResult<{ closingId: string; repeat: boolean }>>;
   onShare: ShareFn;
   onClose: () => void;
 }
 
-export function SubmitSheet({ config, draft, derived, onSubmit, onShare, onClose }: Props) {
-  // A retry must send exactly what was first sent under this sheet's key, and the card (and the
-  // shared image) must show that same closing: both come from the snapshot taken on open.
-  const [snapshot] = useState(() => ({ draft, derived }));
+export const DRAFT_CHANGED_MESSAGE = 'Κάποιος άλλαξε κάτι — έλεγξε και πάτα ξανά Υποβολή';
+
+export function SubmitSheet({ config, draft, derived, revision, blocked, onSubmit, onShare, onClose }: Props) {
+  // A retry must send exactly what was first sent, and the card (and the shared image) must show that
+  // same closing: both come from the snapshot taken on open. After `draft_changed` the sheet follows the
+  // live closing again until the next tap takes a new snapshot.
+  const [snapshot, setSnapshot] = useState(() => ({ draft, derived, revision }));
+  const [following, setFollowing] = useState(false);
+  const shown = following ? { draft, derived, revision } : snapshot;
   const cardRef = useRef<HTMLDivElement>(null);
   const [submitted, setSubmitted] = useState(false);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -35,12 +44,22 @@ export function SubmitSheet({ config, draft, derived, onSubmit, onShare, onClose
   const submit = async () => {
     if (inFlight.current) return;
     inFlight.current = true;
+    const sending = shown;
+    if (following) {
+      setSnapshot(sending);
+      setFollowing(false);
+    }
     setBusy(true);
-    const r = await onSubmit(snapshot.derived.inputs);
+    const r = await onSubmit(sending.derived.inputs, sending.revision);
     inFlight.current = false;
     setBusy(false);
     if (!r.ok) {
-      setMessage(deviceErrorMessage(r.error));
+      if (r.error.code === 'draft_changed') {
+        setFollowing(true);
+        setMessage(DRAFT_CHANGED_MESSAGE);
+      } else {
+        setMessage(deviceErrorMessage(r.error));
+      }
       return;
     }
     setMessage(null);
@@ -58,11 +77,16 @@ export function SubmitSheet({ config, draft, derived, onSubmit, onShare, onClose
   return (
     <Sheet title={submitted ? 'Υποβλήθηκε ✓' : 'Υποβολή'} onClose={onClose}>
       <div ref={cardRef}>
-        <ShareCard config={config} draft={snapshot.draft} derived={snapshot.derived} />
+        <ShareCard config={config} draft={shown.draft} derived={shown.derived} />
       </div>
       {message !== null && (
         <p className="status-warn" role="alert">
           {message}
+        </p>
+      )}
+      {following && blocked !== null && (
+        <p className="status-warn" role="status">
+          {blocked}
         </p>
       )}
       <div className="sheet-actions">
@@ -80,7 +104,7 @@ export function SubmitSheet({ config, draft, derived, onSubmit, onShare, onClose
             </button>
           </>
         ) : (
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void submit()}>
+          <button type="button" className="btn btn-primary" disabled={busy || (following && blocked !== null)} onClick={() => void submit()}>
             Υποβολή
           </button>
         )}

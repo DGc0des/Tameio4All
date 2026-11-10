@@ -3,7 +3,9 @@ import { formatEuro, type Cents } from '../../core/money';
 import { AmountField } from '../../ui/AmountField';
 import { Card } from '../../ui/Card';
 import { fieldError, fieldId, type Derived } from './derive';
-import type { Draft, DraftDispatch } from './draft';
+import type { Draft } from './draft';
+import { boxEvents, PresenceTags, type FieldBinding } from './FieldBinding';
+import { denomKey, denomValue } from './live/fields';
 
 interface Props {
   title: string;
@@ -11,17 +13,18 @@ interface Props {
   totalCents: Cents;
   draft: Draft;
   derived: Derived;
-  dispatch: DraftDispatch;
-  /** How the boxes are displayed and typed into; stored per box as it is typed. */
+  binding: FieldBinding;
+  /** How the boxes are displayed and typed into (this phone's preference); stored per box as it is typed. */
   viewMode: EntryMode;
 }
 
-export function CountCard({ title, denominations, totalCents, draft, derived, dispatch, viewMode }: Props) {
+export function CountCard({ title, denominations, totalCents, draft, derived, binding, viewMode }: Props) {
   if (denominations.length === 0) return null;
   return (
     <Card title={title} aside={totalCents > 0 ? formatEuro(totalCents) : undefined}>
       {denominations.map((d) => {
         const key = String(d);
+        const fkey = denomKey(d);
         const label = denomLabel(d);
         const error = fieldError(derived, fieldId.denom(d));
         const box = draft.entries[key];
@@ -32,6 +35,7 @@ export function CountCard({ title, denominations, totalCents, draft, derived, di
         return (
           <div className="row" key={key}>
             <span className="row-label">{label}</span>
+            <PresenceTags binding={binding} keys={[fkey]} />
             {hint !== undefined && (
               <span id={error !== undefined ? errId : undefined} className={error !== undefined ? 'row-hint err' : 'row-hint'}>
                 {hint}
@@ -44,7 +48,8 @@ export function CountCard({ title, denominations, totalCents, draft, derived, di
               invalid={error !== undefined}
               describedBy={error !== undefined ? errId : undefined}
               inputMode={viewMode === 'count' ? 'numeric' : 'decimal'}
-              onChange={(text) => dispatch({ type: 'setEntry', denom: d, text, mode: viewMode })}
+              {...boxEvents(binding, fkey)}
+              onChange={(text) => binding.edit(fkey, denomValue(text, viewMode))}
             />
           </div>
         );

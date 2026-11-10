@@ -4,14 +4,14 @@ import type { ComponentType } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/app/App';
 import type { ClosingInputs } from '../../src/core/formula';
-import { loadDraft, loadUnsentDraft } from '../../src/data/local/drafts';
+import { loadPending } from '../../src/data/local/openClosing';
 import { loadStaffSession, saveCachedContext, saveStaffSession } from '../../src/data/local/phone';
 import { memoryStore, shopKey, type KeyValueStore } from '../../src/data/local/storage';
 import type { DeviceApi } from '../../src/data/remote/deviceApi';
 import type { OwnerAppProps } from '../../src/features/owner/OwnerApp';
 import type { ShareFn } from '../../src/features/register/share';
 import { joinJuicePreset } from '../../src/core/presets';
-import { FAKE_CONFIG_ID, FAKE_SHOP_ID, fail, fakeDeviceApi, ok } from '../features/phone/fakeDeviceApi';
+import { FAKE_CONFIG_ID, FAKE_SHOP_ID, fail, fakeDeviceApi, fakeServer, ok } from '../features/phone/fakeDeviceApi';
 
 const NOW = () => new Date(2026, 10, 7, 22, 0);
 let n = 0;
@@ -44,10 +44,17 @@ function signedIn(store: KeyValueStore): KeyValueStore {
   return store;
 }
 
-/** Renders the app and waits until the register is on screen. */
+/** Lets fake writes, broadcasts and presence (microtasks) land. */
+const settle = () =>
+  act(async () => {
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+  });
+
+/** Renders the app and waits until the register is on screen and live. */
 async function start(store: KeyValueStore = memoryStore(), persistent = true, api: DeviceApi = fakeDeviceApi()) {
   render(<App appStore={{ store: signedIn(store), persistent }} deviceApi={api} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
   await screen.findByLabelText('100€');
+  await settle();
   return store;
 }
 const go = (hash: string) =>
@@ -55,15 +62,20 @@ const go = (hash: string) =>
     window.location.hash = hash;
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   });
-const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+/** Types into a box and leaves it (leaving sends the write at once). */
+const type = (label: string, value: string) => {
+  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  fireEvent.blur(screen.getByLabelText(label));
+};
 const barAmount = () => document.querySelector('.bar strong')?.textContent;
 const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
 const sheetSubmit = () =>
   act(async () => {
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Υποβολή' })).getByRole('button', { name: 'Υποβολή' }));
   });
-/** Opens the submit sheet from the bottom bar and taps its Υποβολή. */
+/** Lets the typed boxes save, opens the submit sheet from the bottom bar and taps its Υποβολή. */
 async function submitClosing() {
+  await settle();
   fireEvent.click(button('Υποβολή'));
   await sheetSubmit();
 }
@@ -140,9 +152,9 @@ describe('register flows', () => {
     expect(loadStaffSession(store)).toBeNull();
   });
 
-  it('submits once to the server as the signed-in cashier and keeps the draft', async () => {
+  it('submits once to the server as the signed-in cashier and keeps the closing', async () => {
     const api = fakeDeviceApi();
-    const store = await start(memoryStore(), true, api);
+    await start(memoryStore(), true, api);
     type('100€', '1500');
     fireEvent.click(button('+ Έξοδο'));
     type('Περιγραφή εξόδου 1', 'Ντόντης');
@@ -150,8 +162,10 @@ describe('register flows', () => {
     await submitClosing();
 
     expect(submitCalls(api)).toHaveLength(1);
-    const [token, configId, businessDate, inputs, _revision, key] = submitCalls(api)[0]!;
+    const [token, configId, businessDate, inputs, revision, key] = submitCalls(api)[0]!;
     expect([token, configId, businessDate]).toEqual(['token-1', FAKE_CONFIG_ID, '2026-11-07']);
+    // The revision of the live closing the inputs were derived from (4 writes: 100€, the line, its text, its amount).
+    expect(revision).toBe(4);
     expect(inputs).toEqual<ClosingInputs>({
       schema: 2,
       counts: { '10000': 15 },
@@ -163,14 +177,12 @@ describe('register flows', () => {
     expect(screen.getByRole('dialog', { name: 'Υποβλήθηκε ✓' }).textContent).toContain('1.524,00€');
     expect(screen.getByText('Το κλείσιμο υποβλήθηκε')).toBeTruthy();
     fireEvent.click(button('Τέλος'));
-    // The draft is kept: the numbers stay in the fields (and in storage) for a later resubmit.
+    // The closing stays open and editable: the numbers stay in the fields for a later resubmit.
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('1500');
     expect((screen.getByLabelText('Ποσό εξόδου 1') as HTMLInputElement).value).toBe('24');
     expect(screen.queryByRole('button', { name: 'Νέο κλείσιμο' })).toBeNull();
-    act(() => {
-      window.dispatchEvent(new Event('pagehide'));
-    });
-    expect(loadDraft(store, FAKE_SHOP_ID, '2026-11-07')?.entries['10000']).toEqual({ text: '1500', mode: 'amount' });
+    await settle();
+    expect(within(screen.getByRole('banner')).getByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
   });
 
   it('retries inside the sheet with the same key; an edited closing gets a new key', async () => {
@@ -222,14 +234,26 @@ describe('register flows', () => {
     expect(calls[1]![5]).not.toBe(calls[0]![5]);
   });
 
-  it('an expired session sends the cashier to sign in and keeps the typed draft', async () => {
+  it('an expired session sends the cashier to sign in; the closing is still there after signing in', async () => {
     const api = fakeDeviceApi({ submit: vi.fn(() => fail<{ closingId: string; repeat: boolean }>({ code: 'session_invalid' })) });
     const store = await start(memoryStore(), true, api);
     type('100€', '1500');
     await submitClosing();
+    fireEvent.click(await screen.findByRole('radio', { name: 'ΜΑΡΙΑ' }));
+    expect(loadStaffSession(store)).toBeNull();
+    type('PIN', '1234');
+    fireEvent.click(button('Είσοδος'));
+    expect(((await screen.findByLabelText('100€')) as HTMLInputElement).value).toBe('1500');
+  });
+
+  it('a write refused for an expired session sends the cashier to sign in', async () => {
+    const api = fakeDeviceApi({ setField: vi.fn(() => fail<{ version: number; revision: number }>({ code: 'session_invalid' })) });
+    const store = await start(memoryStore(), true, api);
+    type('100€', '1500');
     expect(await screen.findByRole('radio', { name: 'ΜΑΡΙΑ' })).toBeTruthy();
     expect(loadStaffSession(store)).toBeNull();
-    expect(loadDraft(store, FAKE_SHOP_ID, '2026-11-07')?.entries['10000']).toEqual({ text: '1500', mode: 'amount' });
+    // The refused edit stays queued on the phone (replayed against the server's version next time).
+    expect(loadPending(store, FAKE_SHOP_ID).map((p) => p.value)).toEqual([{ text: '1500', mode: 'amount' }]);
   });
 
   it('disables Υποβολή while offline', async () => {
@@ -256,7 +280,8 @@ describe('register flows', () => {
     });
     await start(memoryStore(), true, api);
     fireEvent.click(button('+ Έξοδο'));
-    type('Ποσό εξόδου 1', '13');
+    // Still in the box (leaving it would auto-fill the unique exact match instead).
+    fireEvent.change(screen.getByLabelText('Ποσό εξόδου 1'), { target: { value: '13' } });
     expect(await screen.findByRole('button', { name: 'Nice' })).toBeTruthy();
 
     type('Περιγραφή εξόδου 1', 'Ντόντης');
@@ -264,29 +289,39 @@ describe('register flows', () => {
     await submitClosing();
     fireEvent.click(button('Τέλος'));
     fireEvent.click(button('+ Έξοδο'));
-    type('Ποσό εξόδου 2', '24');
+    fireEvent.change(screen.getByLabelText('Ποσό εξόδου 2'), { target: { value: '24' } });
     expect(await screen.findByRole('button', { name: 'Ντόντης' })).toBeTruthy();
   });
 });
 
 describe('persistence and resilience', () => {
-  it('restores the draft after a reload', async () => {
-    const store = await start();
-    // Faked only after the async load: RTL's findBy polling needs the real setTimeout.
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  it('the closing comes back from the server after a reload', async () => {
+    const api = fakeDeviceApi();
+    await start(memoryStore(), true, api);
     type('100€', '500');
-    act(() => {
-      vi.advanceTimersByTime(350);
-    });
-    vi.useRealTimers();
+    await settle();
     cleanup();
-    await start(store);
+    await start(memoryStore(), true, api);
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('500');
   });
 
-  it('starts fresh when the stored draft is corrupt', async () => {
+  it('an edit not yet saved survives a reload and is sent after it', async () => {
+    const server = fakeServer();
+    const api = fakeDeviceApi({}, server);
+    const store = await start(memoryStore(), true, api);
+    fireEvent.change(screen.getByLabelText('100€'), { target: { value: '700' } });
+    cleanup();
+    expect(server.fields['d:10000']).toBeUndefined();
+    await start(store, true, api);
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('700');
+    expect(server.fields['d:10000']?.value).toEqual({ text: '700', mode: 'amount' });
+    expect(loadPending(store, FAKE_SHOP_ID)).toEqual([]);
+  });
+
+  it('a corrupt cached closing and queue are ignored; the server’s closing is shown', async () => {
     const store = memoryStore();
-    store.setItem(shopKey(FAKE_SHOP_ID, 'draft'), JSON.stringify({ savedAt: NOW().getTime(), draft: { id: 5 } }));
+    store.setItem(shopKey(FAKE_SHOP_ID, 'snapshot'), JSON.stringify({ id: 5 }));
+    store.setItem(shopKey(FAKE_SHOP_ID, 'pending'), '{{{');
     await start(store);
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
     expect(screen.getByRole('heading', { name: 'Κλείσιμο ταμείου' })).toBeTruthy();
@@ -307,58 +342,34 @@ describe('navigation', () => {
     expect(screen.queryByRole('menuitem', { name: 'Προσωπικό' })).toBeNull();
   });
 
-  it('keeps a stored draft from another business date aside and says so once', async () => {
-    const store = memoryStore();
-    store.setItem(
-      shopKey(FAKE_SHOP_ID, 'draft'),
-      JSON.stringify({ savedAt: NOW().getTime(), draft: { businessDate: '2026-11-06', entries: { '10000': { text: '500', mode: 'amount' } }, channels: {}, expenses: [] } }),
-    );
-    await start(store);
-    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
-    expect(await screen.findByText('Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της 06/11. Ενημέρωσε τον ιδιοκτήτη.')).toBeTruthy();
-    expect(loadUnsentDraft(store, FAKE_SHOP_ID)?.entries['10000']).toEqual({ text: '500', mode: 'amount' });
-  });
-
-  it('a day change found at submit reloads; the typed closing is kept aside with the notice', async () => {
+  it('a day change found at submit reloads into the new day’s closing', async () => {
     const tomorrow = { shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-08' };
     const context = vi
       .fn<DeviceApi['context']>()
       .mockReturnValueOnce(ok({ ...tomorrow, businessDate: '2026-11-07' }))
       .mockReturnValue(ok(tomorrow));
-    const api = fakeDeviceApi({
-      context,
-      submit: vi.fn(() => fail<{ closingId: string; repeat: boolean }>({ code: 'wrong_day' })),
-      signIn: vi.fn(() => ok({ token: 'token-2', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-08', shopId: FAKE_SHOP_ID })),
-    });
-    const store = await start(memoryStore(), true, api);
+    const server = fakeServer();
+    const api = fakeDeviceApi(
+      {
+        context,
+        submit: vi.fn(() => {
+          // The server's day moved on before the tap.
+          server.businessDate = '2026-11-08';
+          server.fields = {};
+          return fail<{ closingId: string; repeat: boolean }>({ code: 'wrong_day' });
+        }),
+        signIn: vi.fn(() => ok({ token: 'token-1', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-08', shopId: FAKE_SHOP_ID })),
+      },
+      server,
+    );
+    await start(memoryStore(), true, api);
     type('100€', '1500');
     await submitClosing();
     fireEvent.click(await screen.findByRole('radio', { name: 'ΜΑΡΙΑ' }));
     type('PIN', '1234');
     fireEvent.click(button('Είσοδος'));
-    expect(await screen.findByText('Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της 07/11. Ενημέρωσε τον ιδιοκτήτη.')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Κυρ 08/11 · ΜΑΡΙΑ' })).toBeTruthy();
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
-    expect(loadUnsentDraft(store, FAKE_SHOP_ID)?.entries['10000']).toEqual({ text: '1500', mode: 'amount' });
-  });
-
-  it('a submitted, unedited draft is dropped on the next day without a notice', async () => {
-    const tomorrow = { shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-08' };
-    const context = vi
-      .fn<DeviceApi['context']>()
-      .mockReturnValueOnce(ok({ ...tomorrow, businessDate: '2026-11-07' }))
-      .mockReturnValue(ok(tomorrow));
-    const store = await start(memoryStore(), true, fakeDeviceApi({ context }));
-    type('100€', '1500');
-    await submitClosing();
-    fireEvent.click(button('Τέλος'));
-    cleanup();
-    saveStaffSession(store, { token: 'token-2', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-08', shopId: FAKE_SHOP_ID });
-    render(<App appStore={{ store, persistent: true }} deviceApi={fakeDeviceApi({ context })} now={NOW} newId={newId} share={share} ownerArea={OwnerStub} />);
-    await screen.findByLabelText('100€');
-    await act(async () => {}); // let the notice effect run
-    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
-    expect(screen.queryByText(/Η ημέρα άλλαξε/)).toBeNull();
-    expect(loadUnsentDraft(store, FAKE_SHOP_ID)).toBeNull();
   });
 
   it('has no Αποβάρα in the menu and fills ΚΕΡΜΑΤΑ from the calculator', async () => {

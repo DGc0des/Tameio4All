@@ -4,29 +4,33 @@ import { exactExpenseMatch, suggestExpenseDescriptions, type SupplierHistory } f
 import { AmountField } from '../../ui/AmountField';
 import { Card } from '../../ui/Card';
 import { fieldError, fieldId, type Derived } from './derive';
-import type { Draft, DraftDispatch, ExpenseDraft } from './draft';
+import type { Draft, ExpenseDraft } from './draft';
+import { boxEvents, editNow, PresenceTags, type FieldBinding } from './FieldBinding';
+import { amountValue, expenseAmountKey, expenseDescKey, expenseKey, expenseMetaValue, textValue } from './live/fields';
 
 interface Props {
   maxExpenses: number;
   draft: Draft;
   derived: Derived;
   history: SupplierHistory;
-  /** Who a line added now is recorded as (the signed-in cashier). */
+  /** Who a line added now is recorded as (the server stamps the real author on creation). */
   author: ExpenseAuthor;
-  dispatch: DraftDispatch;
+  binding: FieldBinding;
   newId: () => string;
-  /** Clock for a new line's `order` (client ms); defaults to Date.now. */
-  nowMs?: () => number;
+  /** Clock for a new line's `order` (client ms). */
+  nowMs: () => number;
 }
 
-export function ExpensesCard({ maxExpenses, draft, derived, history, author, dispatch, newId, nowMs = Date.now }: Props) {
+export function ExpensesCard({ maxExpenses, draft, derived, history, author, binding, newId, nowMs }: Props) {
+  // The line meta is sent at once, so its description/amount never reach the server before it.
+  const add = () => editNow(binding, expenseKey(newId()), expenseMetaValue(author, nowMs(), false));
   return (
     <Card title="Έξοδα" aside={derived.expensesCents > 0 ? formatEuro(derived.expensesCents) : undefined}>
       {draft.expenses.map((expense, index) => (
-        <ExpenseRow key={expense.id} expense={expense} index={index} derived={derived} history={history} dispatch={dispatch} />
+        <ExpenseRow key={expense.id} expense={expense} index={index} derived={derived} history={history} author={author} binding={binding} />
       ))}
       {draft.expenses.length < maxExpenses && (
-        <button type="button" className="link" onClick={() => dispatch({ type: 'addExpense', id: newId(), max: maxExpenses, addedBy: author, order: nowMs() })}>
+        <button type="button" className="link" onClick={add}>
           + Έξοδο
         </button>
       )}
@@ -39,34 +43,43 @@ interface RowProps {
   index: number;
   derived: Derived;
   history: SupplierHistory;
-  dispatch: DraftDispatch;
+  author: ExpenseAuthor;
+  binding: FieldBinding;
 }
 
-function ExpenseRow({ expense, index, derived, history, dispatch }: RowProps) {
+function ExpenseRow({ expense, index, derived, history, author, binding }: RowProps) {
   const n = index + 1;
+  const descKey = expenseDescKey(expense.id);
+  const amountKey = expenseAmountKey(expense.id);
   const error = fieldError(derived, fieldId.expense(expense.id));
   const errId = `expense-${expense.id}-err`;
   const cents = derived.expenseRowCents[expense.id] ?? 0;
   const described = expense.description.trim() !== '';
   const chips = described ? [] : suggestExpenseDescriptions(history, cents);
-  const setDescription = (description: string) => dispatch({ type: 'setExpense', id: expense.id, description });
+  const pickDescription = (description: string) => editNow(binding, descKey, textValue(description));
   // After leaving the amount: fill the name only when exactly one supplier has this exact amount (V2).
-  const autoFill = () => {
+  const amountEvents = boxEvents(binding, amountKey);
+  const leaveAmount = () => {
+    amountEvents.onBlur();
     if (described) return;
     const name = exactExpenseMatch(history, cents);
-    if (name !== null) setDescription(name);
+    if (name !== null) pickDescription(name);
   };
+  // Removing keeps the line's meta (author, order) and marks it removed.
+  const remove = () => editNow(binding, expenseKey(expense.id), expenseMetaValue(expense.addedBy ?? author, expense.order, true));
 
   return (
     <div className="expense">
       <div className="row">
+        <PresenceTags binding={binding} keys={[descKey, amountKey]} />
         <input
           className="field text"
           aria-label={`Περιγραφή εξόδου ${n}`}
           placeholder="Περιγραφή"
           autoComplete="off"
           value={expense.description}
-          onChange={(e) => setDescription(e.target.value)}
+          {...boxEvents(binding, descKey)}
+          onChange={(e) => binding.edit(descKey, textValue(e.target.value))}
         />
         <AmountField
           id={`expense-${expense.id}`}
@@ -74,10 +87,11 @@ function ExpenseRow({ expense, index, derived, history, dispatch }: RowProps) {
           value={expense.amountText}
           invalid={error !== undefined}
           describedBy={error !== undefined ? errId : undefined}
-          onBlur={autoFill}
-          onChange={(text) => dispatch({ type: 'setExpense', id: expense.id, amountText: text })}
+          onFocus={amountEvents.onFocus}
+          onBlur={leaveAmount}
+          onChange={(text) => binding.edit(amountKey, amountValue(text))}
         />
-        <button type="button" className="icon-btn" aria-label={`Αφαίρεση εξόδου ${n}`} onClick={() => dispatch({ type: 'removeExpense', id: expense.id })}>
+        <button type="button" className="icon-btn" aria-label={`Αφαίρεση εξόδου ${n}`} onClick={remove}>
           ×
         </button>
       </div>
@@ -91,7 +105,7 @@ function ExpenseRow({ expense, index, derived, history, dispatch }: RowProps) {
       {chips.length > 0 && (
         <div className="chips">
           {chips.map((name) => (
-            <button type="button" key={name} className="chip" onClick={() => setDescription(name)}>
+            <button type="button" key={name} className="chip" onClick={() => pickDescription(name)}>
               {name}
             </button>
           ))}
