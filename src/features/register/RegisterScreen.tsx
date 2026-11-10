@@ -123,7 +123,7 @@ export function RegisterScreen(props: RegisterProps) {
 
   const submit = async (inputs: ClosingInputs) => {
     const key = submitKey.current?.key ?? newId();
-    const r = await api.submit(session.token, ctx.configId, ctx.businessDate, inputs, key);
+    const r = await api.submit(session.token, ctx.configId, ctx.businessDate, inputs, 0 /* replaced in stage-2 Task 7 */, key);
     if (r.ok) {
       submitKey.current = null;
       // An acknowledged, unedited draft needs no warning when the day changes.

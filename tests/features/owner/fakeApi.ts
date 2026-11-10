@@ -1,4 +1,6 @@
 import { vi } from 'vitest';
+import type { LiveHandlers } from '../../../src/data/remote/live';
+import { fakeLive } from '../phone/fakeDeviceApi';
 import type { OwnerApi, Result } from '../../../src/data/remote/ownerApi';
 
 export const ok = <T,>(data: T): Promise<Result<T>> => Promise.resolve({ ok: true, data });
@@ -31,6 +33,11 @@ export function fakeApi(overrides: Partial<OwnerApi> = {}): OwnerApi {
     createPairingCode: vi.fn(() => ok('ABCDEFGH')),
     listDevices: vi.fn(() => ok([])),
     updateDevice: vi.fn(() => ok(undefined)),
+    todayClosing: vi.fn(() =>
+      ok({ id: 'oc-1', businessDate: '2026-11-07', configId: 'config-1', config: {}, revision: 0, lastSubmit: null, fields: {} }),
+    ),
+    setTodayField: vi.fn(() => ok({ version: 1, revision: 1 })),
+    live: vi.fn((_shopId: string, _me: { name: string }, h: LiveHandlers) => fakeLive(h)),
   };
   return { ...base, ...overrides };
 }

@@ -1,5 +1,7 @@
 import type { ClosingInputs } from '../../core/formula';
 import type { PastExpense } from '../../core/suggestions';
+import type { FieldKey, ServerField, Snapshot } from '../../features/register/live/fields';
+import type { LiveChannel, LiveHandlers } from './live';
 
 /** Every failure a phone action can report. A new one needs a case in deviceErrors.ts and a Greek message in features/phone/model/messages.ts. */
 export type DeviceError =
@@ -13,6 +15,10 @@ export type DeviceError =
   | { code: 'session_invalid' }
   | { code: 'wrong_day' }
   | { code: 'config_mismatch' }
+  | { code: 'stale'; current: ServerField }
+  | { code: 'bad_field' }
+  | { code: 'too_many_expenses' }
+  | { code: 'draft_changed'; revision: number }
   | { code: 'bad_inputs' }
   | { code: 'idempotency_conflict' }
   | { code: 'network' }
@@ -55,7 +61,14 @@ export interface DeviceApi {
     configId: string,
     businessDate: string,
     inputs: ClosingInputs,
+    revision: number,
     idempotencyKey: string,
   ): Promise<DResult<{ closingId: string; repeat: boolean }>>;
   suggestionData(): Promise<DResult<PastExpense[]>>;
+  /** Today's shared open closing (fields, revision, pinned config). */
+  getOpenClosing(token: string): Promise<DResult<Snapshot>>;
+  /** Writes one field. baseVersion null = last-write-wins; a mismatch is `stale` (carries the current field). */
+  setField(token: string, businessDate: string, key: FieldKey, value: unknown, baseVersion: number | null): Promise<DResult<{ version: number; revision: number }>>;
+  /** Realtime channel for the shop (broadcasts + presence). */
+  live(shopId: string, me: { name: string }, h: LiveHandlers): LiveChannel;
 }

@@ -1,5 +1,7 @@
 import type { ShopConfig } from '../../core/config';
+import type { FieldKey, ServerField, Snapshot } from '../../features/register/live/fields';
 import type { OwnerError } from './errors';
+import type { LiveChannel, LiveHandlers } from './live';
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: OwnerError };
 
@@ -68,4 +70,10 @@ export interface OwnerApi {
   createPairingCode(shopId: string): Promise<Result<string>>;
   listDevices(shopId: string): Promise<Result<DeviceRow[]>>;
   updateDevice(userId: string, patch: { label?: string; revoke?: true }): Promise<Result<void>>;
+  /** Today's shared open closing for the shop. */
+  todayClosing(shopId: string): Promise<Result<Snapshot>>;
+  /** `stale` (baseVersion mismatch) is data, not an error: it carries the field's current server state. */
+  setTodayField(shopId: string, key: FieldKey, value: unknown, baseVersion: number | null): Promise<Result<{ version: number; revision: number } | { stale: ServerField }>>;
+  /** Realtime channel for the shop (broadcasts + presence). */
+  live(shopId: string, me: { name: string }, h: LiveHandlers): LiveChannel;
 }

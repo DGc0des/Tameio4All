@@ -2,6 +2,7 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import type { PastExpense } from '../../core/suggestions';
 import type { DResult, DeviceApi, DeviceContext, StaffSession } from './deviceApi';
 import { fromServerResult, mapDeviceError } from './deviceErrors';
+import { openShopChannel, parseSnapshot } from './live';
 
 type Reply<T> = PromiseLike<{ data: T; error: unknown }>;
 
@@ -91,13 +92,14 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
     async signOut(token) {
       await run(client.rpc('staff_sign_out', { p_token: token }));
     },
-    async submit(token, configId, businessDate, inputs, idempotencyKey) {
+    async submit(token, configId, businessDate, inputs, revision, idempotencyKey) {
       const r = await run(
         client.rpc('submit_closing', {
           p_token: token,
           p_config_id: configId,
           p_business_date: businessDate,
           p_inputs: inputs,
+          p_revision: revision,
           p_idempotency_key: idempotencyKey,
         }),
       );
@@ -107,6 +109,33 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
       const j = r.data as Record<string, unknown>;
       return { ok: true, data: { closingId: str(j.closing_id), repeat: j.repeat === true } };
     },
+    async getOpenClosing(token) {
+      const r = await run(client.rpc('get_open_closing', { p_token: token }));
+      if (!r.ok) return r;
+      const failure = fromServerResult(r.data);
+      if (failure) return { ok: false, error: failure };
+      const snap = parseSnapshot((r.data as Record<string, unknown>).closing);
+      return snap ? { ok: true, data: snap } : { ok: false, error: bad };
+    },
+    async setField(token, businessDate, key, value, baseVersion) {
+      const r = await run(
+        client.rpc('set_closing_field', {
+          p_token: token,
+          p_business_date: businessDate,
+          p_key: key,
+          p_value: value,
+          p_base_version: baseVersion,
+        }),
+      );
+      if (!r.ok) return r;
+      const failure = fromServerResult(r.data, { key });
+      if (failure) return { ok: false, error: failure };
+      const j = r.data as Record<string, unknown>;
+      return Number.isSafeInteger(j.version) && Number.isSafeInteger(j.revision)
+        ? { ok: true, data: { version: j.version as number, revision: j.revision as number } }
+        : { ok: false, error: bad };
+    },
+    live: (shop, me, h) => openShopChannel(client, shop, me, h),
     async suggestionData() {
       const r = await run(client.rpc('expense_suggestion_data'));
       if (!r.ok) return r;

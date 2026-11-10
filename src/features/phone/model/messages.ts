@@ -23,6 +23,14 @@ export function deviceErrorMessage(e: DeviceError): string {
       return 'Άλλαξε η ημέρα. Συνδέσου ξανά.';
     case 'config_mismatch':
       return 'Οι ρυθμίσεις του καταστήματος άλλαξαν. Ξαναφόρτωσε.';
+    case 'stale':
+      return 'Το πεδίο άλλαξε από άλλον.';
+    case 'bad_field':
+      return 'Η τιμή δεν είναι έγκυρη.';
+    case 'too_many_expenses':
+      return 'Έφτασες το μέγιστο πλήθος εξόδων.';
+    case 'draft_changed':
+      return 'Το κλείσιμο άλλαξε από άλλον. Έλεγξε και υπέβαλε ξανά.';
     case 'bad_inputs':
       return 'Τα στοιχεία του κλεισίματος δεν είναι έγκυρα.';
     case 'idempotency_conflict':

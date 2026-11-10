@@ -9,6 +9,8 @@ export type OwnerError =
   | { code: 'staff_name_taken' }
   | { code: 'bad_pin_format' }
   | { code: 'bad_config' }
+  | { code: 'bad_field' }
+  | { code: 'too_many_expenses' }
   | { code: 'bad_name' }
   | { code: 'invalid_credentials' }
   | { code: 'email_not_confirmed' }
@@ -36,7 +38,7 @@ export function mapError(err: unknown): OwnerError {
     const m = /current version is (\d+)/.exec(str(e.details));
     return { code: 'version_conflict', currentVersion: m?.[1] !== undefined ? Number(m[1]) : null };
   }
-  if (message === 'not_owner' || message === 'staff_name_taken' || message === 'bad_pin_format' || message === 'bad_config') {
+  if (message === 'not_owner' || message === 'staff_name_taken' || message === 'bad_pin_format' || message === 'bad_config' || message === 'bad_field' || message === 'too_many_expenses') {
     return { code: message };
   }
   switch (code) {

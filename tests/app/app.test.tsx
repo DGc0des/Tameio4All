@@ -150,7 +150,7 @@ describe('register flows', () => {
     await submitClosing();
 
     expect(submitCalls(api)).toHaveLength(1);
-    const [token, configId, businessDate, inputs, key] = submitCalls(api)[0]!;
+    const [token, configId, businessDate, inputs, _revision, key] = submitCalls(api)[0]!;
     expect([token, configId, businessDate]).toEqual(['token-1', FAKE_CONFIG_ID, '2026-11-07']);
     expect(inputs).toEqual<ClosingInputs>({
       schema: 2,
@@ -187,7 +187,7 @@ describe('register flows', () => {
 
     type('50€', '100');
     await submitClosing();
-    const keys = submitCalls(api).map((c) => c[4]);
+    const keys = submitCalls(api).map((c) => c[5]);
     expect(keys).toHaveLength(3);
     expect(keys[1]).toBe(keys[0]);
     expect(keys[2]).not.toBe(keys[0]);
@@ -203,7 +203,7 @@ describe('register flows', () => {
     await submitClosing();
     fireEvent.keyDown(window, { key: 'Escape' });
     await submitClosing();
-    const keys = submitCalls(api).map((c) => c[4]);
+    const keys = submitCalls(api).map((c) => c[5]);
     expect(keys).toHaveLength(2);
     expect(keys[1]).toBe(keys[0]);
   });
@@ -219,7 +219,7 @@ describe('register flows', () => {
     const calls = submitCalls(api);
     expect(calls).toHaveLength(2);
     expect(calls[1]![3]).toEqual(calls[0]![3]);
-    expect(calls[1]![4]).not.toBe(calls[0]![4]);
+    expect(calls[1]![5]).not.toBe(calls[0]![5]);
   });
 
   it('an expired session sends the cashier to sign in and keeps the typed draft', async () => {

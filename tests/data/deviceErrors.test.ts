@@ -52,6 +52,8 @@ describe('deviceErrorMessage', () => {
     { code: 'staff_not_found' }, { code: 'bad_pin' }, { code: 'staff_locked', lockedUntil: null }, { code: 'session_invalid' },
     { code: 'wrong_day' }, { code: 'config_mismatch' }, { code: 'bad_inputs' }, { code: 'idempotency_conflict' },
     { code: 'network' }, { code: 'unknown', detail: 'x' },
+    { code: 'stale', current: { key: 'c:a', value: null, version: 0, updatedByName: '', updatedAt: '' } }, { code: 'bad_field' },
+    { code: 'too_many_expenses' }, { code: 'draft_changed', revision: 3 },
   ];
   it('has a non-empty message for every code', () => {
     for (const e of all) expect(deviceErrorMessage(e).length).toBeGreaterThan(0);

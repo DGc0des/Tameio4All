@@ -120,17 +120,18 @@ describe('createDeviceApi', () => {
   it('submit passes the server argument names and maps the result', async () => {
     const s = stub({ rpc: { submit_closing: { data: { ok: true, closing_id: 'cl1', repeat: true }, error: null } } });
     const inputs = { schema: 2 } as never;
-    const r = await createDeviceApi(s.client).submit('tok', 'cfg', '2026-11-07', inputs, 'key');
+    const r = await createDeviceApi(s.client).submit('tok', 'cfg', '2026-11-07', inputs, 4, 'key');
     expect(r).toEqual({ ok: true, data: { closingId: 'cl1', repeat: true } });
     expect(s.rpc).toHaveBeenCalledWith('submit_closing', {
       p_token: 'tok',
       p_config_id: 'cfg',
       p_business_date: '2026-11-07',
       p_inputs: inputs,
+      p_revision: 4,
       p_idempotency_key: 'key',
     });
     const refused = stub({ rpc: { submit_closing: { data: { ok: false, error: 'wrong_day' }, error: null } } });
-    expect(await createDeviceApi(refused.client).submit('t', 'c', 'd', inputs, 'k')).toEqual({
+    expect(await createDeviceApi(refused.client).submit('t', 'c', 'd', inputs, 4, 'k')).toEqual({
       ok: false,
       error: { code: 'wrong_day' },
     });

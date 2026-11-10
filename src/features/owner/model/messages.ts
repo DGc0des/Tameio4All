@@ -18,6 +18,10 @@ export function ownerErrorMessage(e: OwnerError): string {
       return 'Το PIN πρέπει να είναι 4 ψηφία.';
     case 'bad_config':
       return 'Ο διακομιστής απέρριψε τις ρυθμίσεις.';
+    case 'bad_field':
+      return 'Η τιμή δεν είναι έγκυρη.';
+    case 'too_many_expenses':
+      return 'Έφτασες το μέγιστο πλήθος εξόδων.';
     case 'bad_name':
       return 'Το όνομα είναι κενό ή πολύ μεγάλο.';
     case 'invalid_credentials':

@@ -1,4 +1,6 @@
+import type { FieldKey } from '../../features/register/live/fields';
 import type { DeviceError } from './deviceApi';
+import { parseStaleCurrent } from './live';
 
 const NETWORK_RE = /failed to fetch|networkerror|load failed|fetch failed|network request failed/i;
 const str = (x: unknown): string => (typeof x === 'string' ? x : '');
@@ -17,6 +19,8 @@ const PLAIN = [
   'config_mismatch',
   'bad_inputs',
   'idempotency_conflict',
+  'bad_field',
+  'too_many_expenses',
 ] as const;
 type Plain = (typeof PLAIN)[number];
 const isPlain = (s: string): s is Plain => (PLAIN as readonly string[]).includes(s);
@@ -40,7 +44,7 @@ export function mapDeviceError(err: unknown): DeviceError {
 }
 
 /** For `{ok:false,error}` payloads. null when the payload is a success. Unknown codes become `unknown`. */
-export function fromServerResult(json: unknown): DeviceError | null {
+export function fromServerResult(json: unknown, ctx?: { key?: FieldKey }): DeviceError | null {
   if (typeof json !== 'object' || json === null) return { code: 'unknown', detail: 'bad_response' };
   const j = json as Record<string, unknown>;
   if (j.ok === true) return null;
@@ -48,6 +52,15 @@ export function fromServerResult(json: unknown): DeviceError | null {
   if (j.ok !== false) return { code: 'unknown', detail: 'bad_response' };
   if (error === 'staff_locked') {
     return { code: 'staff_locked', lockedUntil: typeof j.locked_until === 'string' ? j.locked_until : null };
+  }
+  if (error === 'draft_changed') {
+    return typeof j.revision === 'number' && Number.isSafeInteger(j.revision)
+      ? { code: 'draft_changed', revision: j.revision }
+      : { code: 'unknown', detail: 'bad_response' };
+  }
+  if (error === 'stale') {
+    const current = ctx?.key === undefined ? null : parseStaleCurrent(ctx.key, j.current);
+    return current ? { code: 'stale', current } : { code: 'unknown', detail: 'bad_response' };
   }
   if (isPlain(error)) return { code: error };
   return { code: 'unknown', detail: error || 'error' };

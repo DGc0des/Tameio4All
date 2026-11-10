@@ -1,5 +1,6 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
-import { mapError } from './errors';
+import { mapError, type OwnerError } from './errors';
+import { openShopChannel, parseSnapshot, parseStaleCurrent } from './live';
 import type { DeviceRow, OwnerApi, Result, SessionInfo, ShopRow, StaffRow } from './ownerApi';
 
 /**
@@ -18,6 +19,12 @@ async function run<T>(call: PromiseLike<{ data: T; error: unknown }>): Promise<R
     return { ok: false, error: mapError(e) };
   }
 }
+
+const BAD_RESPONSE = { code: 'unknown', detail: 'bad_response' } as const;
+
+/** An `{ok:false,error}` payload from an owner function → OwnerError (unknown codes stay `unknown`). */
+const payloadError = (j: Record<string, unknown> | null): OwnerError =>
+  j && j.ok === false && typeof j.error === 'string' ? mapError({ message: j.error }) : BAD_RESPONSE;
 
 const done = (r: Result<unknown>): Result<void> => (r.ok ? { ok: true, data: undefined } : r);
 
@@ -119,6 +126,32 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
       if (patch.revoke) values.revoked_at = new Date().toISOString();
       return oneRow(await run(client.from('devices').update(values).eq('user_id', userId).select('user_id')));
     },
+    async todayClosing(shopId) {
+      const r = await run(client.rpc('owner_get_open_closing', { p_shop_id: shopId }));
+      if (!r.ok) return r;
+      const j = r.data as Record<string, unknown> | null;
+      if (j?.ok !== true) return { ok: false, error: payloadError(j) };
+      const snap = parseSnapshot(j.closing);
+      return snap ? { ok: true, data: snap } : { ok: false, error: BAD_RESPONSE };
+    },
+    async setTodayField(shopId, key, value, baseVersion) {
+      const r = await run(
+        client.rpc('owner_set_closing_field', { p_shop_id: shopId, p_key: key, p_value: value, p_base_version: baseVersion }),
+      );
+      if (!r.ok) return r;
+      const j = r.data as Record<string, unknown> | null;
+      if (j?.ok !== true) {
+        if (j?.ok === false && j.error === 'stale') {
+          const current = parseStaleCurrent(key, j.current);
+          return current ? { ok: true, data: { stale: current } } : { ok: false, error: BAD_RESPONSE };
+        }
+        return { ok: false, error: payloadError(j) };
+      }
+      return Number.isSafeInteger(j.version) && Number.isSafeInteger(j.revision)
+        ? { ok: true, data: { version: j.version as number, revision: j.revision as number } }
+        : { ok: false, error: BAD_RESPONSE };
+    },
+    live: (shop, me, h) => openShopChannel(client, shop, me, h),
   };
 }
 
