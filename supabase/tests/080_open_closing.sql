@@ -53,15 +53,15 @@ declare r jsonb; r2 jsonb;
 begin
   r := public.get_open_closing(current_setting('t.tok1'));
   if (r ->> 'ok')::boolean is not true then raise exception 'T1 get failed: %', r; end if;
-  if r -> 'closing' ->> 'config_id' <> current_setting('t.cfg_a') then raise exception 'T1 wrong config: %', r; end if;
-  if r -> 'closing' ->> 'business_date' <> current_setting('t.bd') or (r -> 'closing' ->> 'revision')::bigint <> 0
-     or jsonb_array_length(r -> 'closing' -> 'fields') <> 0 or r -> 'closing' -> 'config' ->> 'maxExpenses' <> '2' then
+  if r -> 'closing' ->> 'config_id' is distinct from current_setting('t.cfg_a') then raise exception 'T1 wrong config: %', r; end if;
+  if r -> 'closing' ->> 'business_date' is distinct from current_setting('t.bd') or (r -> 'closing' ->> 'revision')::bigint is distinct from 0
+     or jsonb_array_length(r -> 'closing' -> 'fields') is distinct from 0 or r -> 'closing' -> 'config' ->> 'maxExpenses' is distinct from '2' then
     raise exception 'T1 bad snapshot: %', r;
   end if;
   perform set_config('t.oc', r -> 'closing' ->> 'id', true);
   perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
   r2 := public.get_open_closing(current_setting('t.tok2'));
-  if r2 -> 'closing' ->> 'id' <> current_setting('t.oc') then raise exception 'T1 second call created another closing'; end if;
+  if r2 -> 'closing' ->> 'id' is distinct from current_setting('t.oc') then raise exception 'T1 second call created another closing'; end if;
 end $$;
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
@@ -74,7 +74,7 @@ do $$
 declare r jsonb;
 begin
   r := public.get_open_closing(current_setting('t.tok1'));
-  if r -> 'closing' ->> 'id' <> current_setting('t.oc') or r -> 'closing' ->> 'config_id' <> current_setting('t.cfg_a') then
+  if r -> 'closing' ->> 'id' is distinct from current_setting('t.oc') or r -> 'closing' ->> 'config_id' is distinct from current_setting('t.cfg_a') then
     raise exception 'T1 config not pinned after publish: %', r;
   end if;
 end $$;
@@ -101,21 +101,21 @@ begin
   r := public.set_closing_field(t2, bd, 'd:5000', '{"text":"450","mode":"count"}', null);
   if r is distinct from '{"ok":true,"version":2,"revision":2}'::jsonb then raise exception 'T2 LWW write: %', r; end if;
   s := public.get_open_closing(t2) -> 'closing';
-  if s -> 'fields' -> 0 ->> 'key' <> 'd:5000' or s -> 'fields' -> 0 -> 'value' is distinct from '{"text":"450","mode":"count"}'::jsonb
-     or s -> 'fields' -> 0 ->> 'updated_by_name' <> 'ΝΙΚΟΣ' or (s ->> 'revision')::bigint <> 2
-     or (s -> 'fields' -> 0 ->> 'version')::int <> 2 then
+  if s -> 'fields' -> 0 ->> 'key' is distinct from 'd:5000' or s -> 'fields' -> 0 -> 'value' is distinct from '{"text":"450","mode":"count"}'::jsonb
+     or s -> 'fields' -> 0 ->> 'updated_by_name' is distinct from 'ΝΙΚΟΣ' or (s ->> 'revision')::bigint is distinct from 2
+     or (s -> 'fields' -> 0 ->> 'version')::int is distinct from 2 then
     raise exception 'T2 snapshot: %', s;
   end if;
 
   perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
   -- T3 base version older than current -> stale with current; nothing changed
   r := public.set_closing_field(t1, bd, 'd:5000', '{"text":"1","mode":"amount"}', 1);
-  if r ->> 'ok' <> 'false' or r ->> 'error' <> 'stale' or r -> 'current' -> 'value' is distinct from '{"text":"450","mode":"count"}'::jsonb
-     or (r -> 'current' ->> 'version')::int <> 2 or r -> 'current' ->> 'updated_by_name' <> 'ΝΙΚΟΣ' then
+  if r ->> 'ok' is distinct from 'false' or r ->> 'error' is distinct from 'stale' or r -> 'current' -> 'value' is distinct from '{"text":"450","mode":"count"}'::jsonb
+     or (r -> 'current' ->> 'version')::int is distinct from 2 or r -> 'current' ->> 'updated_by_name' is distinct from 'ΝΙΚΟΣ' then
     raise exception 'T3 expected stale: %', r;
   end if;
   s := public.get_open_closing(t1) -> 'closing';
-  if (s ->> 'revision')::bigint <> 2 or s -> 'fields' -> 0 -> 'value' ->> 'text' <> '450' then raise exception 'T3 stale write changed data: %', s; end if;
+  if (s ->> 'revision')::bigint is distinct from 2 or s -> 'fields' -> 0 -> 'value' ->> 'text' is distinct from '450' then raise exception 'T3 stale write changed data: %', s; end if;
   r := public.set_closing_field(t1, bd, 'd:5000', '{"text":"500","mode":"amount"}', 2);   -- matching base succeeds
   if r is distinct from '{"ok":true,"version":3,"revision":3}'::jsonb then raise exception 'T3 matching base: %', r; end if;
 
@@ -152,7 +152,7 @@ begin
   r := public.set_closing_field(t1, bd, 'e:zzz', '{"order":1,"removed":"no","addedBy":{"kind":"owner"}}', null);
   if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T4b expense line with non-boolean removed: %', r; end if;
   s := public.get_open_closing(t1) -> 'closing';
-  if (s ->> 'revision')::bigint <> 4 then raise exception 'T4 rejected writes bumped revision: %', s ->> 'revision'; end if;
+  if (s ->> 'revision')::bigint is distinct from 4 then raise exception 'T4 rejected writes bumped revision: %', s ->> 'revision'; end if;
 
   -- T5 expenses: server-side author, unknown line, cap (maxExpenses = 2), removed frees a slot
   r := public.set_closing_field(t1, bd, 'e:aaa:a', '{"text":"5"}', null);
@@ -181,6 +181,9 @@ begin
   end if;
   r := public.set_closing_field(t2, bd, 'e:ccc', '{"addedBy":{"kind":"owner"},"removed":false,"order":3000}', null);
   if (r ->> 'ok')::boolean is not true then raise exception 'T5 removed line did not free a slot: %', r; end if;
+  -- un-removing a line needs a free slot too (aaa removed, bbb + ccc visible, cap 2)
+  r := public.set_closing_field(t2, bd, 'e:aaa', '{"addedBy":{"kind":"owner"},"removed":false,"order":1000}', null);
+  if r is distinct from '{"ok":false,"error":"too_many_expenses"}'::jsonb then raise exception 'T5 un-remove past cap: %', r; end if;
   perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 end $$;
 reset role;
@@ -199,8 +202,8 @@ begin
   if n <> 9 then raise exception 'T2 expected 9 realtime messages for shop A, got %', n; end if;
   select * into m from realtime.messages where topic = 'shop:' || current_setting('t.shop_a') and event = 'field'
     and payload ->> 'key' = 'd:5000' and (payload ->> 'version')::int = 2;
-  if m.private is not true or m.payload ->> 'updated_by_name' <> 'ΝΙΚΟΣ' or (m.payload ->> 'revision')::int <> 2
-     or m.payload ->> 'business_date' <> current_setting('t.bd') then
+  if m.private is not true or m.payload ->> 'updated_by_name' is distinct from 'ΝΙΚΟΣ' or (m.payload ->> 'revision')::int is distinct from 2
+     or m.payload ->> 'business_date' is distinct from current_setting('t.bd') then
     raise exception 'T2 bad realtime payload: %', m.payload;
   end if;
 end $$;
@@ -212,7 +215,7 @@ do $$
 declare r jsonb;
 begin
   r := public.get_open_closing(current_setting('t.tok3'));
-  if (r ->> 'ok')::boolean is not true or r -> 'closing' ->> 'id' = current_setting('t.oc') or jsonb_array_length(r -> 'closing' -> 'fields') <> 0 then
+  if (r ->> 'ok')::boolean is not true or r -> 'closing' ->> 'id' = current_setting('t.oc') or jsonb_array_length(r -> 'closing' -> 'fields') is distinct from 0 then
     raise exception 'T6 shop B phone sees shop A data: %', r;
   end if;
   -- shop A's token from shop B's phone: the session belongs to another phone
@@ -326,17 +329,17 @@ do $$
 declare s uuid := current_setting('t.shop_a')::uuid; r jsonb; c jsonb;
 begin
   r := public.owner_set_closing_field(s, 'c:wolt', '{"text":"77"}', null);
-  if (r ->> 'ok')::boolean is not true or (r ->> 'version')::int <> 2 then raise exception 'T7 owner write: %', r; end if;   -- d3/shop B wrote a different closing; shop A's c:wolt was version 1
+  if (r ->> 'ok')::boolean is not true or (r ->> 'version')::int is distinct from 2 then raise exception 'T7 owner write: %', r; end if;   -- d3/shop B wrote a different closing; shop A's c:wolt was version 1
   r := public.owner_set_closing_field(s, 'c:wolt', '{"text":"1"}', 1);
-  if r ->> 'error' <> 'stale' or r -> 'current' ->> 'updated_by_name' <> 'Ιδιοκτήτης' then raise exception 'T7 owner stale: %', r; end if;
+  if r ->> 'error' is distinct from 'stale' or r -> 'current' ->> 'updated_by_name' is distinct from 'Ιδιοκτήτης' then raise exception 'T7 owner stale: %', r; end if;
   r := public.owner_set_closing_field(s, 'e:own', '{"addedBy":{"kind":"staff","id":"x"},"removed":true,"order":5}', null);   -- removed: no slot needed
   if (r ->> 'ok')::boolean is not true then raise exception 'T7 owner expense: %', r; end if;
   r := public.owner_set_closing_field(s, 'e:own', '{"addedBy":{"kind":"staff","id":"x"},"removed":false,"order":5}', null);
-  if r ->> 'error' <> 'too_many_expenses' then raise exception 'T7 owner un-remove past cap: %', r; end if;
+  if r ->> 'error' is distinct from 'too_many_expenses' then raise exception 'T7 owner un-remove past cap: %', r; end if;
   c := public.owner_get_open_closing(s) -> 'closing';
   if (select f -> 'value' -> 'addedBy' from jsonb_array_elements(c -> 'fields') f where f ->> 'key' = 'e:own') is distinct from '{"kind":"owner"}'::jsonb
-     or (select f ->> 'updated_by_name' from jsonb_array_elements(c -> 'fields') f where f ->> 'key' = 'e:own') <> 'Ιδιοκτήτης'
-     or c ->> 'id' <> current_setting('t.oc') then
+     or (select f ->> 'updated_by_name' from jsonb_array_elements(c -> 'fields') f where f ->> 'key' = 'e:own') is distinct from 'Ιδιοκτήτης'
+     or c ->> 'id' is distinct from current_setting('t.oc') then
     raise exception 'T7 owner snapshot: %', c;
   end if;
   r := public.owner_set_closing_field(s, 'x:1', '{"text":"1"}', null);
