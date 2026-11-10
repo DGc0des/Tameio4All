@@ -156,7 +156,7 @@ describe('register flows', () => {
       schema: 2,
       counts: { '10000': 15 },
       channelCents: {},
-      expenses: [{ id: 'id-2', description: 'Ντόντης', cents: 2400, addedBy: { kind: 'staff', id: 'staff-maria' } }],
+      expenses: [{ id: 'id-1', description: 'Ντόντης', cents: 2400, addedBy: { kind: 'staff', id: 'staff-maria' } }],
     });
     expect(typeof key).toBe('string');
 
@@ -170,7 +170,7 @@ describe('register flows', () => {
     act(() => {
       window.dispatchEvent(new Event('pagehide'));
     });
-    expect(loadDraft(store, FAKE_SHOP_ID, '2026-11-07')?.entries['10000']).toBe('1500');
+    expect(loadDraft(store, FAKE_SHOP_ID, '2026-11-07')?.entries['10000']).toEqual({ text: '1500', mode: 'amount' });
   });
 
   it('retries inside the sheet with the same key; an edited closing gets a new key', async () => {
@@ -229,7 +229,7 @@ describe('register flows', () => {
     await submitClosing();
     expect(await screen.findByRole('radio', { name: 'ΜΑΡΙΑ' })).toBeTruthy();
     expect(loadStaffSession(store)).toBeNull();
-    expect(loadDraft(store, FAKE_SHOP_ID, '2026-11-07')?.entries['10000']).toBe('1500');
+    expect(loadDraft(store, FAKE_SHOP_ID, '2026-11-07')?.entries['10000']).toEqual({ text: '1500', mode: 'amount' });
   });
 
   it('disables Υποβολή while offline', async () => {
@@ -311,12 +311,12 @@ describe('navigation', () => {
     const store = memoryStore();
     store.setItem(
       shopKey(FAKE_SHOP_ID, 'draft'),
-      JSON.stringify({ savedAt: NOW().getTime(), draft: { id: 'old', businessDate: '2026-11-06', mode: 'amount', entries: { '10000': '500' }, channels: {}, expenses: [] } }),
+      JSON.stringify({ savedAt: NOW().getTime(), draft: { businessDate: '2026-11-06', entries: { '10000': { text: '500', mode: 'amount' } }, channels: {}, expenses: [] } }),
     );
     await start(store);
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
     expect(await screen.findByText('Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της 06/11. Ενημέρωσε τον ιδιοκτήτη.')).toBeTruthy();
-    expect(loadUnsentDraft(store, FAKE_SHOP_ID)?.entries['10000']).toBe('500');
+    expect(loadUnsentDraft(store, FAKE_SHOP_ID)?.entries['10000']).toEqual({ text: '500', mode: 'amount' });
   });
 
   it('a day change found at submit reloads; the typed closing is kept aside with the notice', async () => {
@@ -338,7 +338,7 @@ describe('navigation', () => {
     fireEvent.click(button('Είσοδος'));
     expect(await screen.findByText('Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της 07/11. Ενημέρωσε τον ιδιοκτήτη.')).toBeTruthy();
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('');
-    expect(loadUnsentDraft(store, FAKE_SHOP_ID)?.entries['10000']).toBe('1500');
+    expect(loadUnsentDraft(store, FAKE_SHOP_ID)?.entries['10000']).toEqual({ text: '1500', mode: 'amount' });
   });
 
   it('a submitted, unedited draft is dropped on the next day without a notice', async () => {

@@ -49,7 +49,9 @@ export function deriveClosing(config: ShopConfig, draft: Draft): Derived {
   let coinsCents = 0;
   for (const d of config.denominations) {
     const key = String(d);
-    const r = entryToCount(draft.entries[key] ?? '', d, draft.mode);
+    const box = draft.entries[key];
+    // Each box is read in the mode it was typed in.
+    const r = entryToCount(box?.text ?? '', d, box?.mode ?? 'amount');
     if (!r.ok) {
       errors.push({ field: fieldId.denom(d), label: denomLabel(d), message: message(r.reason) });
       continue;

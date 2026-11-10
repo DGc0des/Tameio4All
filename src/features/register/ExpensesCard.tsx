@@ -15,16 +15,18 @@ interface Props {
   author: ExpenseAuthor;
   dispatch: DraftDispatch;
   newId: () => string;
+  /** Clock for a new line's `order` (client ms); defaults to Date.now. */
+  nowMs?: () => number;
 }
 
-export function ExpensesCard({ maxExpenses, draft, derived, history, author, dispatch, newId }: Props) {
+export function ExpensesCard({ maxExpenses, draft, derived, history, author, dispatch, newId, nowMs = Date.now }: Props) {
   return (
     <Card title="Έξοδα" aside={derived.expensesCents > 0 ? formatEuro(derived.expensesCents) : undefined}>
       {draft.expenses.map((expense, index) => (
         <ExpenseRow key={expense.id} expense={expense} index={index} derived={derived} history={history} dispatch={dispatch} />
       ))}
       {draft.expenses.length < maxExpenses && (
-        <button type="button" className="link" onClick={() => dispatch({ type: 'addExpense', id: newId(), max: maxExpenses, addedBy: author })}>
+        <button type="button" className="link" onClick={() => dispatch({ type: 'addExpense', id: newId(), max: maxExpenses, addedBy: author, order: nowMs() })}>
           + Έξοδο
         </button>
       )}

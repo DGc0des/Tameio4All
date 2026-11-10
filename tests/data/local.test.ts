@@ -5,6 +5,7 @@ import {
   memoryStore, readJson, removeKey, shopKey, writeJson, type KeyValueStore,
 } from '../../src/data/local/storage';
 import { newDraft } from '../../src/features/register/draft';
+import { boxes } from '../features/register/boxes';
 
 const throwing: KeyValueStore = {
   getItem: () => { throw new Error('denied'); },
@@ -38,14 +39,14 @@ describe('drafts', () => {
 
   it('restores a draft of the same business date, whatever its age', () => {
     const s = memoryStore();
-    const d = newDraft('d1', '2026-09-28');
+    const d = newDraft('2026-09-28');
     expect(saveDraft(s, 'local', d, now)).toBe(true);
     expect(loadDraft(s, 'local', '2026-09-28')).toEqual(d);
   });
 
   it('moves an unsubmitted draft of another business date to the unsent key, announced once', () => {
     const s = memoryStore();
-    const d = { ...newDraft('d1', '2026-09-28'), entries: { '10000': '3' } };
+    const d = { ...newDraft('2026-09-28'), entries: boxes({ '10000': '3' }) };
     saveDraft(s, 'local', d, now);
     expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
     expect(s.getItem(shopKey('local', 'draft'))).toBeNull();
@@ -59,10 +60,10 @@ describe('drafts', () => {
   it('drops silently a never-typed draft of another business date (blank fields count as empty)', () => {
     const s = memoryStore();
     const blank = {
-      ...newDraft('d1', '2026-09-28'),
-      entries: { '10000': '', '5000': ' ' },
+      ...newDraft('2026-09-28'),
+      entries: boxes({ '10000': '', '5000': ' ' }),
       channels: { card: '' },
-      expenses: [{ id: 'e1', description: ' ', amountText: '', addedBy: null }],
+      expenses: [{ id: 'e1', description: ' ', amountText: '', addedBy: null, order: 1 }],
     };
     saveDraft(s, 'local', blank, now);
     expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
@@ -70,17 +71,17 @@ describe('drafts', () => {
     expect(loadUnsentDraft(s, 'local')).toBeNull();
     expect(takeUnsentNotice(s, 'local')).toBeNull();
     // An empty draft does not replace one already kept aside.
-    const typed = { ...newDraft('d0', '2026-09-27'), channels: { card: '5' } };
+    const typed = { ...newDraft('2026-09-27'), channels: { card: '5' } };
     saveDraft(s, 'local', typed, now);
     loadDraft(s, 'local', '2026-09-28');
-    saveDraft(s, 'local', newDraft('d2', '2026-09-28'), now);
+    saveDraft(s, 'local', newDraft('2026-09-28'), now);
     loadDraft(s, 'local', '2026-09-29');
     expect(loadUnsentDraft(s, 'local')).toEqual(typed);
   });
 
   it('a draft with only an expense description is not empty', () => {
     const s = memoryStore();
-    const d = { ...newDraft('d1', '2026-09-28'), expenses: [{ id: 'e1', description: 'ΓΑΛΑ', amountText: '', addedBy: null }] };
+    const d = { ...newDraft('2026-09-28'), expenses: [{ id: 'e1', description: 'ΓΑΛΑ', amountText: '', addedBy: null, order: 1 }] };
     saveDraft(s, 'local', d, now);
     loadDraft(s, 'local', '2026-09-29');
     expect(loadUnsentDraft(s, 'local')).toEqual(d);
@@ -88,9 +89,9 @@ describe('drafts', () => {
 
   it('keeps only the latest unsent draft', () => {
     const s = memoryStore();
-    saveDraft(s, 'local', { ...newDraft('d1', '2026-09-27'), entries: { '10000': '1' } }, now);
+    saveDraft(s, 'local', { ...newDraft('2026-09-27'), entries: boxes({ '10000': '1' }) }, now);
     loadDraft(s, 'local', '2026-09-28');
-    const later = { ...newDraft('d2', '2026-09-28'), entries: { '10000': '2' } };
+    const later = { ...newDraft('2026-09-28'), entries: boxes({ '10000': '2' }) };
     saveDraft(s, 'local', later, now);
     loadDraft(s, 'local', '2026-09-29');
     expect(loadUnsentDraft(s, 'local')).toEqual(later);
@@ -99,7 +100,7 @@ describe('drafts', () => {
 
   it('discards silently a draft that was submitted and not edited since', () => {
     const s = memoryStore();
-    const d = { ...newDraft('d1', '2026-09-28'), entries: { '10000': '3' } };
+    const d = { ...newDraft('2026-09-28'), entries: boxes({ '10000': '3' }) };
     saveDraft(s, 'local', d, now);
     markDraftSubmitted(s, 'local', d);
     expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
@@ -109,9 +110,9 @@ describe('drafts', () => {
 
   it('moves a draft edited after its last submit', () => {
     const s = memoryStore();
-    const d = { ...newDraft('d1', '2026-09-28'), entries: { '10000': '3' } };
+    const d = { ...newDraft('2026-09-28'), entries: boxes({ '10000': '3' }) };
     markDraftSubmitted(s, 'local', d);
-    const edited = { ...d, entries: { '10000': '4' } };
+    const edited = { ...d, entries: boxes({ '10000': '4' }) };
     saveDraft(s, 'local', edited, now);
     expect(loadDraft(s, 'local', '2026-09-29')).toBeNull();
     expect(loadUnsentDraft(s, 'local')).toEqual(edited);
@@ -119,7 +120,7 @@ describe('drafts', () => {
   });
 
   it('unsent storage is failure-safe', () => {
-    expect(() => markDraftSubmitted(throwing, 'local', newDraft('d1', '2026-09-28'))).not.toThrow();
+    expect(() => markDraftSubmitted(throwing, 'local', newDraft('2026-09-28'))).not.toThrow();
     expect(loadUnsentDraft(throwing, 'local')).toBeNull();
     expect(takeUnsentNotice(throwing, 'local')).toBeNull();
   });
@@ -134,10 +135,10 @@ describe('drafts', () => {
 
   it('clearDraft removes it; failures return null/false', () => {
     const s = memoryStore();
-    saveDraft(s, 'local', newDraft('d1', '2026-09-28'), now);
+    saveDraft(s, 'local', newDraft('2026-09-28'), now);
     clearDraft(s, 'local');
     expect(loadDraft(s, 'local', '2026-09-28')).toBeNull();
-    expect(saveDraft(throwing, 'local', newDraft('d1', '2026-09-28'), now)).toBe(false);
+    expect(saveDraft(throwing, 'local', newDraft('2026-09-28'), now)).toBe(false);
     expect(loadDraft(throwing, 'local', '2026-09-28')).toBeNull();
   });
 });

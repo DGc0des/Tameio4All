@@ -5,6 +5,7 @@ import { loadDraft } from '../../../src/data/local/drafts';
 import { memoryStore, shopKey } from '../../../src/data/local/storage';
 import { newDraft } from '../../../src/features/register/draft';
 import { useDraftAutosave } from '../../../src/features/register/useDraftAutosave';
+import { boxes } from './boxes';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -14,7 +15,7 @@ describe('useDraftAutosave', () => {
   it('saves immediately when the tab is backgrounded, without waiting for the debounce timer', () => {
     vi.useFakeTimers();
     const store = memoryStore();
-    const draft = newDraft('d1', '2026-09-28');
+    const draft = newDraft('2026-09-28');
     const now = () => new Date(1_790_000_000_000);
     renderHook(() => useDraftAutosave(store, 'local', draft, now));
 
@@ -34,12 +35,12 @@ describe('useDraftAutosave', () => {
     vi.useFakeTimers();
     const store = memoryStore();
     const now = () => new Date(1_790_000_000_000);
-    const first = newDraft('d1', '2026-09-28');
+    const first = newDraft('2026-09-28');
     const { rerender, unmount } = renderHook(({ draft }) => useDraftAutosave(store, 'local', draft, now), {
       initialProps: { draft: first },
     });
     vi.advanceTimersByTime(300);
-    const edited = { ...first, entries: { '10000': '7' } };
+    const edited = { ...first, entries: boxes({ '10000': '7' }) };
     rerender({ draft: edited });
     unmount();
     expect(loadDraft(store, 'local', '2026-09-28')).toEqual(edited);

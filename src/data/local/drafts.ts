@@ -19,7 +19,7 @@ const blank = (text: string): boolean => text.trim() === '';
 /** Nothing was ever typed: every entry, channel and expense field is empty or whitespace. */
 function isEmptyDraft(d: Draft): boolean {
   return (
-    Object.values(d.entries).every(blank) &&
+    Object.values(d.entries).every((b) => blank(b.text)) &&
     Object.values(d.channels).every(blank) &&
     d.expenses.every((e) => blank(e.description) && blank(e.amountText))
   );

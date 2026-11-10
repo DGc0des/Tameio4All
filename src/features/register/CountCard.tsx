@@ -1,4 +1,4 @@
-import { denomLabel } from '../../core/denominations';
+import { convertEntry, denomLabel, type EntryMode } from '../../core/denominations';
 import { formatEuro, type Cents } from '../../core/money';
 import { AmountField } from '../../ui/AmountField';
 import { Card } from '../../ui/Card';
@@ -12,9 +12,11 @@ interface Props {
   draft: Draft;
   derived: Derived;
   dispatch: DraftDispatch;
+  /** How the boxes are displayed and typed into; stored per box as it is typed. */
+  viewMode: EntryMode;
 }
 
-export function CountCard({ title, denominations, totalCents, draft, derived, dispatch }: Props) {
+export function CountCard({ title, denominations, totalCents, draft, derived, dispatch, viewMode }: Props) {
   if (denominations.length === 0) return null;
   return (
     <Card title={title} aside={totalCents > 0 ? formatEuro(totalCents) : undefined}>
@@ -22,9 +24,10 @@ export function CountCard({ title, denominations, totalCents, draft, derived, di
         const key = String(d);
         const label = denomLabel(d);
         const error = fieldError(derived, fieldId.denom(d));
+        const box = draft.entries[key];
         const rowCents = derived.rowCents[key];
         // € mode: no hint. # mode: the row's euro value. An error always wins.
-        const hint = error ?? (draft.mode === 'count' && rowCents !== undefined ? formatEuro(rowCents) : undefined);
+        const hint = error ?? (viewMode === 'count' && rowCents !== undefined ? formatEuro(rowCents) : undefined);
         const errId = `denom-${key}-err`;
         return (
           <div className="row" key={key}>
@@ -37,11 +40,11 @@ export function CountCard({ title, denominations, totalCents, draft, derived, di
             <AmountField
               id={`denom-${key}`}
               label={label}
-              value={draft.entries[key] ?? ''}
+              value={box === undefined ? '' : convertEntry(box.text, d, box.mode, viewMode)}
               invalid={error !== undefined}
               describedBy={error !== undefined ? errId : undefined}
-              inputMode={draft.mode === 'count' ? 'numeric' : 'decimal'}
-              onChange={(text) => dispatch({ type: 'setEntry', denom: d, text })}
+              inputMode={viewMode === 'count' ? 'numeric' : 'decimal'}
+              onChange={(text) => dispatch({ type: 'setEntry', denom: d, text, mode: viewMode })}
             />
           </div>
         );

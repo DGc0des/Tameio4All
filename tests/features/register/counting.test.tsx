@@ -9,11 +9,12 @@ import { deriveClosing } from '../../../src/features/register/derive';
 import { newDraft, type Draft } from '../../../src/features/register/draft';
 import { ModeSwitch } from '../../../src/features/register/ModeSwitch';
 import { SummaryCard } from '../../../src/features/register/SummaryCard';
+import { boxes } from './boxes';
 
 afterEach(cleanup);
 
 const BILLS = [10000, 5000, 2000, 1000, 500];
-const draft = (changes: Partial<Draft>): Draft => ({ ...newDraft('d1', '2026-09-28'), ...changes });
+const draft = (changes: Partial<Draft>): Draft => ({ ...newDraft('2026-09-28'), ...changes });
 
 describe('ModeSwitch', () => {
   it('marks the active mode and reports changes', () => {
@@ -27,24 +28,24 @@ describe('ModeSwitch', () => {
 
 describe('CountCard', () => {
   it('in € mode shows only the typed amount — no piece count beside it', () => {
-    const d = draft({ entries: { '10000': '500' } });
-    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={50000} draft={d} derived={deriveClosing(cfg, d)} dispatch={vi.fn()} />);
+    const d = draft({ entries: boxes({ '10000': '500' }) });
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={50000} draft={d} derived={deriveClosing(cfg, d)} dispatch={vi.fn()} viewMode="amount" />);
     const row = screen.getByLabelText('100€').closest('.row') as HTMLElement;
     expect(row.querySelector('.row-hint')).toBeNull();
     expect(screen.getByRole('region', { name: 'Χαρτονομίσματα' }).textContent).toContain('500,00€');
   });
 
   it('in # mode shows the row value in euros beside the count', () => {
-    const d = draft({ mode: 'count', entries: { '10000': '5' } });
-    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={50000} draft={d} derived={deriveClosing(cfg, d)} dispatch={vi.fn()} />);
+    const d = draft({ entries: boxes({ '10000': '5' }, 'count') });
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={50000} draft={d} derived={deriveClosing(cfg, d)} dispatch={vi.fn()} viewMode="count" />);
     const row = screen.getByLabelText('100€').closest('.row') as HTMLElement;
     expect(within(row).getByText('500,00€')).toBeTruthy();
     expect(screen.getByLabelText('100€').getAttribute('inputmode')).toBe('numeric');
   });
 
   it('marks an invalid row and shows why', () => {
-    const d = draft({ entries: { '1000': '95' } });
-    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} dispatch={vi.fn()} />);
+    const d = draft({ entries: boxes({ '1000': '95' }) });
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} dispatch={vi.fn()} viewMode="amount" />);
     const input = screen.getByLabelText('10€');
     expect(input.getAttribute('aria-invalid')).toBe('true');
     const hint = within(input.closest('.row') as HTMLElement).getByText('όχι πολλαπλάσιο');
@@ -55,9 +56,38 @@ describe('CountCard', () => {
   it('dispatches setEntry on typing', () => {
     const dispatch = vi.fn();
     const d = draft({});
-    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} dispatch={dispatch} />);
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} dispatch={dispatch} viewMode="amount" />);
     fireEvent.change(screen.getByLabelText('50€'), { target: { value: '300' } });
-    expect(dispatch).toHaveBeenCalledWith({ type: 'setEntry', denom: 5000, text: '300' });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'setEntry', denom: 5000, text: '300', mode: 'amount' });
+  });
+});
+
+describe('CountCard per-box mode', () => {
+  const show = (d: Draft, viewMode: 'amount' | 'count', dispatch = vi.fn()) =>
+    render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} dispatch={dispatch} viewMode={viewMode} />);
+
+  it('shows an amount-mode box converted to pieces in count view, and derives from its own mode', () => {
+    const d = draft({ entries: boxes({ '10000': '300' }) });
+    show(d, 'count');
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('3');
+    expect(deriveClosing(cfg, d).inputs.counts).toEqual({ '10000': 3 });
+    expect(deriveClosing(cfg, d).rowCents['10000']).toBe(30000);
+  });
+
+  it('keeps an invalid box as typed in the other view and shows its error', () => {
+    const d = draft({ entries: boxes({ '10000': '30' }) });
+    show(d, 'count');
+    const input = screen.getByLabelText('100€') as HTMLInputElement;
+    expect(input.value).toBe('30');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(within(input.closest('.row') as HTMLElement).getByText('όχι πολλαπλάσιο')).toBeTruthy();
+  });
+
+  it('typing stores the text in the current view mode', () => {
+    const dispatch = vi.fn();
+    show(draft({}), 'count', dispatch);
+    fireEvent.change(screen.getByLabelText('50€'), { target: { value: '4' } });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'setEntry', denom: 5000, text: '4', mode: 'count' });
   });
 });
 

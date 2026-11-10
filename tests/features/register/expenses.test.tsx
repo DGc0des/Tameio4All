@@ -17,7 +17,7 @@ const HISTORY: SupplierHistory = { 'Ντόντης': [2400, 1800], 'Nice': [1300
 let lastDraft: Draft | null = null;
 
 function Harness({ max = 10, history = HISTORY }: { max?: number; history?: SupplierHistory }) {
-  const [draft, dispatch] = useReducer(draftReducer, null, () => newDraft('d1', '2026-09-28'));
+  const [draft, dispatch] = useReducer(draftReducer, null, () => newDraft('2026-09-28'));
   lastDraft = draft;
   const derived = deriveClosing(cfg, draft);
   return (

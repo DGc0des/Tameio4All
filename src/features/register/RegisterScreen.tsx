@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { formatDayEl, formatDayMonth } from '../../app/dates';
 import type { ShopConfig } from '../../core/config';
-import { isBill } from '../../core/denominations';
+import { isBill, type EntryMode } from '../../core/denominations';
 import type { ClosingInputs } from '../../core/formula';
 import { buildSupplierHistory, type SupplierHistory } from '../../core/suggestions';
 import { loadDraft, markDraftSubmitted, saveDraft, takeUnsentNotice } from '../../data/local/drafts';
@@ -55,8 +55,10 @@ export function RegisterScreen(props: RegisterProps) {
   const [draft, dispatch] = useReducer(
     draftReducer,
     null,
-    (): Draft => loadDraft(store, ctx.shopId, ctx.businessDate) ?? newDraft(newId(), ctx.businessDate),
+    (): Draft => loadDraft(store, ctx.shopId, ctx.businessDate) ?? newDraft(ctx.businessDate),
   );
+  // Display/typing mode of the denomination boxes; each box remembers the mode it was typed in.
+  const [viewMode, setViewMode] = useState<EntryMode>('amount');
   const derived = useMemo(() => deriveClosing(config, draft), [config, draft]);
   const [history, setHistory] = useState<SupplierHistory>({});
   // Bumped after each successful submit so the just-submitted expense lines start suggesting.
@@ -158,9 +160,9 @@ export function RegisterScreen(props: RegisterProps) {
             {`Η ημέρα άλλαξε πριν υποβληθεί το κλείσιμο της ${formatDayMonth(unsentDate)}. Ενημέρωσε τον ιδιοκτήτη.`}
           </p>
         )}
-        <ModeSwitch mode={draft.mode} onChange={(mode) => dispatch({ type: 'setMode', mode, denominations: config.denominations })} />
-        <CountCard title="Χαρτονομίσματα" denominations={bills} totalCents={derived.billsCents} draft={draft} derived={derived} dispatch={dispatch} />
-        <CountCard title="Κέρματα" denominations={coins} totalCents={derived.coinsCents} draft={draft} derived={derived} dispatch={dispatch} />
+        <ModeSwitch mode={viewMode} onChange={setViewMode} />
+        <CountCard title="Χαρτονομίσματα" denominations={bills} totalCents={derived.billsCents} draft={draft} derived={derived} dispatch={dispatch} viewMode={viewMode} />
+        <CountCard title="Κέρματα" denominations={coins} totalCents={derived.coinsCents} draft={draft} derived={derived} dispatch={dispatch} viewMode={viewMode} />
         <ExpensesCard
           maxExpenses={config.maxExpenses}
           draft={draft}
@@ -169,6 +171,7 @@ export function RegisterScreen(props: RegisterProps) {
           author={{ kind: 'staff', id: session.staffId }}
           dispatch={dispatch}
           newId={newId}
+          nowMs={() => now().getTime()}
         />
         <ChannelsCard channels={config.channels} draft={draft} derived={derived} dispatch={dispatch} onCalculator={setCalcFor} />
         <SummaryCard config={config} totals={derived.totals} />

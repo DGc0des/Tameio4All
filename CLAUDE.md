@@ -9,6 +9,7 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   `tests/core-purity.test.ts` (a Vitest check, not a linter).
 - `src/features/register/draft.ts` + `derive.ts` — the register's pure model: the draft holds raw
   typed text; `deriveClosing(config, draft)` is the only bridge from text to money.
+- `src/features/register/live/` — stage-2 shared-closing field model: `fields.ts` (key regex, value guards, Snapshot/PendingEdit types; SQL twin `private.closing_field_ok`) and `merge.ts` (`draftFromFields`, `applyServerField`, `fieldLabel`). The `Draft` has no id/mode: each denomination box stores `{text, mode}` and `deriveClosing` reads it in its own mode; the view mode is UI state only.
 - `src/data/local/` — the only code that touches localStorage (drafts, theme, and `phone.ts`:
   the stored staff session + cached device context).
   Every call is failure-safe; `pickStore()` falls back to memory when storage is unavailable.

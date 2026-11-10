@@ -8,16 +8,17 @@ import { deriveClosing } from '../../../src/features/register/derive';
 import { newDraft, type Draft } from '../../../src/features/register/draft';
 import type { ShareFn } from '../../../src/features/register/share';
 import { SubmitSheet } from '../../../src/features/register/SubmitSheet';
+import { boxes } from './boxes';
 
 afterEach(cleanup);
 
 const d: Draft = {
-  ...newDraft('d1', '2026-09-28'),
-  entries: { '10000': '1500', '5000': '50' },
+  ...newDraft('2026-09-28'),
+  entries: boxes({ '10000': '1500', '5000': '50' }),
   channels: { wolt: '45,60' },
   expenses: [
-    { id: 'e1', description: 'Nice', amountText: '13', addedBy: { kind: 'owner' } },
-    { id: 'e2', description: '', amountText: '2', addedBy: { kind: 'owner' } },
+    { id: 'e1', description: 'Nice', amountText: '13', addedBy: { kind: 'owner' }, order: 1 },
+    { id: 'e2', description: '', amountText: '2', addedBy: { kind: 'owner' }, order: 1 },
   ],
 };
 const derived = deriveClosing(cfg, d);
@@ -55,7 +56,7 @@ describe('SubmitSheet', () => {
     const noop = vi.fn();
     const share: ShareFn = async () => 'shared';
     const { rerender } = render(<SubmitSheet config={cfg} draft={d} derived={derived} onSubmit={onSubmit} onShare={share} onClose={noop} />);
-    const fresh = newDraft('d2', '2026-09-29');
+    const fresh = newDraft('2026-09-29');
     rerender(<SubmitSheet config={cfg} draft={fresh} derived={deriveClosing(cfg, fresh)} onSubmit={onSubmit} onShare={share} onClose={noop} />);
     const text = screen.getByRole('dialog').textContent ?? '';
     expect(text).toContain('28/09/2026');
