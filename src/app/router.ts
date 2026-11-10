@@ -11,7 +11,7 @@ export function routeHash(_route: Route): string {
   return '#/';
 }
 
-export type ShopTab = 'settings' | 'staff' | 'devices';
+export type ShopTab = 'today' | 'settings' | 'staff' | 'devices';
 
 export type OwnerRoute =
   | { name: 'login' }
@@ -25,7 +25,7 @@ export type OwnerRoute =
 export type AppRoute = { area: 'register'; route: Route } | { area: 'owner'; route: OwnerRoute };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const SHOP_TABS: readonly ShopTab[] = ['settings', 'staff', 'devices'];
+const SHOP_TABS: readonly ShopTab[] = ['today', 'settings', 'staff', 'devices'];
 const OWNER_PREFIX = '#/owner';
 
 /** `rest` is what follows `#/owner`. Anything malformed lands on the shops list. */

@@ -8,6 +8,7 @@ import { nameProblemMessage, ownerErrorMessage } from './model/messages';
 import { DevicesScreen } from './DevicesScreen';
 import { ErrorText, OwnerHeader, type OwnerNavigate } from './OwnerUi';
 import { OwnerStaffScreen } from './OwnerStaffScreen';
+import { TodayScreen } from './TodayScreen';
 import { SettingsScreen } from './settings/SettingsScreen';
 import { useAction } from './useAction';
 
@@ -25,6 +26,7 @@ export interface ShopLayoutProps {
 }
 
 const TABS: { tab: ShopTab; label: string }[] = [
+  { tab: 'today', label: 'Σήμερα' },
   { tab: 'settings', label: 'Ρυθμίσεις' },
   { tab: 'staff', label: 'Προσωπικό' },
   { tab: 'devices', label: 'Συσκευές' },
@@ -147,6 +149,7 @@ export function ShopLayout({ api, shopId, tab, navigate, store, now, email, onSi
 }
 
 function TabBody({ tab, api, shopId, store, now }: { tab: ShopTab; api: OwnerApi; shopId: string; store: KeyValueStore; now: () => Date }) {
+  if (tab === 'today') return <TodayScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
   if (tab === 'settings') return <SettingsScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
   if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} />;
   return <DevicesScreen api={api} shopId={shopId} now={now} />;

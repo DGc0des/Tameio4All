@@ -14,6 +14,7 @@ describe('owner routes', () => {
     expect(parseOwnerRoute('/new')).toEqual({ name: 'new' });
     expect(parseOwnerRoute(`/shop/${ID}/staff`)).toEqual({ name: 'shop', shopId: ID, tab: 'staff' });
     expect(parseOwnerRoute(`/shop/${ID}`)).toEqual({ name: 'shop', shopId: ID, tab: 'settings' });
+    expect(parseOwnerRoute(`/shop/${ID}/today`)).toEqual({ name: 'shop', shopId: ID, tab: 'today' });
     expect(parseOwnerRoute(`/shop/${ID.toUpperCase()}/devices`)).toEqual({ name: 'shop', shopId: ID, tab: 'devices' });
   });
 
@@ -26,7 +27,7 @@ describe('owner routes', () => {
   it('round-trips through ownerHash', () => {
     const routes: OwnerRoute[] = [
       { name: 'login' }, { name: 'signup' }, { name: 'forgot' }, { name: 'reset' }, { name: 'shops' }, { name: 'new' },
-      { name: 'shop', shopId: ID, tab: 'settings' }, { name: 'shop', shopId: ID, tab: 'devices' },
+      { name: 'shop', shopId: ID, tab: 'settings' }, { name: 'shop', shopId: ID, tab: 'devices' }, { name: 'shop', shopId: ID, tab: 'today' },
     ];
     for (const r of routes) expect(parseAppRoute(ownerHash(r))).toEqual({ area: 'owner', route: r });
   });
