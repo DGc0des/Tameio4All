@@ -42,6 +42,10 @@ function fakeWriter(initial: Snapshot) {
   const writer = {
     load: vi.fn((): Promise<DResult<Snapshot>> => Promise.resolve(okR(state.server))),
     write: vi.fn((e: PendingEdit): Promise<DResult<{ version: number; revision: number }>> => {
+      const cur = state.server.fields[e.key];
+      if (e.baseVersion !== null && e.baseVersion !== (cur?.version ?? 0)) {
+        return Promise.resolve(failR({ code: 'stale', current: { key: e.key, value: cur?.value ?? null, version: cur?.version ?? 0, updatedByName: cur?.updatedByName ?? '', updatedAt: '' } }));
+      }
       const version = (state.server.fields[e.key]?.version ?? 0) + 1;
       const revision = state.server.revision + 1;
       state.server = {
@@ -411,5 +415,79 @@ describe('presence, focus and submitted', () => {
     act(() => t.ch.emitSubmitted(s));
     expect(t.r.state.snapshot?.lastSubmit).toEqual(s);
     expect(loadSnapshot(t.store, SHOP)?.lastSubmit).toEqual(s);
+  });
+});
+
+describe('fix round 1', () => {
+  it('a replayed online queue item carries a base version: a box changed meanwhile ends on the server value + notice', async () => {
+    const store = memoryStore();
+    saveSnapshot(store, SHOP, snap([field('c:wolt', '10', 1)]));
+    // Typed online (or in flight / mid-debounce) when the register unmounted.
+    savePending(store, SHOP, [{ key: 'c:wolt', value: { text: '20' }, businessDate: DAY, baseVersion: null, queuedOffline: false, seq: 1 }]);
+    // Meanwhile ΝΙΚΟΣ changed WOLT on the server.
+    const t = await mount(snap([field('c:wolt', '30', 2)], { revision: 2 }), { store });
+    await settle();
+    expect(t.writer.write).toHaveBeenCalledTimes(1);
+    expect(t.writer.write.mock.calls[0]![0]).toMatchObject({ key: 'c:wolt', baseVersion: 1, queuedOffline: true });
+    expect(wolt(t.r)).toBe('30');
+    expect(t.r.state.pending).toEqual([]);
+    expect(t.r.state.notice).toBe('Το πεδίο WOLT άλλαξε από ΝΙΚΟΣ');
+  });
+
+  it('a replayed item without a cached snapshot gets base version 0', async () => {
+    const store = memoryStore();
+    savePending(store, SHOP, [{ key: 'c:wolt', value: { text: '20' }, businessDate: DAY, baseVersion: null, queuedOffline: false, seq: 1 }]);
+    const t = await mount(snap(), { store });
+    await settle();
+    expect(t.writer.write.mock.calls[0]![0]).toMatchObject({ baseVersion: 0, queuedOffline: true });
+    expect(t.r.state.pending).toEqual([]);
+  });
+
+  it('after a fatal error the status is offline and new edits carry a base version', async () => {
+    const t = await mount(snap([field('c:wolt', '1', 4)]));
+    t.writer.write.mockImplementation(() => Promise.resolve(failR({ code: 'session_invalid' })));
+    act(() => { t.r.edit('c:efood', { text: '1' }); t.r.flush(); });
+    await settle();
+    expect(t.r.state.status).toBe('offline');
+    act(() => { t.r.edit('c:wolt', { text: '2' }); });
+    expect(t.r.state.pending.find((p) => p.key === 'c:wolt')).toMatchObject({ baseVersion: 4, queuedOffline: true });
+  });
+
+  it('typing while the previous value is in flight: the newer value is sent after the ack, never showing the older one', async () => {
+    const t = await mount(snap());
+    const ack = deferred<DResult<{ version: number; revision: number }>>();
+    t.writer.write.mockImplementationOnce(() => ack.promise);
+    act(() => { t.r.edit('c:wolt', { text: '1' }); t.r.flush('c:wolt'); });
+    await settle();
+    act(() => t.r.edit('c:wolt', { text: '12' }));
+    expect(wolt(t.r)).toBe('12');
+    t.state.server = snap([field('c:wolt', '1', 1, ME.name)], { revision: 2 }); // the deferred write landed as v1
+    await act(async () => { ack.resolve(okR({ version: 1, revision: 2 })); });
+    await settle();
+    expect(wolt(t.r)).toBe('12');
+    expect(t.writer.write).toHaveBeenCalledTimes(1);
+    act(() => { vi.advanceTimersByTime(WRITE_DEBOUNCE_MS); });
+    await settle();
+    expect(t.writer.write).toHaveBeenCalledTimes(2);
+    expect(t.writer.write.mock.calls[1]![0]).toMatchObject({ value: { text: '12' }, baseVersion: null });
+    expect(wolt(t.r)).toBe('12');
+    expect(t.r.state.pending).toEqual([]);
+  });
+
+  it('a resync landing during an in-flight write: the ack does not lower the newer resynced version', async () => {
+    const t = await mount(snap([field('c:wolt', '0', 1)]));
+    const ack = deferred<DResult<{ version: number; revision: number }>>();
+    t.writer.write.mockImplementationOnce(() => ack.promise);
+    act(() => { t.r.edit('c:wolt', { text: '5' }); t.r.flush('c:wolt'); });
+    await settle();
+    // Our write landed as v2, ΝΙΚΟΣ's as v3; a resync sees v3 before our ack arrives.
+    t.state.server = snap([field('c:wolt', '9', 3)], { revision: 3 });
+    await act(async () => { await t.r.resync(); });
+    expect(wolt(t.r)).toBe('5'); // still pending
+    await act(async () => { ack.resolve(okR({ version: 2, revision: 2 })); });
+    await settle();
+    expect(t.r.state.snapshot?.fields['c:wolt']).toMatchObject({ version: 3, value: { text: '9' } });
+    expect(t.r.state.snapshot?.revision).toBe(3);
+    expect(wolt(t.r)).toBe('9');
   });
 });

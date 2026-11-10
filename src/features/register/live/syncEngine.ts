@@ -79,8 +79,22 @@ export interface EngineState {
 
 // ---------------------------------------------------------------- pure state
 
+const versionOf = (snap: Snapshot, key: FieldKey): number => snap.fields[key]?.version ?? 0;
+
+/**
+ * A queue read back from storage (remount, gate reload, next app start) is replayed against a server that
+ * may have moved on, so every item without a base version (typed online, mid-debounce or in flight at
+ * unmount) gets one: the cached snapshot's version of its key (0 without a usable snapshot). The replay
+ * then follows the offline rule — a box changed meanwhile is `stale`: dropped, server value, notice.
+ */
 export function initialEngineState(snapshot: Snapshot | null, pending: PendingEdit[]): EngineState {
-  const sorted = [...pending].sort((a, b) => a.seq - b.seq);
+  const sorted = [...pending]
+    .sort((a, b) => a.seq - b.seq)
+    .map((p): PendingEdit => {
+      if (p.baseVersion !== null) return p;
+      const base = snapshot && snapshot.businessDate === p.businessDate ? versionOf(snapshot, p.key) : 0;
+      return { ...p, baseVersion: base, queuedOffline: true };
+    });
   return {
     snapshot, pending: sorted, debouncing: [], channel: 'connecting', fresh: false, netDown: false,
     inflight: null, loading: false, halted: false, presence: [], notice: null,
@@ -89,7 +103,8 @@ export function initialEngineState(snapshot: Snapshot | null, pending: PendingEd
 }
 
 export function statusOf(s: EngineState): LiveStatus {
-  if (s.netDown || s.channel === 'offline') return 'offline';
+  // halted: nothing is saved any more, so never report live (and new edits get a base version).
+  if (s.halted || s.netDown || s.channel === 'offline') return 'offline';
   return s.channel === 'live' && s.fresh ? 'live' : 'connecting';
 }
 
@@ -103,8 +118,6 @@ export function visibleDraft(s: Pick<EngineState, 'snapshot' | 'pending'>): Draf
   const date = s.snapshot.businessDate;
   return draftFromFields(s.snapshot, s.pending.filter((p) => p.businessDate === date));
 }
-
-const versionOf = (snap: Snapshot, key: FieldKey): number => snap.fields[key]?.version ?? 0;
 
 export function reduceEdit(s: EngineState, key: FieldKey, value: unknown): EngineState {
   if (!s.snapshot || !isFieldKey(key) || !isFieldValue(key, value)) return s;
@@ -237,6 +250,7 @@ export function reduceWriteResult(
     case 'stale': {
       const cur: ServerField = { ...e.current, key: item.key };
       // The box already holds what we sent (e.g. our own write re-sent after a remount): that's an ack.
+      // Deliberate: it only hides a conflict when the server already holds exactly our value.
       if (deepEqual(cur.value, item.value)) {
         return { state: acked(s, item, cur.version, s.snapshot?.revision ?? 0, cur.updatedByName, cur.updatedAt), effect: NONE };
       }
