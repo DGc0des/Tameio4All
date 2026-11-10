@@ -75,6 +75,27 @@ const newPresenceKey = (): string =>
     ? crypto.randomUUID()
     : `p-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 
+/** How long a reopen waits for an older channel of the same topic to finish leaving. */
+export const REMOVAL_TIMEOUT_MS = 3000;
+
+/**
+ * Removals in flight, per client and topic. realtime-js tears a channel down when its first leave
+ * completes, which drops the bindings a second leave push needs to resolve, so a second removeChannel
+ * of the same channel can hang forever. Everything that removes a channel records it here, and
+ * everything that needs it gone waits on this instead of removing again.
+ */
+const removals = new WeakMap<object, Map<string, Promise<unknown>>>();
+const removalsOf = (client: object): Map<string, Promise<unknown>> => {
+  let m = removals.get(client);
+  if (!m) removals.set(client, (m = new Map()));
+  return m;
+};
+const withTimeout = (p: Promise<unknown>): Promise<unknown> =>
+  new Promise((resolve) => {
+    const t = setTimeout(resolve, REMOVAL_TIMEOUT_MS);
+    void p.then(() => { clearTimeout(t); resolve(undefined); });
+  });
+
 /**
  * Listens to the shop's private realtime topic and tracks presence. Clients never broadcast (the
  * server does, from the write functions). After close() no handler is called again.
@@ -85,6 +106,8 @@ const newPresenceKey = (): string =>
  * supabase-js hands back an existing channel for the same topic, and a closed channel only leaves
  * its registry after an async unsubscribe. So the channel is created only after any older one for
  * this topic has been removed; otherwise reopening (StrictMode, gate reload) could reuse the dying one.
+ * If the old channel is still registered after REMOVAL_TIMEOUT_MS the new one is NOT created: the status
+ * goes 'offline' and re-opening later (a reconnect/resync) is the caller's job.
  */
 export function openShopChannel(client: SupabaseClient, shopId: string, me: { name: string }, h: LiveHandlers): LiveChannel {
   const selfKey = newPresenceKey();
@@ -107,12 +130,30 @@ export function openShopChannel(client: SupabaseClient, shopId: string, me: { na
       /* join anyway; the server decides */
     }
     if (closed) return;
+    const inflight = removalsOf(client);
+    const registered = () => client.getChannels().filter((c) => c.topic === `realtime:${topic}`);
     try {
-      for (const old of client.getChannels().filter((c) => c.topic === `realtime:${topic}`)) await client.removeChannel(old);
+      const pending = inflight.get(topic);
+      if (pending) await withTimeout(pending);
+      if (closed) return;
+      if (!inflight.has(topic)) {
+        for (const old of registered()) {
+          const p: Promise<unknown> = Promise.resolve(client.removeChannel(old)).catch(() => {});
+          inflight.set(topic, p);
+          void p.then(() => { if (inflight.get(topic) === p) inflight.delete(topic); });
+          await withTimeout(p);
+          if (closed) return;
+        }
+      }
     } catch {
       /* best effort */
     }
     if (closed) return;
+    if (registered().length > 0) {
+      h.onStatus('offline');
+      h.onPresence([]);
+      return;
+    }
     const mine = client.channel(topic, { config: { private: true, presence: { key: selfKey } } });
     ch = mine;
     mine.on('broadcast', { event: 'field' }, (msg: { payload?: unknown }) => {
@@ -162,7 +203,12 @@ export function openShopChannel(client: SupabaseClient, shopId: string, me: { na
     close() {
       if (closed) return;
       closed = true;
-      if (ch) void Promise.resolve(client.removeChannel(ch)).catch(() => {});
+      if (ch) {
+        const inflight = removalsOf(client);
+        const p: Promise<unknown> = Promise.resolve(client.removeChannel(ch)).catch(() => {});
+        inflight.set(topic, p);
+        void p.then(() => { if (inflight.get(topic) === p) inflight.delete(topic); });
+      }
     },
   };
 }

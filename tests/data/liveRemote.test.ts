@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createDeviceApi } from '../../src/data/remote/device';
 import { fromServerResult } from '../../src/data/remote/deviceErrors';
 import { mapError } from '../../src/data/remote/errors';
-import { openShopChannel, type LiveHandlers } from '../../src/data/remote/live';
+import { openShopChannel, REMOVAL_TIMEOUT_MS, type LiveHandlers } from '../../src/data/remote/live';
 import { createOwnerApi } from '../../src/data/remote/owner';
 
 const field = (key: string, over: Record<string, unknown> = {}) => ({
@@ -123,10 +123,11 @@ describe('submit with revision', () => {
 
 type Cb = (arg: unknown) => void;
 /** Mimics realtime-js: channel(topic) returns an existing channel for the topic; removal leaves the registry only after a tick. */
-function channelClient() {
+function channelClient(opts: { neverRemove?: boolean } = {}) {
   type Stub = ReturnType<typeof makeCh>;
   const registry: Stub[] = [];
   const created: Stub[] = [];
+  const removing = new Set<Stub>();
   const makeCh = (topic: string) => {
     const handlers: Record<string, Cb> = {};
     let subscribeCb: ((s: string) => void) | null = null;
@@ -156,6 +157,9 @@ function channelClient() {
     }),
     getChannels: vi.fn(() => [...registry]),
     removeChannel: vi.fn(async (ch: Stub) => {
+      // realtime-js: a second leave of a channel already leaving never settles (its bindings are torn down).
+      if (opts.neverRemove || removing.has(ch)) return new Promise<never>(() => {});
+      removing.add(ch);
       await new Promise((r) => setTimeout(r, 5));
       const i = registry.indexOf(ch);
       if (i >= 0) registry.splice(i, 1);
@@ -290,6 +294,8 @@ describe('openShopChannel', () => {
     const second = c.ch;
     expect(second).not.toBe(firstCh);
     expect(c.registry).toEqual([second]);
+    expect(c.raw.removeChannel).toHaveBeenCalledTimes(1);
+    expect(c.raw.removeChannel).toHaveBeenCalledWith(firstCh);
     second.status('SUBSCRIBED');
     expect(h2.onStatus).toHaveBeenLastCalledWith('live');
     const selfKey = second.opts.config.presence.key;
@@ -298,6 +304,27 @@ describe('openShopChannel', () => {
     second.handlers['presence:sync']!({});
     expect(h2.onPresence).toHaveBeenLastCalledWith([{ name: 'ΝΙΚΟΣ', focus: null }]);
     expect(h1.onPresence).not.toHaveBeenCalled();
+  });
+});
+
+describe('openShopChannel removal that never settles', () => {
+  it('reports offline after the timeout instead of hanging or reusing the old channel', async () => {
+    vi.useFakeTimers();
+    try {
+      const c = channelClient({ neverRemove: true });
+      const old = c.client.channel('shop:s');
+      const h = mkHandlers();
+      openShopChannel(c.client, 's', { name: 'x' }, h);
+      await vi.advanceTimersByTimeAsync(REMOVAL_TIMEOUT_MS - 100);
+      expect(h.onStatus).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.onStatus).toHaveBeenLastCalledWith('offline');
+      expect(h.onPresence).toHaveBeenCalledWith([]);
+      expect(c.created).toEqual([old]);
+      expect(c.raw.removeChannel).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
