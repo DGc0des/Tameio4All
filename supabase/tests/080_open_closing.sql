@@ -134,6 +134,23 @@ begin
   if (r ->> 'ok')::boolean is not true then raise exception 'T4 200 chars refused: %', r; end if;
   r := public.set_closing_field(t1, bd, 'd:5000', '{"text":"1","mode":"weird"}', null);
   if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T4 bad mode: %', r; end if;
+  -- T4b strict shape: missing properties and extra properties are refused (never NULL-accepted)
+  r := public.set_closing_field(t1, bd, 'c:wolt', '{}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T4b empty channel value: %', r; end if;
+  r := public.set_closing_field(t1, bd, 'd:5000', '{"text":"1"}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T4b denomination without mode: %', r; end if;
+  r := public.set_closing_field(t1, bd, 'd:5000', '{"mode":"amount"}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T4b denomination without text: %', r; end if;
+  r := public.set_closing_field(t1, bd, 'c:wolt', '{"text":"1","junk":"x"}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T4b channel with extra property: %', r; end if;
+  r := public.set_closing_field(t1, bd, 'e:zzz', '{"order":1,"addedBy":{"kind":"owner"}}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T4b expense line without removed: %', r; end if;
+  r := public.set_closing_field(t1, bd, 'e:zzz', '{"order":1,"removed":false}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T4b expense line without addedBy: %', r; end if;
+  r := public.set_closing_field(t1, bd, 'e:zzz', '{"order":1,"removed":false,"addedBy":{"kind":"owner"},"x":1}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T4b expense line with extra property: %', r; end if;
+  r := public.set_closing_field(t1, bd, 'e:zzz', '{"order":1,"removed":"no","addedBy":{"kind":"owner"}}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T4b expense line with non-boolean removed: %', r; end if;
   s := public.get_open_closing(t1) -> 'closing';
   if (s ->> 'revision')::bigint <> 4 then raise exception 'T4 rejected writes bumped revision: %', s ->> 'revision'; end if;
 
@@ -231,6 +248,20 @@ do $$ begin
      or private.can_use_shop_topic(current_setting('t.shop_a')) or private.can_use_shop_topic(current_setting('t.topic_a') || 'x') then
     raise exception 'T8 malformed topic allowed';
   end if;
+  -- I2 an authorised phone may track presence on its shop topic but cannot forge a broadcast (`field`).
+  -- Needs a realtime.messages partition to route the row; dev has none, so it is skipped there.
+  if not exists (select 1 from pg_inherits where inhparent = 'realtime.messages'::regclass) then
+    raise notice 'I2 client insert policy assertions SKIPPED: realtime.messages has no partitions here';
+  else
+    perform set_config('realtime.topic', current_setting('t.topic_a'), true);
+    begin
+      insert into realtime.messages (topic, extension, event, payload, private)
+      values (current_setting('t.topic_a'), 'broadcast', 'field', '{"key":"c:wolt"}', true);
+      raise exception 'I2 phone forged a broadcast message';
+    exception when insufficient_privilege then null; end;
+    insert into realtime.messages (topic, extension, event, payload, private)
+    values (current_setting('t.topic_a'), 'presence', 'presence', '{}', true);
+  end if;
   perform public.staff_sign_out(current_setting('t.tok1'));
   if private.can_use_shop_topic(current_setting('t.topic_a')) then raise exception 'T8 d1 allowed after sign-out'; end if;
   -- T6b signed-out token
@@ -254,6 +285,39 @@ select set_config('request.jwt.claims', '{"role":"anon"}', true);
 do $$ begin
   if private.can_use_shop_topic(current_setting('t.topic_a')) then raise exception 'T8 anon allowed'; end if;
 end $$;
+
+-- I3 a revoked phone and a deactivated cashier lose realtime authorization and writes (d2 / ΝΙΚΟΣ, tok2).
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
+set local role authenticated;
+do $$ begin
+  if not private.can_use_shop_topic(current_setting('t.topic_a')) then raise exception 'I3 setup: d2 should be authorised'; end if;
+end $$;
+reset role;
+update public.devices set revoked_at = now() where user_id = '00000000-0000-0000-0000-0000000000d2';
+set local role authenticated;
+do $$ begin
+  if private.can_use_shop_topic(current_setting('t.topic_a')) then raise exception 'I3 revoked phone allowed on topic'; end if;
+  if public.set_closing_field(current_setting('t.tok2'), current_setting('t.bd')::date, 'c:wolt', '{"text":"9"}', null)
+       is distinct from '{"ok":false,"error":"device_revoked"}'::jsonb then
+    raise exception 'I3 revoked phone write not device_revoked';
+  end if;
+  if public.get_open_closing(current_setting('t.tok2')) is distinct from '{"ok":false,"error":"device_revoked"}'::jsonb then
+    raise exception 'I3 revoked phone read not device_revoked';
+  end if;
+end $$;
+reset role;
+update public.devices set revoked_at = null where user_id = '00000000-0000-0000-0000-0000000000d2';
+update public.staff set active = false where id = current_setting('t.nikos')::uuid;
+set local role authenticated;
+do $$ begin
+  if private.can_use_shop_topic(current_setting('t.topic_a')) then raise exception 'I3 deactivated cashier allowed on topic'; end if;
+  if public.set_closing_field(current_setting('t.tok2'), current_setting('t.bd')::date, 'c:wolt', '{"text":"9"}', null)
+       is distinct from '{"ok":false,"error":"session_invalid"}'::jsonb then
+    raise exception 'I3 deactivated cashier write not session_invalid';
+  end if;
+end $$;
+reset role;
+update public.staff set active = true where id = current_setting('t.nikos')::uuid;
 
 -- T7 owner A: write works, name «Ιδιοκτήτης», owner author on a new line; owner B: not_owner.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
