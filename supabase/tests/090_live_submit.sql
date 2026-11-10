@@ -126,7 +126,8 @@ begin
 
   -- T5 resubmit with a new key and the current revision -> a second closing row, last_submit moves on
   r := public.submit_closing(current_setting('t.token'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date, current_setting('t.good')::jsonb, 3, 'key-5');
-  if (r ->> 'ok')::boolean is not true or (r ->> 'repeat')::boolean or r ->> 'closing_id' = current_setting('t.closing') then
+  if r is distinct from jsonb_build_object('ok', true, 'closing_id', r -> 'closing_id', 'repeat', false)
+     or r ->> 'closing_id' is null or r ->> 'closing_id' = current_setting('t.closing') then
     raise exception 'T5 resubmit failed: %', r;
   end if;
   perform set_config('t.closing2', r ->> 'closing_id', true);
@@ -187,6 +188,68 @@ begin
   if m.id is null or m.private is not true or m.payload ->> 'staff_name' is distinct from 'ΜΑΡΙΑ' or m.payload ->> 'at' is null then
     raise exception 'T8 bad submitted payload: %', m.payload;
   end if;
+end $$;
+
+-- T9 owner-added lines: a phone must submit the stored author of an e:<id> line (owner or staff).
+-- The pinned config of shop A gets maxExpenses so lines can exist.
+update public.shop_configs set config = '{"schema":1,"maxExpenses":5}' where id = current_setting('t.cfg_a')::uuid;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.owner_set_closing_field(current_setting('t.shop_a')::uuid, 'e:o1', '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', 0);
+  if (r ->> 'ok')::boolean is not true then raise exception 'T9 owner line failed: %', r; end if;
+  r := public.owner_set_closing_field(current_setting('t.shop_a')::uuid, 'e:o1:d', '{"text":"Υδραυλικός"}', 0);
+  if (r ->> 'ok')::boolean is not true then raise exception 'T9 owner line :d failed: %', r; end if;
+  r := public.owner_set_closing_field(current_setting('t.shop_a')::uuid, 'e:o1:a', '{"text":"12"}', 0);
+  if (r ->> 'ok')::boolean is not true then raise exception 'T9 owner line :a failed: %', r; end if;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
+set local role authenticated;
+do $$
+declare
+  tok text := current_setting('t.token');
+  cfg uuid := current_setting('t.cfg_a')::uuid;
+  bd date := current_setting('t.bd')::date;
+  maria jsonb := jsonb_build_object('kind', 'staff', 'id', current_setting('t.maria'));
+  nikos_a jsonb := jsonb_build_object('kind', 'staff', 'id', current_setting('t.eleni'));
+  owner_a jsonb := jsonb_build_object('kind', 'owner');
+  rev bigint;
+  r jsonb;
+begin
+  r := public.set_closing_field(tok, bd, 'e:m1', '{"addedBy":{"kind":"owner"},"order":2,"removed":false}', 0);
+  if (r ->> 'ok')::boolean is not true then raise exception 'T9 staff line failed: %', r; end if;
+  rev := (public.get_open_closing(tok) #>> '{closing,revision}')::bigint;
+
+  -- owner line sent as owner -> ok
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'o1', 'description', 'Υδραυλικός', 'cents', 1200, 'addedBy', owner_a))), rev, 'key-9a');
+  if r is distinct from jsonb_build_object('ok', true, 'closing_id', r -> 'closing_id', 'repeat', false) or r ->> 'closing_id' is null then
+    raise exception 'T9 owner line with owner author refused: %', r;
+  end if;
+  -- owner line sent as a staff author -> bad_inputs
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'o1', 'description', 'Υδραυλικός', 'cents', 1200, 'addedBy', maria))), rev, 'key-9b');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T9 owner line with staff author accepted: %', r; end if;
+  -- staff line (created by Μαρία) sent with another cashier as author -> bad_inputs; with Μαρία -> ok
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'm1', 'description', 'X', 'cents', 100, 'addedBy', nikos_a))), rev, 'key-9c');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T9 staff line with other author accepted: %', r; end if;
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'm1', 'description', 'X', 'cents', 100, 'addedBy', maria))), rev, 'key-9d');
+  if r is distinct from jsonb_build_object('ok', true, 'closing_id', r -> 'closing_id', 'repeat', false) or r ->> 'closing_id' is null then
+    raise exception 'T9 staff line with its author refused: %', r;
+  end if;
+  -- a line with no e: field and an owner author keeps the stage-1 rule
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'zz9', 'description', 'X', 'cents', 100, 'addedBy', owner_a))), rev, 'key-9e');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T9 owner line without a field accepted: %', r; end if;
+end $$;
+reset role;
+do $$ begin
+  if exists (select 1 from public.closings where idempotency_key in ('key-9b', 'key-9c', 'key-9e')) then raise exception 'T9 a refused submit stored a closing'; end if;
 end $$;
 
 rollback;
