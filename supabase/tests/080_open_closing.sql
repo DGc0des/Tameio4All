@@ -96,10 +96,10 @@ declare
 begin
   -- T2 first write = version 1 / revision 1; same key from the other phone = version 2 (LWW)
   r := public.set_closing_field(t1, bd, 'd:5000', '{"text":"300","mode":"amount"}', null);
-  if r is distinct from '{"ok":true,"version":1,"revision":1}'::jsonb then raise exception 'T2 first write: %', r; end if;
+  if r is distinct from '{"ok":true,"version":1,"revision":1,"value":{"text":"300","mode":"amount"}}'::jsonb then raise exception 'T2 first write: %', r; end if;
   perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
   r := public.set_closing_field(t2, bd, 'd:5000', '{"text":"450","mode":"count"}', null);
-  if r is distinct from '{"ok":true,"version":2,"revision":2}'::jsonb then raise exception 'T2 LWW write: %', r; end if;
+  if r is distinct from '{"ok":true,"version":2,"revision":2,"value":{"text":"450","mode":"count"}}'::jsonb then raise exception 'T2 LWW write: %', r; end if;
   s := public.get_open_closing(t2) -> 'closing';
   if s -> 'fields' -> 0 ->> 'key' is distinct from 'd:5000' or s -> 'fields' -> 0 -> 'value' is distinct from '{"text":"450","mode":"count"}'::jsonb
      or s -> 'fields' -> 0 ->> 'updated_by_name' is distinct from 'ΝΙΚΟΣ' or (s ->> 'revision')::bigint is distinct from 2
@@ -117,7 +117,7 @@ begin
   s := public.get_open_closing(t1) -> 'closing';
   if (s ->> 'revision')::bigint is distinct from 2 or s -> 'fields' -> 0 -> 'value' ->> 'text' is distinct from '450' then raise exception 'T3 stale write changed data: %', s; end if;
   r := public.set_closing_field(t1, bd, 'd:5000', '{"text":"500","mode":"amount"}', 2);   -- matching base succeeds
-  if r is distinct from '{"ok":true,"version":3,"revision":3}'::jsonb then raise exception 'T3 matching base: %', r; end if;
+  if r is distinct from '{"ok":true,"version":3,"revision":3,"value":{"text":"500","mode":"amount"}}'::jsonb then raise exception 'T3 matching base: %', r; end if;
 
   -- T4 validation
   r := public.set_closing_field(t1, bd - 1, 'd:5000', '{"text":"1","mode":"amount"}', null);
@@ -159,6 +159,9 @@ begin
   if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T5 unknown line: %', r; end if;
   r := public.set_closing_field(t1, bd, 'e:aaa', '{"addedBy":{"kind":"owner"},"removed":false,"order":1000}', null);
   if (r ->> 'ok')::boolean is not true then raise exception 'T5 create e:aaa: %', r; end if;
+  if r -> 'value' is distinct from jsonb_build_object('addedBy', jsonb_build_object('kind', 'staff', 'id', maria), 'removed', false, 'order', 1000) then
+    raise exception 'T5 ack does not carry the stored value: %', r;
+  end if;
   s := public.get_open_closing(t1) -> 'closing';
   if (select f -> 'value' -> 'addedBy' from jsonb_array_elements(s -> 'fields') f where f ->> 'key' = 'e:aaa')
        is distinct from jsonb_build_object('kind', 'staff', 'id', maria) then
@@ -174,6 +177,9 @@ begin
   perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
   r := public.set_closing_field(t2, bd, 'e:aaa', '{"addedBy":{"kind":"owner"},"removed":true,"order":1000}', null);
   if (r ->> 'ok')::boolean is not true then raise exception 'T5 remove e:aaa: %', r; end if;
+  if r -> 'value' -> 'addedBy' is distinct from jsonb_build_object('kind', 'staff', 'id', maria) then
+    raise exception 'T5 ack of a later write does not carry the stored author: %', r;
+  end if;
   s := public.get_open_closing(t2) -> 'closing';
   if (select f -> 'value' from jsonb_array_elements(s -> 'fields') f where f ->> 'key' = 'e:aaa')
        is distinct from jsonb_build_object('addedBy', jsonb_build_object('kind', 'staff', 'id', maria), 'removed', true, 'order', 1000) then
@@ -326,15 +332,28 @@ update public.staff set active = true where id = current_setting('t.nikos')::uui
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 do $$
-declare s uuid := current_setting('t.shop_a')::uuid; r jsonb; c jsonb;
+declare s uuid := current_setting('t.shop_a')::uuid; bd date := current_setting('t.bd')::date; r jsonb; c jsonb;
 begin
-  r := public.owner_set_closing_field(s, 'c:wolt', '{"text":"77"}', null);
+  r := public.owner_set_closing_field(s, bd, 'c:wolt', '{"text":"77"}', null);
   if (r ->> 'ok')::boolean is not true or (r ->> 'version')::int is distinct from 2 then raise exception 'T7 owner write: %', r; end if;   -- d3/shop B wrote a different closing; shop A's c:wolt was version 1
-  r := public.owner_set_closing_field(s, 'c:wolt', '{"text":"1"}', 1);
+  r := public.owner_set_closing_field(s, bd, 'c:wolt', '{"text":"1"}', 1);
   if r ->> 'error' is distinct from 'stale' or r -> 'current' ->> 'updated_by_name' is distinct from 'Ιδιοκτήτης' then raise exception 'T7 owner stale: %', r; end if;
-  r := public.owner_set_closing_field(s, 'e:own', '{"addedBy":{"kind":"staff","id":"x"},"removed":true,"order":5}', null);   -- removed: no slot needed
+  r := public.owner_set_closing_field(s, bd, 'e:own', '{"addedBy":{"kind":"staff","id":"x"},"removed":true,"order":5}', null);   -- removed: no slot needed
   if (r ->> 'ok')::boolean is not true then raise exception 'T7 owner expense: %', r; end if;
-  r := public.owner_set_closing_field(s, 'e:own', '{"addedBy":{"kind":"staff","id":"x"},"removed":false,"order":5}', null);
+  -- the ok result carries the STORED value (server-decided author), not what the client sent
+  if r -> 'value' is distinct from '{"addedBy":{"kind":"owner"},"removed":true,"order":5}'::jsonb then raise exception 'T7 owner ack value: %', r; end if;
+  -- an owner write for a day other than the shop's business date is refused, nothing written
+  r := public.owner_set_closing_field(s, bd - 1, 'c:wolt', '{"text":"5"}', null);
+  if r is distinct from '{"ok":false,"error":"wrong_day"}'::jsonb then raise exception 'T7 owner wrong_day (yesterday): %', r; end if;
+  r := public.owner_set_closing_field(s, bd + 1, 'c:wolt', '{"text":"5"}', null);
+  if r is distinct from '{"ok":false,"error":"wrong_day"}'::jsonb then raise exception 'T7 owner wrong_day (tomorrow): %', r; end if;
+  r := public.owner_set_closing_field(s, null, 'c:wolt', '{"text":"5"}', null);
+  if r is distinct from '{"ok":false,"error":"wrong_day"}'::jsonb then raise exception 'T7 owner wrong_day (null): %', r; end if;
+  c := public.owner_get_open_closing(s) -> 'closing';
+  if (select f -> 'value' from jsonb_array_elements(c -> 'fields') f where f ->> 'key' = 'c:wolt') is distinct from '{"text":"77"}'::jsonb then
+    raise exception 'T7 wrong_day write landed: %', c -> 'fields';
+  end if;
+  r := public.owner_set_closing_field(s, bd, 'e:own', '{"addedBy":{"kind":"staff","id":"x"},"removed":false,"order":5}', null);
   if r ->> 'error' is distinct from 'too_many_expenses' then raise exception 'T7 owner un-remove past cap: %', r; end if;
   c := public.owner_get_open_closing(s) -> 'closing';
   if (select f -> 'value' -> 'addedBy' from jsonb_array_elements(c -> 'fields') f where f ->> 'key' = 'e:own') is distinct from '{"kind":"owner"}'::jsonb
@@ -342,17 +361,17 @@ begin
      or c ->> 'id' is distinct from current_setting('t.oc') then
     raise exception 'T7 owner snapshot: %', c;
   end if;
-  r := public.owner_set_closing_field(s, 'x:1', '{"text":"1"}', null);
+  r := public.owner_set_closing_field(s, bd, 'x:1', '{"text":"1"}', null);
   if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T7 owner bad key: %', r; end if;
 end $$;
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 do $$
-declare s uuid := current_setting('t.shop_a')::uuid; ok1 boolean := false; ok2 boolean := false;
+declare s uuid := current_setting('t.shop_a')::uuid; bd date := current_setting('t.bd')::date; ok1 boolean := false; ok2 boolean := false;
 begin
   begin perform public.owner_get_open_closing(s); exception when others then ok1 := sqlerrm = 'not_owner'; end;
-  begin perform public.owner_set_closing_field(s, 'c:wolt', '{"text":"1"}', null); exception when others then ok2 := sqlerrm = 'not_owner'; end;
+  begin perform public.owner_set_closing_field(s, bd, 'c:wolt', '{"text":"1"}', null); exception when others then ok2 := sqlerrm = 'not_owner'; end;
   if not (ok1 and ok2) then raise exception 'T7 owner B not refused with not_owner'; end if;
 end $$;
 reset role;

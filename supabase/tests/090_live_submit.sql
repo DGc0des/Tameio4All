@@ -57,7 +57,7 @@ declare
 begin
   -- A cashier types something: revision 1 (this also creates today's open closing, pinning cfg).
   r := public.set_closing_field(tok, bd, 'c:wolt', '{"text":"45,60"}', 0);
-  if r is distinct from jsonb_build_object('ok', true, 'version', 1, 'revision', 1) then raise exception 'setup write failed: %', r; end if;
+  if r is distinct from jsonb_build_object('ok', true, 'version', 1, 'revision', 1, 'value', '{"text":"45,60"}'::jsonb) then raise exception 'setup write failed: %', r; end if;
 
   -- T1 submit with the current revision -> ok, last_submit recorded, open closing kept
   r := public.submit_closing(tok, cfg, bd, good, 1, 'key-1');
@@ -198,11 +198,11 @@ set local role authenticated;
 do $$
 declare r jsonb;
 begin
-  r := public.owner_set_closing_field(current_setting('t.shop_a')::uuid, 'e:o1', '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', 0);
+  r := public.owner_set_closing_field(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date, 'e:o1', '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', 0);
   if (r ->> 'ok')::boolean is not true then raise exception 'T9 owner line failed: %', r; end if;
-  r := public.owner_set_closing_field(current_setting('t.shop_a')::uuid, 'e:o1:d', '{"text":"Υδραυλικός"}', 0);
+  r := public.owner_set_closing_field(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date, 'e:o1:d', '{"text":"Υδραυλικός"}', 0);
   if (r ->> 'ok')::boolean is not true then raise exception 'T9 owner line :d failed: %', r; end if;
-  r := public.owner_set_closing_field(current_setting('t.shop_a')::uuid, 'e:o1:a', '{"text":"12"}', 0);
+  r := public.owner_set_closing_field(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date, 'e:o1:a', '{"text":"12"}', 0);
   if (r ->> 'ok')::boolean is not true then raise exception 'T9 owner line :a failed: %', r; end if;
 end $$;
 reset role;
