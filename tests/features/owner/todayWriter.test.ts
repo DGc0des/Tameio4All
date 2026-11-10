@@ -5,7 +5,7 @@ import type { LiveHandlers } from '../../../src/data/remote/live';
 import type { Snapshot } from '../../../src/features/register/live/fields';
 import { fail, fakeApi, ok } from './fakeApi';
 
-const EDIT = { key: 'c:wolt', value: { text: '5' }, businessDate: '2026-11-07', baseVersion: 3, queuedOffline: false, seq: 1 };
+const EDIT = { author: 'owner', key: 'c:wolt', value: { text: '5' }, businessDate: '2026-11-07', baseVersion: 3, queuedOffline: false, seq: 1 };
 const STALE = { key: 'c:wolt', value: { text: '9' }, version: 4, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T20:00:00Z' };
 
 describe('createTodayWriter', () => {
@@ -16,10 +16,10 @@ describe('createTodayWriter', () => {
     expect(api.todayClosing).toHaveBeenCalledWith('shop-1');
   });
 
-  it('write ignores the business date and passes key, value and base version', async () => {
+  it('write passes the business date it was typed on, key, value and base version', async () => {
     const api = fakeApi();
     const r = await createTodayWriter(api, 'shop-1').write(EDIT);
-    expect(api.setTodayField).toHaveBeenCalledWith('shop-1', 'c:wolt', { text: '5' }, 3);
+    expect(api.setTodayField).toHaveBeenCalledWith('shop-1', '2026-11-07', 'c:wolt', { text: '5' }, 3);
     expect(r).toEqual({ ok: true, data: { version: 1, revision: 1 } });
   });
 
@@ -28,8 +28,14 @@ describe('createTodayWriter', () => {
     expect(await createTodayWriter(api, 's').write(EDIT)).toEqual({ ok: false, error: { code: 'stale', current: STALE } });
   });
 
-  it('keeps network, bad_field and too_many_expenses', async () => {
-    for (const code of ['network', 'bad_field', 'too_many_expenses'] as const) {
+  it('passes on the stored value of the ack', async () => {
+    const stored = { addedBy: { kind: 'owner' }, removed: false, order: 1 };
+    const api = fakeApi({ setTodayField: vi.fn(() => ok({ version: 2, revision: 5, value: stored })) });
+    expect(await createTodayWriter(api, 's').write(EDIT)).toEqual({ ok: true, data: { version: 2, revision: 5, value: stored } });
+  });
+
+  it('keeps network, bad_field, too_many_expenses and wrong_day (M1: the engine drops + resyncs)', async () => {
+    for (const code of ['network', 'bad_field', 'too_many_expenses', 'wrong_day'] as const) {
       const api = fakeApi({ setTodayField: vi.fn(() => fail<{ version: number; revision: number }>({ code })) });
       expect(await createTodayWriter(api, 's').write(EDIT)).toEqual({ ok: false, error: { code } });
     }

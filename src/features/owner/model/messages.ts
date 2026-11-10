@@ -22,6 +22,8 @@ export function ownerErrorMessage(e: OwnerError): string {
       return 'Η τιμή δεν είναι έγκυρη.';
     case 'too_many_expenses':
       return 'Έφτασες το μέγιστο πλήθος εξόδων.';
+    case 'wrong_day':
+      return 'Η ημέρα άλλαξε — φόρτωσε ξανά το σημερινό ταμείο.';
     case 'bad_name':
       return 'Το όνομα είναι κενό ή πολύ μεγάλο.';
     case 'invalid_credentials':

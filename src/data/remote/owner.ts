@@ -1,6 +1,6 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { mapError, type OwnerError } from './errors';
-import { openShopChannel, parseSnapshot, parseStaleCurrent } from './live';
+import { openShopChannel, parseFieldAck, parseSnapshot, parseStaleCurrent } from './live';
 import type { DeviceRow, OwnerApi, Result, SessionInfo, ShopRow, StaffRow } from './ownerApi';
 
 /**
@@ -134,9 +134,11 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
       const snap = parseSnapshot(j.closing);
       return snap ? { ok: true, data: snap } : { ok: false, error: BAD_RESPONSE };
     },
-    async setTodayField(shopId, key, value, baseVersion) {
+    async setTodayField(shopId, businessDate, key, value, baseVersion) {
       const r = await run(
-        client.rpc('owner_set_closing_field', { p_shop_id: shopId, p_key: key, p_value: value, p_base_version: baseVersion }),
+        client.rpc('owner_set_closing_field', {
+          p_shop_id: shopId, p_business_date: businessDate, p_key: key, p_value: value, p_base_version: baseVersion,
+        }),
       );
       if (!r.ok) return r;
       const j = r.data as Record<string, unknown> | null;
@@ -147,9 +149,8 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
         }
         return { ok: false, error: payloadError(j) };
       }
-      return Number.isSafeInteger(j.version) && Number.isSafeInteger(j.revision)
-        ? { ok: true, data: { version: j.version as number, revision: j.revision as number } }
-        : { ok: false, error: BAD_RESPONSE };
+      const ack = parseFieldAck(j);
+      return ack ? { ok: true, data: ack } : { ok: false, error: BAD_RESPONSE };
     },
     live: (shop, me, h) => openShopChannel(client, shop, me, h),
   };

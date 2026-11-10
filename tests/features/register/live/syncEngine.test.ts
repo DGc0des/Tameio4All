@@ -6,14 +6,14 @@ import { loadPending, loadSnapshot, savePending, saveSnapshot } from '../../../.
 import { memoryStore, type KeyValueStore } from '../../../../src/data/local/storage';
 import type { DResult, DeviceError } from '../../../../src/data/remote/deviceApi';
 import type { LiveHandlers } from '../../../../src/data/remote/live';
-import type { PendingEdit, ServerField, Snapshot } from '../../../../src/features/register/live/fields';
-import { WRITE_DEBOUNCE_MS, WRONG_DAY_NOTICE, type Writer } from '../../../../src/features/register/live/syncEngine';
+import type { FieldAck, PendingEdit, ServerField, Snapshot } from '../../../../src/features/register/live/fields';
+import { SIGN_OUT_DRAIN_MS, WRITE_DEBOUNCE_MS, WRONG_DAY_NOTICE, type Writer } from '../../../../src/features/register/live/syncEngine';
 import { useLiveClosing } from '../../../../src/features/register/live/useLiveClosing';
 import { fakeLive, type FakeLive } from '../../phone/fakeDeviceApi';
 
 const SHOP = 'shop-1';
 const DAY = '2026-11-07';
-const ME = { name: 'ΜΑΡΙΑ' };
+const ME = { name: 'ΜΑΡΙΑ', id: 'staff-maria' };
 const NOW = () => new Date('2026-11-07T10:00:00Z');
 
 const field = (key: string, text: string, version: number, by = 'ΝΙΚΟΣ'): ServerField => ({
@@ -41,7 +41,7 @@ function fakeWriter(initial: Snapshot) {
   const channels: FakeLive[] = [];
   const writer = {
     load: vi.fn((): Promise<DResult<Snapshot>> => Promise.resolve(okR(state.server))),
-    write: vi.fn((e: PendingEdit): Promise<DResult<{ version: number; revision: number }>> => {
+    write: vi.fn((e: PendingEdit): Promise<DResult<FieldAck>> => {
       const cur = state.server.fields[e.key];
       if (e.baseVersion !== null && e.baseVersion !== (cur?.version ?? 0)) {
         return Promise.resolve(failR({ code: 'stale', current: { key: e.key, value: cur?.value ?? null, version: cur?.version ?? 0, updatedByName: cur?.updatedByName ?? '', updatedAt: '' } }));
@@ -118,7 +118,7 @@ describe('useLiveClosing — debounce and flush', () => {
 describe('Review Focus 1 — same box typed on two clients', () => {
   it('local pending text wins over a broadcast until ack; then a later server version wins; older broadcasts are ignored', async () => {
     const t = await mount(snap([field('c:wolt', '0', 1)]));
-    const ack = deferred<DResult<{ version: number; revision: number }>>();
+    const ack = deferred<DResult<FieldAck>>();
     t.writer.write.mockImplementationOnce(() => ack.promise);
 
     act(() => t.r.edit('c:wolt', { text: '5' }));
@@ -149,16 +149,21 @@ describe('Review Focus 1 — same box typed on two clients', () => {
 
   it('when the other write reached the server last, the ack does not overwrite it: both end on the server value', async () => {
     const t = await mount(snap([field('c:wolt', '0', 1)]));
-    const ack = deferred<DResult<{ version: number; revision: number }>>();
+    const ack = deferred<DResult<FieldAck>>();
     t.writer.write.mockImplementationOnce(() => ack.promise);
     act(() => { t.r.edit('c:wolt', { text: '5' }); t.r.flush('c:wolt'); });
     await settle();
-    // Ours landed as v2, the other phone's as v3 — its broadcast arrives before our ack.
+    // Ours landed as v2 (rev 2), the other phone's as v3 (rev 3) — its broadcast arrives before our ack.
+    t.state.server = snap([field('c:wolt', '9', 3)], { revision: 3 });
+    const loads = t.writer.load.mock.calls.length;
     act(() => t.ch.emitField({ ...field('c:wolt', '9', 3), revision: 3, businessDate: DAY }));
+    // rev 3 while at 1 is a gap (rev 2 not seen yet): field applied, revision kept, resync asked.
+    expect(t.r.state.snapshot?.revision).toBe(1);
     await act(async () => { ack.resolve(okR({ version: 2, revision: 2 })); });
     await settle();
     expect(wolt(t.r)).toBe('9');
     expect(t.r.state.snapshot?.fields['c:wolt']?.version).toBe(3);
+    expect(t.writer.load.mock.calls.length).toBeGreaterThan(loads);
     expect(t.r.state.snapshot?.revision).toBe(3);
   });
 });
@@ -319,7 +324,7 @@ describe('persistence and lifecycle', () => {
   it('a remounted queue is sent once the new mount is live', async () => {
     const store = memoryStore();
     saveSnapshot(store, SHOP, snap());
-    savePending(store, SHOP, [{ key: 'c:wolt', value: { text: '42' }, businessDate: DAY, baseVersion: 0, queuedOffline: true, seq: 3 }]);
+    savePending(store, SHOP, ME.id, [{ author: ME.id, key: 'c:wolt', value: { text: '42' }, businessDate: DAY, baseVersion: 0, queuedOffline: true, seq: 3 }]);
     const t = await mount(snap(), { store });
     await settle();
     expect(t.writer.write).toHaveBeenCalledTimes(1);
@@ -344,7 +349,7 @@ describe('persistence and lifecycle', () => {
 
   it('after unmount no timer fires a write and late results change nothing', async () => {
     const t = await mount(snap());
-    const ack = deferred<DResult<{ version: number; revision: number }>>();
+    const ack = deferred<DResult<FieldAck>>();
     t.writer.write.mockImplementationOnce(() => ack.promise);
     act(() => { t.r.edit('c:efood', { text: '1' }); t.r.flush(); });
     await settle();
@@ -424,7 +429,7 @@ describe('fix round 1', () => {
     const store = memoryStore();
     saveSnapshot(store, SHOP, snap([field('c:wolt', '10', 1)]));
     // Typed online (or in flight / mid-debounce) when the register unmounted.
-    savePending(store, SHOP, [{ key: 'c:wolt', value: { text: '20' }, businessDate: DAY, baseVersion: null, queuedOffline: false, seq: 1 }]);
+    savePending(store, SHOP, ME.id, [{ author: ME.id, key: 'c:wolt', value: { text: '20' }, businessDate: DAY, baseVersion: null, queuedOffline: false, seq: 1 }]);
     // Meanwhile ΝΙΚΟΣ changed WOLT on the server.
     const t = await mount(snap([field('c:wolt', '30', 2)], { revision: 2 }), { store });
     await settle();
@@ -437,7 +442,7 @@ describe('fix round 1', () => {
 
   it('a replayed item without a cached snapshot gets base version 0', async () => {
     const store = memoryStore();
-    savePending(store, SHOP, [{ key: 'c:wolt', value: { text: '20' }, businessDate: DAY, baseVersion: null, queuedOffline: false, seq: 1 }]);
+    savePending(store, SHOP, ME.id, [{ author: ME.id, key: 'c:wolt', value: { text: '20' }, businessDate: DAY, baseVersion: null, queuedOffline: false, seq: 1 }]);
     const t = await mount(snap(), { store });
     await settle();
     expect(t.writer.write.mock.calls[0]![0]).toMatchObject({ baseVersion: 0, queuedOffline: true });
@@ -456,7 +461,7 @@ describe('fix round 1', () => {
 
   it('typing while the previous value is in flight: the newer value is sent after the ack, never showing the older one', async () => {
     const t = await mount(snap());
-    const ack = deferred<DResult<{ version: number; revision: number }>>();
+    const ack = deferred<DResult<FieldAck>>();
     t.writer.write.mockImplementationOnce(() => ack.promise);
     act(() => { t.r.edit('c:wolt', { text: '1' }); t.r.flush('c:wolt'); });
     await settle();
@@ -477,7 +482,7 @@ describe('fix round 1', () => {
 
   it('a resync landing during an in-flight write: the ack does not lower the newer resynced version', async () => {
     const t = await mount(snap([field('c:wolt', '0', 1)]));
-    const ack = deferred<DResult<{ version: number; revision: number }>>();
+    const ack = deferred<DResult<FieldAck>>();
     t.writer.write.mockImplementationOnce(() => ack.promise);
     act(() => { t.r.edit('c:wolt', { text: '5' }); t.r.flush('c:wolt'); });
     await settle();
@@ -531,5 +536,159 @@ describe('restart after a fatal error', () => {
     await settle();
     expect(wolt(hook.result.current)).toBe('3');
     expect(fw.channels.filter((c) => c.close.mock.calls.length === 0)).toHaveLength(1);
+  });
+});
+
+describe('I2 — the revision follows the +1 rule (no submit past a write we have not seen)', () => {
+  it('ack rev 6 with rev 5 missing: revision stays, resync is asked; after it the server revision is held', async () => {
+    const t = await mount(snap([], { revision: 4 }));
+    const ack = deferred<DResult<FieldAck>>();
+    t.writer.write.mockImplementationOnce(() => ack.promise);
+    act(() => { t.r.edit('c:wolt', { text: '1' }); t.r.flush(); });
+    await settle();
+    // ΝΙΚΟΣ wrote c:efood as rev 5; ours landed as rev 6; his broadcast is late.
+    const efood = field('c:efood', '7', 1);
+    t.state.server = snap([efood, field('c:wolt', '1', 1, ME.name)], { revision: 6 });
+    const load = deferred<DResult<Snapshot>>();
+    t.writer.load.mockImplementationOnce(() => load.promise);
+    const loads = t.writer.load.mock.calls.length;
+    await act(async () => { ack.resolve(okR({ version: 1, revision: 6 })); });
+    await settle();
+    expect(t.r.state.snapshot?.revision).toBe(4);
+    expect(t.r.state.snapshot?.fields['c:wolt']?.version).toBe(1);
+    expect(t.writer.load.mock.calls.length).toBe(loads + 1);
+    await act(async () => { load.resolve(okR(t.state.server)); });
+    await settle();
+    expect(t.r.state.snapshot?.revision).toBe(6);
+    expect(t.r.draft?.channels.efood).toBe('7');
+  });
+
+  it('a lost broadcast (5) then broadcast 6: revision stays at 4 and a resync brings 6', async () => {
+    const t = await mount(snap([], { revision: 4 }));
+    t.state.server = snap([field('c:efood', '7', 1), field('c:wolt', '2', 1)], { revision: 6 });
+    const load = deferred<DResult<Snapshot>>();
+    t.writer.load.mockImplementationOnce(() => load.promise);
+    const loads = t.writer.load.mock.calls.length;
+    act(() => t.ch.emitField({ ...field('c:wolt', '2', 1), revision: 6, businessDate: DAY }));
+    expect(wolt(t.r)).toBe('2');
+    expect(t.r.state.snapshot?.revision).toBe(4);
+    expect(t.writer.load.mock.calls.length).toBe(loads + 1);
+    await act(async () => { load.resolve(okR(t.state.server)); });
+    await settle();
+    expect(t.r.state.snapshot?.revision).toBe(6);
+  });
+
+  it('in order (5 then 6) the revision advances with no resync', async () => {
+    const t = await mount(snap([], { revision: 4 }));
+    const loads = t.writer.load.mock.calls.length;
+    act(() => t.ch.emitField({ ...field('c:efood', '7', 1), revision: 5, businessDate: DAY }));
+    act(() => t.ch.emitField({ ...field('c:wolt', '2', 1), revision: 6, businessDate: DAY }));
+    await settle();
+    expect(t.r.state.snapshot?.revision).toBe(6);
+    expect(t.writer.load.mock.calls.length).toBe(loads);
+  });
+
+  it('a late superseded broadcast (rev + 1, older field version) still advances the revision', async () => {
+    const t = await mount(snap([field('c:wolt', '9', 3)], { revision: 4 }));
+    act(() => t.ch.emitField({ ...field('c:wolt', '8', 2), revision: 5, businessDate: DAY }));
+    expect(wolt(t.r)).toBe('9');
+    expect(t.r.state.snapshot?.revision).toBe(5);
+  });
+});
+
+describe('I1 — the queue is per author', () => {
+  const nikosEdit = (over: Partial<PendingEdit> = {}): PendingEdit => ({
+    author: 'staff-nikos', key: 'e:n1', value: { addedBy: { kind: 'staff', id: 'staff-nikos' }, removed: false, order: 1 },
+    businessDate: DAY, baseVersion: 0, queuedOffline: true, seq: 1, ...over,
+  });
+
+  it("another cashier's stored edits are neither shown nor sent, and stay stored", async () => {
+    const store = memoryStore();
+    saveSnapshot(store, SHOP, snap());
+    savePending(store, SHOP, 'staff-nikos', [nikosEdit(), nikosEdit({ key: 'c:wolt', value: { text: '50' }, seq: 2 })]);
+    const t = await mount(snap(), { store });
+    await settle();
+    expect(t.writer.write).not.toHaveBeenCalled();
+    expect(t.r.draft?.expenses).toEqual([]);
+    expect(wolt(t.r)).toBeUndefined();
+    expect(t.r.state.pending).toEqual([]);
+    // Μαρία types and her edit is sent; ΝΙΚΟΣ's stay in storage, hidden.
+    act(() => { t.r.edit('c:efood', { text: '3' }); t.r.flush(); });
+    await settle();
+    expect(t.writer.write).toHaveBeenCalledTimes(1);
+    expect(t.writer.write.mock.calls[0]![0]).toMatchObject({ author: ME.id, key: 'c:efood' });
+    expect(loadPending(store, SHOP, 'staff-nikos')).toHaveLength(2);
+    expect(loadPending(store, SHOP, ME.id)).toEqual([]);
+  });
+
+  it('new edits are tagged with the current author', async () => {
+    const t = await mount(snap());
+    act(() => t.r.edit('c:wolt', { text: '1' }));
+    expect(loadPending(t.store, SHOP)).toMatchObject([{ author: ME.id, key: 'c:wolt' }]);
+  });
+
+  it('the ack applies the value the server stored (server-decided author), not the one sent', async () => {
+    const t = await mount(snap());
+    const stored = { addedBy: { kind: 'staff', id: 'staff-maria' }, removed: false, order: 5 };
+    t.writer.write.mockImplementationOnce(() => Promise.resolve(okR({ version: 1, revision: 2, value: stored })));
+    act(() => { t.r.edit('e:x1', { addedBy: { kind: 'staff', id: 'someone-else' }, removed: false, order: 5 }); t.r.flush(); });
+    await settle();
+    expect(t.r.state.snapshot?.fields['e:x1']?.value).toEqual(stored);
+    expect(t.r.draft?.expenses[0]?.addedBy).toEqual({ kind: 'staff', id: 'staff-maria' });
+  });
+
+  it('an ack value of the wrong shape is ignored (the sent value is used)', async () => {
+    const t = await mount(snap());
+    t.writer.write.mockImplementationOnce(() => Promise.resolve(okR({ version: 1, revision: 2, value: { text: 5 } })));
+    act(() => { t.r.edit('c:wolt', { text: '4' }); t.r.flush(); });
+    await settle();
+    expect(t.r.state.snapshot?.fields['c:wolt']?.value).toEqual({ text: '4' });
+  });
+});
+
+describe('drain (sign-out)', () => {
+  it('flushes typing and resolves true once the queue is acknowledged', async () => {
+    const t = await mount(snap());
+    const ack = deferred<DResult<FieldAck>>();
+    t.writer.write.mockImplementationOnce(() => ack.promise);
+    act(() => t.r.edit('c:wolt', { text: '1' }));
+    let done: boolean | null = null;
+    act(() => { void t.r.drain(SIGN_OUT_DRAIN_MS).then((v) => { done = v; }); });
+    await settle();
+    expect(t.writer.write).toHaveBeenCalledTimes(1); // no 400 ms wait
+    expect(done).toBeNull();
+    await act(async () => { ack.resolve(okR({ version: 1, revision: 2 })); });
+    await settle();
+    expect(done).toBe(true);
+  });
+
+  it('resolves false after the bounded wait when the write does not come back; the item stays stored', async () => {
+    const t = await mount(snap());
+    t.writer.write.mockImplementationOnce(() => new Promise(() => {}));
+    act(() => t.r.edit('c:wolt', { text: '1' }));
+    let done: boolean | null = null;
+    act(() => { void t.r.drain(SIGN_OUT_DRAIN_MS).then((v) => { done = v; }); });
+    await settle();
+    act(() => { vi.advanceTimersByTime(SIGN_OUT_DRAIN_MS - 1); });
+    await settle();
+    expect(done).toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    await settle();
+    expect(done).toBe(false);
+    expect(loadPending(t.store, SHOP, ME.id)).toHaveLength(1);
+  });
+
+  it('resolves false at once while offline (nothing can be sent), true at once with nothing queued', async () => {
+    const t = await mount(snap());
+    let empty: boolean | null = null;
+    act(() => { void t.r.drain(SIGN_OUT_DRAIN_MS).then((v) => { empty = v; }); });
+    await settle();
+    expect(empty).toBe(true);
+    act(() => t.ch.emitStatus('offline'));
+    act(() => t.r.edit('c:wolt', { text: '1' }));
+    let off: boolean | null = null;
+    act(() => { void t.r.drain(SIGN_OUT_DRAIN_MS).then((v) => { off = v; }); });
+    await settle();
+    expect(off).toBe(false);
   });
 });

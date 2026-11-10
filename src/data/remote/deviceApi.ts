@@ -1,6 +1,6 @@
 import type { ClosingInputs } from '../../core/formula';
 import type { PastExpense } from '../../core/suggestions';
-import type { FieldKey, ServerField, Snapshot } from '../../features/register/live/fields';
+import type { FieldAck, FieldKey, ServerField, Snapshot } from '../../features/register/live/fields';
 import type { LiveChannel, LiveHandlers } from './live';
 
 /** Every failure a phone action can report. A new one needs a case in deviceErrors.ts and a Greek message in features/phone/model/messages.ts. */
@@ -67,8 +67,11 @@ export interface DeviceApi {
   suggestionData(): Promise<DResult<PastExpense[]>>;
   /** Today's shared open closing (fields, revision, pinned config). */
   getOpenClosing(token: string): Promise<DResult<Snapshot>>;
-  /** Writes one field. baseVersion null = last-write-wins; a mismatch is `stale` (carries the current field). */
-  setField(token: string, businessDate: string, key: FieldKey, value: unknown, baseVersion: number | null): Promise<DResult<{ version: number; revision: number }>>;
+  /**
+   * Writes one field. baseVersion null = last-write-wins; a mismatch is `stale` (carries the current field).
+   * The ack carries the value the server stored (`FieldAck.value`).
+   */
+  setField(token: string, businessDate: string, key: FieldKey, value: unknown, baseVersion: number | null): Promise<DResult<FieldAck>>;
   /** Realtime channel for the shop (broadcasts + presence). */
   live(shopId: string, me: { name: string }, h: LiveHandlers): LiveChannel;
 }

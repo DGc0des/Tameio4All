@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { joinJuicePreset as cfg } from '../../../../src/core/presets';
 import { deriveClosing } from '../../../../src/features/register/derive';
-import { applyServerField, draftFromFields, fieldLabel, presenceTags } from '../../../../src/features/register/live/merge';
+import { applyServerField, draftFromFields, fieldLabel, presenceTags, revisionGap } from '../../../../src/features/register/live/merge';
 import type { PendingEdit, ServerField, Snapshot } from '../../../../src/features/register/live/fields';
 
 const field = (key: string, value: unknown, version = 1): ServerField => ({ key, value, version, updatedByName: 'Μαρία', updatedAt: '2026-11-08T10:00:00Z' });
@@ -15,7 +15,7 @@ function snap(fields: ServerField[] = []): Snapshot {
   };
 }
 let seq = 0;
-const edit = (key: string, value: unknown): PendingEdit => ({ key, value, businessDate: '2026-11-08', baseVersion: null, queuedOffline: false, seq: ++seq });
+const edit = (key: string, value: unknown): PendingEdit => ({ author: 'staff-maria', key, value, businessDate: '2026-11-08', baseVersion: null, queuedOffline: false, seq: ++seq });
 
 describe('draftFromFields', () => {
   it('builds entries, channels and expense lines from the snapshot', () => {
@@ -94,11 +94,33 @@ describe('applyServerField', () => {
     expect('revision' in (s.fields['c:wolt'] as object)).toBe(false);
   });
 
-  it('ignores older and equal versions (same object back)', () => {
-    const s = applyServerField(snap(), f(2, 5));
+  it('ignores older and equal versions (same object back when the revision does not move either)', () => {
+    const s = applyServerField(snap(), f(2, 4));
     expect(applyServerField(s, f(1, 9))).toBe(s);
     expect(applyServerField(s, f(2, 9, 'other'))).toBe(s);
-    expect(applyServerField(s, f(3, 6, 'new')).fields['c:wolt']?.value).toEqual({ text: 'new' });
+    expect(applyServerField(s, f(2, 4, 'other'))).toBe(s);
+    expect(applyServerField(s, f(3, 5, 'new')).fields['c:wolt']?.value).toEqual({ text: 'new' });
+  });
+
+  it('+1 rule (I2): the revision advances only to exactly revision + 1', () => {
+    // in order: 4 then 5
+    const a = applyServerField(applyServerField(snap(), f(1, 4)), { ...field('c:efood', { text: '1' }), revision: 5 });
+    expect(a.revision).toBe(5);
+    // a gap (5 while at 3): the field is applied, the revision stays
+    const g = applyServerField(snap(), f(1, 5));
+    expect(g.fields['c:wolt']?.value).toEqual({ text: 'v1' });
+    expect(g.revision).toBe(3);
+    expect(revisionGap(snap(), 5)).toBe(true);
+    expect(revisionGap(snap(), 4)).toBe(false);
+    expect(revisionGap(snap(), 3)).toBe(false);
+    expect(revisionGap(snap(), 1)).toBe(false);
+    // an old (superseded) field numbered revision + 1 still advances the revision — its write is accounted for
+    const held = applyServerField(snap(), f(3, 2)); // we hold v3 (revision stays 3: not 4)
+    const late = applyServerField(held, f(2, 4));   // the late v2 write was revision 4
+    expect(late.fields['c:wolt']?.value).toEqual({ text: 'v3' });
+    expect(late.revision).toBe(4);
+    // a revision at or below ours never moves it back
+    expect(applyServerField(snap(), f(1, 2)).revision).toBe(3);
   });
 
   it('does not mutate its input', () => {

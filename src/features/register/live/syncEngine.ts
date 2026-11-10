@@ -5,8 +5,8 @@ import type { DResult, DeviceError } from '../../../data/remote/deviceApi';
 import type { LiveChannel, LiveFieldEvent, LiveHandlers, LiveStatus } from '../../../data/remote/live';
 import { deviceErrorMessage } from '../../phone/model/messages';
 import type { Draft } from '../draft';
-import { isFieldKey, isFieldValue, type FieldKey, type PendingEdit, type ServerField, type Snapshot } from './fields';
-import { applyServerField, draftFromFields, fieldLabel } from './merge';
+import { isFieldKey, isFieldValue, type FieldAck, type FieldKey, type PendingEdit, type ServerField, type Snapshot } from './fields';
+import { applyServerField, draftFromFields, fieldLabel, revisionGap } from './merge';
 
 /**
  * The client side of the live shared closing: `snapshot` (what the server holds, as last seen) plus
@@ -27,11 +27,20 @@ import { applyServerField, draftFromFields, fieldLabel } from './merge';
  *   (last write to reach the server wins).
  * - The draft shows the pending value of a key (highest seq) over the snapshot until it is acknowledged,
  *   including while in flight; broadcasts only update the snapshot (older/equal versions are ignored).
+ * - The queue is per author (`EngineState.author`: the cashier's staff id or OWNER_QUEUE_AUTHOR). The
+ *   engine holds, shows and sends only its author's items — they go out with that person's credentials;
+ *   other people's items stay in storage, hidden (savePending keeps them).
+ * - Revision (what Υποβολή sends) follows the +1 rule (`applyServerField`): an ack or broadcast numbered
+ *   past `revision + 1` keeps the old revision and resyncs, so a late or lost broadcast can never let a
+ *   submit pass the server's revision check without that write in the snapshot.
+ * - The ack applies the value the server stored (`FieldAck.value`), never only what was sent.
  */
 
 export const WRITE_DEBOUNCE_MS = 400;
 /** A network failure while the channel still reports live: retry (resync, then send) after this long. */
 export const NETWORK_RETRY_MS = 3000;
+/** Sign-out waits at most this long for the queue to drain before ending the staff session. */
+export const SIGN_OUT_DRAIN_MS = 3000;
 export const WRONG_DAY_NOTICE = 'Η ημέρα άλλαξε — οι αλλαγές εκτός σύνδεσης δεν αποθηκεύτηκαν';
 export const staleNotice = (label: string, name: string): string => `Το πεδίο ${label} άλλαξε από ${name || 'άλλον'}`;
 
@@ -42,7 +51,7 @@ export const staleNotice = (label: string, name: string): string => `Το πεδ
  */
 export interface Writer {
   load(): Promise<DResult<Snapshot>>;
-  write(e: PendingEdit): Promise<DResult<{ version: number; revision: number }>>;
+  write(e: PendingEdit): Promise<DResult<FieldAck>>;
   live(h: LiveHandlers): LiveChannel;
 }
 
@@ -58,6 +67,9 @@ export interface LiveState {
 
 export interface EngineState {
   snapshot: Snapshot | null;
+  /** Whose queue this is (staff id or OWNER_QUEUE_AUTHOR). */
+  author: string;
+  /** This author's edits not yet acknowledged (other authors' stored items are never loaded here). */
   pending: PendingEdit[];
   /** Keys whose latest queue item is still being typed (not sent yet). Memory only. */
   debouncing: FieldKey[];
@@ -87,8 +99,9 @@ const versionOf = (snap: Snapshot, key: FieldKey): number => snap.fields[key]?.v
  * unmount) gets one: the cached snapshot's version of its key (0 without a usable snapshot). The replay
  * then follows the offline rule — a box changed meanwhile is `stale`: dropped, server value, notice.
  */
-export function initialEngineState(snapshot: Snapshot | null, pending: PendingEdit[]): EngineState {
-  const sorted = [...pending]
+export function initialEngineState(snapshot: Snapshot | null, pending: PendingEdit[], author: string): EngineState {
+  const sorted = pending
+    .filter((p) => p.author === author)
     .sort((a, b) => a.seq - b.seq)
     .map((p): PendingEdit => {
       if (p.baseVersion !== null) return p;
@@ -96,7 +109,7 @@ export function initialEngineState(snapshot: Snapshot | null, pending: PendingEd
       return { ...p, baseVersion: base, queuedOffline: true };
     });
   return {
-    snapshot, pending: sorted, debouncing: [], channel: 'connecting', fresh: false, netDown: false,
+    snapshot, author, pending: sorted, debouncing: [], channel: 'connecting', fresh: false, netDown: false,
     inflight: null, loading: false, halted: false, presence: [], notice: null,
     nextSeq: sorted.reduce((m, p) => Math.max(m, p.seq), 0) + 1,
   };
@@ -131,7 +144,7 @@ export function reduceEdit(s: EngineState, key: FieldKey, value: unknown): Engin
       return { ...s, pending: s.pending.map((x) => (x === p ? merged : x)) };
     }
   }
-  const item: PendingEdit = { key, value, businessDate: date, baseVersion: base, queuedOffline: offline, seq: s.nextSeq };
+  const item: PendingEdit = { author: s.author, key, value, businessDate: date, baseVersion: base, queuedOffline: offline, seq: s.nextSeq };
   return {
     ...s,
     pending: [...s.pending, item],
@@ -162,18 +175,24 @@ export function reduceChannelStatus(s: EngineState, st: LiveStatus): { state: En
   return { state: { ...s, channel: st, fresh: false }, resync: false };
 }
 
-/** A realtime field event. Another business date is not applied: the caller resyncs instead. */
+/**
+ * A realtime field event. Another business date is not applied: the caller resyncs instead. A revision
+ * gap (an earlier write's broadcast is late or lost) applies the field but keeps the revision, and resyncs.
+ */
 export function reduceBroadcast(s: EngineState, f: LiveFieldEvent): { state: EngineState; resync: boolean } {
   if (!s.snapshot) return { state: s, resync: true };
   if (f.businessDate !== s.snapshot.businessDate) return { state: s, resync: true };
   const { businessDate: _d, ...field } = f;
+  const gap = revisionGap(s.snapshot, f.revision);
   const next = applyServerField(s.snapshot, field);
-  return { state: next === s.snapshot ? s : { ...s, snapshot: next }, resync: false };
+  return { state: next === s.snapshot ? s : { ...s, snapshot: next }, resync: gap };
 }
 
 /**
  * A loaded snapshot replaces ours (fields we already hold at a higher version — broadcasts that arrived
- * during the load — are kept). Pending edits of another business date are dropped with the wrong-day notice.
+ * during the load — are kept). Revision: the higher of the two. Under the +1 rule ours is always complete
+ * up to its number (every write up to it is in our fields), and the merge keeps those fields, so the
+ * higher one is complete too. Pending edits of another business date are dropped with the wrong-day notice.
  */
 export function reduceLoaded(s: EngineState, loaded: Snapshot): EngineState {
   let snapshot = loaded;
@@ -221,29 +240,40 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
 }
 
-/** Our write landed as `version`: snapshot gets our value (unless something newer is already there). */
-function acked(s: EngineState, item: PendingEdit, version: number, revision: number, me: string, nowIso: string): EngineState {
+/**
+ * Our write landed as `version` (revision `revision`): the snapshot gets the value the server stored
+ * (`stored`, when it is a valid value for the key — it differs from ours when the server set an expense
+ * line's author), else ours. `gap`: the revision skipped one we have not seen (resync).
+ */
+function acked(
+  s: EngineState, item: PendingEdit, version: number, revision: number, me: string, nowIso: string, stored?: unknown,
+): { state: EngineState; gap: boolean } {
   const pending = s.pending
     .filter((p) => p.seq !== item.seq)
     // Later offline edits of the same box were typed on top of this one.
     .map((p) => (p.key === item.key && p.baseVersion !== null ? { ...p, baseVersion: version } : p));
   let snapshot = s.snapshot;
+  let gap = false;
   if (snapshot && snapshot.businessDate === item.businessDate) {
-    snapshot = applyServerField(snapshot, { key: item.key, value: item.value, version, updatedByName: me, updatedAt: nowIso, revision });
-    if (snapshot.revision < revision) snapshot = { ...snapshot, revision };
+    const value = stored !== undefined && isFieldValue(item.key, stored) ? stored : item.value;
+    gap = revisionGap(snapshot, revision);
+    snapshot = applyServerField(snapshot, { key: item.key, value, version, updatedByName: me, updatedAt: nowIso, revision });
   }
-  return { ...s, pending, snapshot };
+  return { state: { ...s, pending, snapshot }, gap };
 }
 
 export function reduceWriteResult(
   s0: EngineState,
   item: PendingEdit,
-  r: DResult<{ version: number; revision: number }>,
+  r: DResult<FieldAck>,
   me: string,
   nowIso: string,
 ): { state: EngineState; effect: Effect } {
   const s: EngineState = { ...s0, inflight: s0.inflight === item.seq ? null : s0.inflight };
-  if (r.ok) return { state: acked(s, item, r.data.version, r.data.revision, me, nowIso), effect: NONE };
+  if (r.ok) {
+    const out = acked(s, item, r.data.version, r.data.revision, me, nowIso, r.data.value);
+    return { state: out.state, effect: out.gap ? { kind: 'resync' } : NONE };
+  }
   const e = r.error;
   const drop = (st: EngineState) => ({ ...st, pending: st.pending.filter((p) => p.seq !== item.seq) });
   switch (e.code) {
@@ -252,7 +282,8 @@ export function reduceWriteResult(
       // The box already holds what we sent (e.g. our own write re-sent after a remount): that's an ack.
       // Deliberate: it only hides a conflict when the server already holds exactly our value.
       if (deepEqual(cur.value, item.value)) {
-        return { state: acked(s, item, cur.version, s.snapshot?.revision ?? 0, cur.updatedByName, cur.updatedAt), effect: NONE };
+        // The revision passed is the snapshot's own: this answer carries none, so it never advances it.
+        return { state: acked(s, item, cur.version, s.snapshot?.revision ?? 0, cur.updatedByName, cur.updatedAt, cur.value).state, effect: NONE };
       }
       let st = drop(s);
       // Other offline edits of this box were made on the same outdated view: dropped too.
@@ -295,6 +326,7 @@ export interface EngineDeps {
   now(): Date;
   store: KeyValueStore;
   shopId: string;
+  /** `name`: stamped on our acknowledged fields. The queue's author is `initial.author`. */
   me: { name: string };
   initial: EngineState;
   onChange(s: EngineState): void;
@@ -309,8 +341,21 @@ export interface SyncEngine {
   flush(key?: FieldKey): void;
   focus(key: FieldKey | null): void;
   resync(): Promise<void>;
+  /**
+   * Ends all typing (flush) and resolves true once nothing of the current day is queued or in flight;
+   * false after `timeoutMs`, at once when nothing can be sent (offline / halted), or on dispose.
+   * Items not sent stay stored under this author (hidden from anyone else).
+   */
+  drain(timeoutMs: number): Promise<boolean>;
   clearNotice(): void;
   getState(): EngineState;
+}
+
+/** Nothing of the snapshot's day is queued or in flight. */
+export function isDrained(s: EngineState): boolean {
+  if (s.inflight !== null) return false;
+  const date = s.snapshot?.businessDate;
+  return date === undefined ? s.pending.length === 0 : !s.pending.some((p) => p.businessDate === date);
 }
 
 /**
@@ -327,14 +372,16 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
   let retryTimer: unknown = null;
   let loadP: Promise<void> | null = null;
   let again = false;
+  const watchers = new Set<() => void>();
 
   const set = (next: EngineState) => {
     if (disposed || next === s) return;
     const prev = s;
     s = next;
-    if (next.pending !== prev.pending) savePending(deps.store, deps.shopId, next.pending);
+    if (next.pending !== prev.pending) savePending(deps.store, deps.shopId, next.author, next.pending, next.snapshot?.businessDate ?? null);
     if (next.snapshot !== prev.snapshot && next.snapshot) saveSnapshot(deps.store, deps.shopId, next.snapshot);
     deps.onChange(next);
+    for (const w of [...watchers]) w();
   };
 
   const clearRetry = () => {
@@ -367,7 +414,7 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
     const item = nextToSend(s);
     if (!item) return;
     set({ ...s, inflight: item.seq });
-    let p: Promise<DResult<{ version: number; revision: number }>>;
+    let p: Promise<DResult<FieldAck>>;
     try {
       p = deps.writer().write(item);
     } catch {
@@ -375,7 +422,7 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
     }
     void p.then(
       (r) => r,
-      (): DResult<{ version: number; revision: number }> => ({ ok: false, error: { code: 'network' } }),
+      (): DResult<FieldAck> => ({ ok: false, error: { code: 'network' } }),
     ).then((r) => {
       if (disposed) return;
       const out = reduceWriteResult(s, item, r, deps.me.name, deps.now().toISOString());
@@ -473,6 +520,7 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
       clearRetry();
       channel?.close();
       channel = null;
+      for (const w of [...watchers]) w();
     },
     edit(key, value) {
       if (disposed) return;
@@ -492,6 +540,27 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
       channel?.setFocus(key);
     },
     resync,
+    drain(timeoutMs) {
+      if (disposed) return Promise.resolve(false);
+      commit();
+      return new Promise<boolean>((resolve) => {
+        let timer: unknown = null;
+        const finish = (v: boolean) => {
+          watchers.delete(check);
+          if (timer !== null) timers.clear(timer);
+          resolve(v);
+        };
+        function check() {
+          if (disposed) return finish(false);
+          if (isDrained(s)) return finish(true);
+          // Nothing will be sent (and nothing is in flight): don't make the person wait.
+          if (s.inflight === null && (s.halted || statusOf(s) === 'offline')) finish(false);
+        }
+        watchers.add(check);
+        timer = timers.set(() => finish(false), timeoutMs);
+        check();
+      });
+    },
     clearNotice() {
       if (disposed || s.notice === null) return;
       set({ ...s, notice: null });

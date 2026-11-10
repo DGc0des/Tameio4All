@@ -45,13 +45,24 @@ export function draftFromFields(snapshot: Snapshot, pending: readonly PendingEdi
   return { businessDate: snapshot.businessDate, entries, channels, expenses };
 }
 
-/** Applies a field from the server (fetch or realtime). Older or equal versions change nothing. */
+/**
+ * Applies a field from the server (an ack or a broadcast). The field follows its own version rule (older
+ * or equal versions are ignored). The closing's revision follows the +1 rule: it advances only when the
+ * incoming revision is exactly `revision + 1` — whether or not the field itself was newer (a superseded
+ * write still counts) — so `revision` always means "every write up to here is in this snapshot". A
+ * revision further ahead is a gap (`revisionGap`): the caller keeps the old revision and resyncs.
+ */
 export function applyServerField(s: Snapshot, f: ServerField & { revision: number }): Snapshot {
-  const current = s.fields[f.key];
-  if (current !== undefined && f.version <= current.version) return s;
   const { revision, ...field } = f;
-  return { ...s, revision: Math.max(s.revision, revision), fields: { ...s.fields, [f.key]: field } };
+  const current = s.fields[f.key];
+  const newer = current === undefined || f.version > current.version;
+  const nextRevision = revision === s.revision + 1 ? revision : s.revision;
+  if (!newer && nextRevision === s.revision) return s;
+  return { ...s, revision: nextRevision, fields: newer ? { ...s.fields, [f.key]: field } : s.fields };
 }
+
+/** A write numbered past `revision + 1` means one in between has not reached us (late or lost broadcast). */
+export const revisionGap = (s: Snapshot, revision: number): boolean => revision > s.revision + 1;
 
 /**
  * Greek row label for toasts. An expense line is «Έξοδο N», N = its 1-based position in

@@ -1,5 +1,5 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
-import { parseKey, type FieldKey, type ServerField, type Snapshot } from '../../features/register/live/fields';
+import { parseKey, type FieldAck, type FieldKey, type ServerField, type Snapshot } from '../../features/register/live/fields';
 
 export type LiveStatus = 'connecting' | 'live' | 'offline';
 export type LiveFieldEvent = ServerField & { revision: number; businessDate: string };
@@ -50,6 +50,15 @@ export function parseSnapshot(x: unknown): Snapshot | null {
     if (f) fields[f.key] = f;
   }
   return { id: x.id, businessDate: x.business_date, configId: x.config_id, config: x.config, revision: x.revision, lastSubmit, fields };
+}
+
+/**
+ * The ok answer of set_closing_field / owner_set_closing_field: {version, revision, value}. `value` (the
+ * stored value) is passed on as is when present — the engine checks its shape before using it.
+ */
+export function parseFieldAck(x: unknown): FieldAck | null {
+  if (!isObj(x) || !isInt(x.version) || !isInt(x.revision)) return null;
+  return x.value === undefined ? { version: x.version, revision: x.revision } : { version: x.version, revision: x.revision, value: x.value };
 }
 
 /** The `current` object of a `stale` reply (it has no key/updated_at; the key comes from the request). */

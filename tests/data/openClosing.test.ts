@@ -12,7 +12,7 @@ const throwing: KeyValueStore = {
 };
 const K = (n: string) => `tameio4all:v1:shop-1:${n}`;
 const edit = (over: Partial<PendingEdit> = {}): PendingEdit => ({
-  key: 'c:wolt', value: { text: '5' }, businessDate: '2026-11-07', baseVersion: 2, queuedOffline: false, seq: 1, ...over,
+  author: 'staff-maria', key: 'c:wolt', value: { text: '5' }, businessDate: '2026-11-07', baseVersion: 2, queuedOffline: false, seq: 1, ...over,
 });
 const snap: Snapshot = {
   id: 'oc1', businessDate: '2026-11-07', configId: 'cfg', config: { schema: 1 }, revision: 3,
@@ -25,10 +25,43 @@ describe('pending queue', () => {
     const s = memoryStore();
     expect(loadPending(s, 'shop-1')).toEqual([]);
     const list = [edit(), edit({ key: 'd:100', value: { text: '1', mode: 'count' }, baseVersion: null, queuedOffline: true, seq: 2 })];
-    expect(savePending(s, 'shop-1', list)).toBe(true);
+    expect(savePending(s, 'shop-1', 'staff-maria', list)).toBe(true);
     expect(s.getItem(K('pending'))).not.toBeNull();
     expect(loadPending(s, 'shop-1')).toEqual(list);
+    expect(loadPending(s, 'shop-1', 'staff-maria')).toEqual(list);
+    expect(loadPending(s, 'shop-1', 'staff-nikos')).toEqual([]);
     expect(loadPending(s, 'shop-2')).toEqual([]);
+  });
+  it('is per author: saving one person\'s items keeps everyone else\'s (I1)', () => {
+    const s = memoryStore();
+    const maria = edit({ seq: 1 });
+    const nikos = edit({ author: 'staff-nikos', value: { text: '7' }, seq: 2 });
+    const owner = edit({ author: 'owner', key: 'c:efood', seq: 3 });
+    savePending(s, 'shop-1', 'staff-maria', [maria]);
+    savePending(s, 'shop-1', 'staff-nikos', [nikos]);
+    savePending(s, 'shop-1', 'owner', [owner]);
+    expect(loadPending(s, 'shop-1', 'staff-maria')).toEqual([maria]);
+    expect(loadPending(s, 'shop-1', 'staff-nikos')).toEqual([nikos]);
+    expect(loadPending(s, 'shop-1', 'owner')).toEqual([owner]);
+    // Μαρία's queue drains: only hers goes
+    savePending(s, 'shop-1', 'staff-maria', []);
+    expect(loadPending(s, 'shop-1').map((p) => p.author).sort()).toEqual(['owner', 'staff-nikos']);
+  });
+  it('drops other authors\' items of a day before the current one (they can never be sent)', () => {
+    const s = memoryStore();
+    const old = edit({ author: 'staff-nikos', businessDate: '2026-11-06' });
+    const today = edit({ author: 'staff-nikos', businessDate: '2026-11-07', seq: 2 });
+    const tomorrow = edit({ author: 'owner', businessDate: '2026-11-08', seq: 3 });
+    savePending(s, 'shop-1', 'staff-nikos', [old, today]);
+    savePending(s, 'shop-1', 'owner', [tomorrow]);
+    savePending(s, 'shop-1', 'staff-maria', [], '2026-11-07');
+    expect(loadPending(s, 'shop-1')).toEqual([today, tomorrow]);
+  });
+  it('an item stored without an author (before the queue was author-tagged) is dropped, never sent', () => {
+    const s = memoryStore();
+    const { author: _a, ...untagged } = edit();
+    s.setItem(K('pending'), JSON.stringify([untagged, edit({ seq: 4 }), { ...edit(), author: '' }, { ...edit(), author: 5 }]));
+    expect(loadPending(s, 'shop-1')).toEqual([edit({ seq: 4 })]);
   });
   it('corrupt or non-array -> []', () => {
     const s = memoryStore();
@@ -49,7 +82,7 @@ describe('pending queue', () => {
   });
   it('failure-safe with a throwing store', () => {
     expect(loadPending(throwing, 'shop-1')).toEqual([]);
-    expect(savePending(throwing, 'shop-1', [edit()])).toBe(false);
+    expect(savePending(throwing, 'shop-1', 'staff-maria', [edit()])).toBe(false);
   });
 });
 

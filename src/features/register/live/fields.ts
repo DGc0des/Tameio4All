@@ -102,7 +102,22 @@ export interface Snapshot {
   fields: Record<FieldKey, ServerField>;
 }
 
+/**
+ * The server's answer to a successful write. `value` is what the server STORED (since 20261108000003):
+ * for an `e:<id>` line the author is decided server-side, so it may differ from what was sent. Absent
+ * from an older server: the sent value is used.
+ */
+export type FieldAck = { version: number; revision: number; value?: unknown };
+
+/** Queue owner of the owner's «Σήμερα» edits (staff edits carry the cashier's staff id, a uuid). */
+export const OWNER_QUEUE_AUTHOR = 'owner';
+
 export interface PendingEdit {
+  /**
+   * Who typed it: the cashier's staff id, or OWNER_QUEUE_AUTHOR. An engine shows and sends only its own
+   * author's items (they are sent with that person's credentials); others stay stored, hidden.
+   */
+  author: string;
   key: FieldKey;
   value: unknown;
   businessDate: string;

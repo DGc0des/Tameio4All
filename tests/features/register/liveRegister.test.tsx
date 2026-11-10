@@ -2,9 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { loadEntryMode, savePending } from '../../../src/data/local/openClosing';
+import { loadEntryMode, loadPending, savePending } from '../../../src/data/local/openClosing';
 import { memoryStore, type KeyValueStore } from '../../../src/data/local/storage';
-import type { DeviceApi, DeviceContext, StaffSession } from '../../../src/data/remote/deviceApi';
+import type { DResult, DeviceApi, DeviceContext, StaffSession } from '../../../src/data/remote/deviceApi';
+import type { FieldAck, Snapshot } from '../../../src/features/register/live/fields';
 import { PhoneApp } from '../../../src/features/phone/PhoneApp';
 import { RegisterScreen } from '../../../src/features/register/RegisterScreen';
 import { FAKE_CONFIG_ID, FAKE_SHOP_ID, fail, fakeDeviceApi, fakeLive, fakeServer, ok, type FakeServer } from '../phone/fakeDeviceApi';
@@ -196,8 +197,8 @@ describe('phones on the shared live closing', () => {
 
   it('an edit queued for a past business day is dropped with the day-change toast', async () => {
     const store = memoryStore();
-    savePending(store, FAKE_SHOP_ID, [
-      { key: 'd:10000', value: { text: '900', mode: 'amount' }, businessDate: '2026-11-06', baseVersion: 0, queuedOffline: true, seq: 1 },
+    savePending(store, FAKE_SHOP_ID, 'staff-maria', [
+      { author: 'staff-maria', key: 'd:10000', value: { text: '900', mode: 'amount' }, businessDate: '2026-11-06', baseVersion: 0, queuedOffline: true, seq: 1 },
     ]);
     const server = fakeServer();
     const p = phone(server, MARIA, store);
@@ -279,6 +280,54 @@ describe('after a failure the gate does not take over', () => {
     expect(field(p, '100€').value).toBe('800');
     expect(barSubmit(p).disabled).toBe(false);
     expect(server.openChannels()).toBe(1);
+  });
+
+  it("I1: another cashier's unsent edits on this phone are never sent as the signed-in one", async () => {
+    const store = memoryStore();
+    const server = fakeServer();
+    savePending(store, FAKE_SHOP_ID, 'staff-maria', [
+      { author: 'staff-maria', key: 'c:wolt', value: { text: '50' }, businessDate: '2026-11-07', baseVersion: 0, queuedOffline: true, seq: 1 },
+    ]);
+    const b = phone(server, NIKOS, store);
+    await settle();
+    expect(b.api.setField).not.toHaveBeenCalled();
+    expect(field(b, 'WOLT').value).toBe('');
+    expect(loadPending(store, FAKE_SHOP_ID, 'staff-maria')).toHaveLength(1);
+    // ΝΙΚΟΣ's own edits go as him; Μαρία's stay stored.
+    typeAndLeave(b, 'WOLT', '7');
+    await settle();
+    expect(vi.mocked(b.api.setField).mock.calls.map((c) => [c[0], c[3]])).toEqual([['token-2', { text: '7' }]]);
+    expect(loadPending(store, FAKE_SHOP_ID, 'staff-maria')).toHaveLength(1);
+  });
+
+  it('I1: sign-out waits for the queued edit to be acknowledged before ending the session', async () => {
+    const server = fakeServer();
+    let ack!: () => void;
+    const setField = vi.fn<DeviceApi['setField']>((...a) =>
+      new Promise<DResult<FieldAck>>((resolve) => { ack = () => void server.setField(...a).then(resolve); }),
+    );
+    const onSignOut = vi.fn();
+    const api = fakeDeviceApi({ setField }, server);
+    const { container } = render(
+      <RegisterScreen ctx={CTX} session={MARIA} api={api} store={memoryStore()} now={() => new Date(2026, 10, 7, 22, 0)} newId={newId}
+        share={vi.fn(async () => 'shared' as const)} themePref="system" active offline={false} onTheme={vi.fn()} onOwner={vi.fn()}
+        onSignOut={onSignOut} onServerError={vi.fn()} />,
+    );
+    const p = { api, store: memoryStore(), q: within(container), container, onServerError: vi.fn() };
+    await settle();
+    fireEvent.focus(field(p, 'WOLT'));
+    fireEvent.change(field(p, 'WOLT'), { target: { value: '9' } }); // still typing: not sent yet
+    fireEvent.click(p.q.getByRole('button', { name: /ΜΑΡΙΑ/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Αλλαγή ατόμου' }));
+    await settle();
+    expect(setField).toHaveBeenCalledTimes(1); // the sign-out flushed it
+    expect(api.signOut).not.toHaveBeenCalled();
+    await act(async () => { ack(); });
+    await settle();
+    expect(api.signOut).toHaveBeenCalledWith('token-1');
+    expect(vi.mocked(api.signOut).mock.invocationCallOrder[0]!).toBeGreaterThan(setField.mock.invocationCallOrder[0]!);
+    expect(onSignOut).toHaveBeenCalled();
+    expect(server.fields['c:wolt']?.updatedByName).toBe('ΜΑΡΙΑ');
   });
 
   it('while connecting, Υποβολή says «Σύνδεση…»', async () => {

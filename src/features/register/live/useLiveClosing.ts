@@ -28,6 +28,8 @@ export interface LiveClosing {
   focus(key: FieldKey | null): void;
   /** load() and replace the snapshot (the queue is kept). */
   resync(): Promise<void>;
+  /** Flush and wait (at most `timeoutMs`) until the queue is sent; false if it was not (see SyncEngine.drain). */
+  drain(timeoutMs: number): Promise<boolean>;
   /** The UI shows `state.notice` once, then clears it. */
   clearNotice(): void;
   /**
@@ -37,19 +39,20 @@ export interface LiveClosing {
   restart(): void;
 }
 
-const fresh = (store: KeyValueStore, shopId: string): EngineState =>
-  initialEngineState(loadSnapshot(store, shopId), loadPending(store, shopId));
+const fresh = (store: KeyValueStore, shopId: string, author: string): EngineState =>
+  initialEngineState(loadSnapshot(store, shopId), loadPending(store, shopId, author), author);
 
 /**
  * React binding of the sync engine. One engine (and one live channel) per mount of (store, shopId,
- * me.name); the writer, clock and onFatal are read through refs, so a new object per render is fine.
- * `now` only stamps `updatedAt` of this client's acknowledged fields.
+ * me.name, me.id); the writer, clock and onFatal are read through refs, so a new object per render is fine.
+ * `me.id` is the queue's author (the cashier's staff id, or OWNER_QUEUE_AUTHOR): only that person's
+ * stored edits are shown and sent. `now` only stamps `updatedAt` of this client's acknowledged fields.
  */
 export function useLiveClosing(
   writer: Writer,
   store: KeyValueStore,
   shopId: string,
-  me: { name: string },
+  me: { name: string; id: string },
   now: () => Date,
   opts: LiveClosingOptions = {},
 ): LiveClosing {
@@ -62,9 +65,10 @@ export function useLiveClosing(
     fatalRef.current = opts.onFatal;
   });
 
-  const [es, setEs] = useState<EngineState>(() => fresh(store, shopId));
+  const [es, setEs] = useState<EngineState>(() => fresh(store, shopId, me.id));
   const engineRef = useRef<SyncEngine | null>(null);
   const name = me.name;
+  const id = me.id;
   // Bumped by restart(): a new effect run disposes the old engine (cleanup first) and starts another.
   const [generation, setGeneration] = useState(0);
 
@@ -75,7 +79,7 @@ export function useLiveClosing(
       store,
       shopId,
       me: { name },
-      initial: fresh(store, shopId),
+      initial: fresh(store, shopId, id),
       onChange: setEs,
       onFatal: (e) => fatalRef.current?.(e),
     });
@@ -85,12 +89,13 @@ export function useLiveClosing(
       engine.dispose();
       if (engineRef.current === engine) engineRef.current = null;
     };
-  }, [store, shopId, name, generation]);
+  }, [store, shopId, name, id, generation]);
 
   const edit = useCallback((key: FieldKey, value: unknown) => engineRef.current?.edit(key, value), []);
   const flush = useCallback((key?: FieldKey) => engineRef.current?.flush(key), []);
   const focus = useCallback((key: FieldKey | null) => engineRef.current?.focus(key), []);
   const resync = useCallback(() => engineRef.current?.resync() ?? Promise.resolve(), []);
+  const drain = useCallback((ms: number) => engineRef.current?.drain(ms) ?? Promise.resolve(false), []);
   const clearNotice = useCallback(() => engineRef.current?.clearNotice(), []);
   const restart = useCallback(() => setGeneration((g) => g + 1), []);
 
@@ -98,5 +103,5 @@ export function useLiveClosing(
   const { snapshot, pending } = es;
   const draft = useMemo(() => visibleDraft({ snapshot, pending }), [snapshot, pending]);
 
-  return { state, draft, edit, flush, focus, resync, clearNotice, restart };
+  return { state, draft, edit, flush, focus, resync, drain, clearNotice, restart };
 }

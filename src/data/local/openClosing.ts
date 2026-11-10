@@ -21,19 +21,33 @@ const entryModeKey = (shop: string) => shopKey(shop, 'entryMode');
 
 function isPendingEdit(x: unknown): x is PendingEdit {
   return (
-    isObj(x) && isFieldKey(x.key) && isFieldValue(x.key, x.value) && isStr(x.businessDate) &&
+    isObj(x) && isStr(x.author) && x.author !== '' && isFieldKey(x.key) && isFieldValue(x.key, x.value) && isStr(x.businessDate) &&
     (x.baseVersion === null || isNum(x.baseVersion)) && typeof x.queuedOffline === 'boolean' && isNum(x.seq)
   );
 }
 
-/** Not an array -> []. A malformed item is dropped on its own: one bad entry must not lose the rest of the queue. */
-export function loadPending(store: KeyValueStore, shopId: string): PendingEdit[] {
+/**
+ * The stored queue (one per shop, shared by everyone using this browser: cashiers and the owner).
+ * With `author`, only that person's items. Not an array -> []. A malformed item is dropped on its own:
+ * one bad entry must not lose the rest of the queue. An item without an author (stored before the
+ * queue was author-tagged) is malformed: it cannot be attributed, so it is never sent.
+ */
+export function loadPending(store: KeyValueStore, shopId: string, author?: string): PendingEdit[] {
   const raw = readJson(store, pendingKey(shopId));
-  return Array.isArray(raw) ? raw.filter(isPendingEdit) : [];
+  const all = Array.isArray(raw) ? raw.filter(isPendingEdit) : [];
+  return author === undefined ? all : all.filter((p) => p.author === author);
 }
 
-export function savePending(store: KeyValueStore, shopId: string, list: PendingEdit[]): boolean {
-  return writeJson(store, pendingKey(shopId), list);
+/**
+ * Replaces `author`'s items with `mine`, keeping everyone else's as stored (read-modify-write, so an
+ * engine never erases another person's hidden edits). Other authors' items of a business date before
+ * `currentDate` can never be sent (the server accepts only its current date) and are dropped.
+ */
+export function savePending(store: KeyValueStore, shopId: string, author: string, mine: PendingEdit[], currentDate: string | null = null): boolean {
+  const others = loadPending(store, shopId).filter(
+    (p) => p.author !== author && (currentDate === null || p.businessDate >= currentDate),
+  );
+  return writeJson(store, pendingKey(shopId), [...others, ...mine]);
 }
 
 function isServerField(key: string, x: unknown): x is ServerField {

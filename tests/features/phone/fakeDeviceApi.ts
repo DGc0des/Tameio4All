@@ -51,6 +51,8 @@ export interface FakeServer {
   config: unknown;
   /** token → staff name (who a write/submit is attributed to). */
   names: Record<string, string>;
+  /** token → staff id: the server-decided author of a new `e:<id>` line (an existing line keeps its own). */
+  staffIds: Record<string, string>;
   /** Timestamp stamped on writes and submits. */
   at: string;
   snapshot(): Snapshot;
@@ -61,7 +63,7 @@ export interface FakeServer {
   openChannels(): number;
 }
 
-export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'config' | 'names' | 'at'>> = {}): FakeServer {
+export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'config' | 'names' | 'staffIds' | 'at'>> = {}): FakeServer {
   type Conn = { live: FakeLive; name: string; focus: FieldKey | null; open: boolean };
   const conns = new Set<Conn>();
   const later = (fn: () => void) => queueMicrotask(fn);
@@ -77,6 +79,7 @@ export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'conf
     lastSubmit: null,
     config: init.config ?? joinJuicePreset,
     names: init.names ?? { 'token-1': 'ΜΑΡΙΑ', 'token-2': 'ΝΙΚΟΣ' },
+    staffIds: init.staffIds ?? { 'token-1': 'staff-maria', 'token-2': 'staff-nikos' },
     at: init.at ?? '2026-11-07T19:42:00.000Z',
     snapshot: () => ({
       id: 'oc-1',
@@ -95,12 +98,19 @@ export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'conf
       }
       const version = (current?.version ?? 0) + 1;
       const revision = ++server.revision;
-      const field: ServerField = { key, value: structuredClone(value), version, updatedByName: server.names[token] ?? '?', updatedAt: server.at };
+      // Like write_closing_field: an expense line's author is the server's call.
+      let stored = structuredClone(value);
+      if (/^e:[A-Za-z0-9-]{1,64}$/.test(key) && typeof stored === 'object' && stored !== null) {
+        const prev = current?.value as { addedBy?: unknown } | undefined;
+        const author = prev?.addedBy ?? (server.staffIds[token] ? { kind: 'staff', id: server.staffIds[token] } : (stored as { addedBy?: unknown }).addedBy);
+        stored = { ...(stored as object), addedBy: author };
+      }
+      const field: ServerField = { key, value: stored, version, updatedByName: server.names[token] ?? '?', updatedAt: server.at };
       server.fields[key] = field;
       later(() => {
         for (const c of conns) c.live.emitField({ ...structuredClone(field), revision, businessDate });
       });
-      return ok({ version, revision });
+      return ok({ version, revision, value: structuredClone(stored) });
     },
     submit(token, _configId, businessDate, _inputs, revision) {
       if (businessDate !== server.businessDate) return fail({ code: 'wrong_day' });

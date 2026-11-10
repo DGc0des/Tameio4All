@@ -68,13 +68,18 @@ describe('getOpenClosing / todayClosing', () => {
 });
 
 describe('setField / setTodayField', () => {
-  it('device: passes the server argument names and returns version + revision', async () => {
+  it('device: passes the server argument names and returns version + revision (+ the stored value when sent)', async () => {
     const s = rpcClient({ ok: true, version: 3, revision: 9 });
     const r = await createDeviceApi(s.client).setField('tok', '2026-11-07', 'c:wolt', { text: '5' }, 2);
     expect(s.rpc).toHaveBeenCalledWith('set_closing_field', {
       p_token: 'tok', p_business_date: '2026-11-07', p_key: 'c:wolt', p_value: { text: '5' }, p_base_version: 2,
     });
     expect(r).toEqual({ ok: true, data: { version: 3, revision: 9 } });
+    const stored = { addedBy: { kind: 'staff', id: 'staff-maria' }, removed: false, order: 1 };
+    const r2 = await createDeviceApi(rpcClient({ ok: true, version: 1, revision: 4, value: stored }).client).setField('t', 'd', 'e:x', {}, null);
+    expect(r2).toEqual({ ok: true, data: { version: 1, revision: 4, value: stored } });
+    const r3 = await createDeviceApi(rpcClient({ ok: true, version: 1.5, revision: 4 }).client).setField('t', 'd', 'e:x', {}, null);
+    expect(r3.ok).toBe(false);
   });
 
   it('device: stale becomes an error carrying the current field, filled with the request key', async () => {
@@ -101,16 +106,20 @@ describe('setField / setTodayField', () => {
 
   it('owner: stale is data, success carries version + revision, bad_field is an error', async () => {
     const stale = rpcClient({ ok: false, error: 'stale', current: { value: { text: '9' }, version: 4, updated_by_name: 'ΝΙΚΟΣ' } });
-    const r1 = await createOwnerApi(stale.client).setTodayField('shop1', 'c:wolt', { text: '5' }, 2);
-    expect(stale.rpc).toHaveBeenCalledWith('owner_set_closing_field', { p_shop_id: 'shop1', p_key: 'c:wolt', p_value: { text: '5' }, p_base_version: 2 });
+    const r1 = await createOwnerApi(stale.client).setTodayField('shop1', '2026-11-07', 'c:wolt', { text: '5' }, 2);
+    expect(stale.rpc).toHaveBeenCalledWith('owner_set_closing_field', {
+      p_shop_id: 'shop1', p_business_date: '2026-11-07', p_key: 'c:wolt', p_value: { text: '5' }, p_base_version: 2,
+    });
     expect(r1).toEqual({ ok: true, data: { stale: { key: 'c:wolt', value: { text: '9' }, version: 4, updatedByName: 'ΝΙΚΟΣ', updatedAt: '' } } });
-    expect(await createOwnerApi(rpcClient({ ok: true, version: 1, revision: 2 }).client).setTodayField('s', 'c:a', {}, null)).toEqual({ ok: true, data: { version: 1, revision: 2 } });
-    expect(await createOwnerApi(rpcClient({ ok: false, error: 'bad_field' }).client).setTodayField('s', 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'bad_field' } });
-    expect(await createOwnerApi(rpcClient({ ok: false, error: 'weird' }).client).setTodayField('s', 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'unknown', detail: 'weird' } });
+    expect(await createOwnerApi(rpcClient({ ok: true, version: 1, revision: 2, value: { text: '1' } }).client).setTodayField('s', 'd', 'c:a', {}, null)).toEqual({ ok: true, data: { version: 1, revision: 2, value: { text: '1' } } });
+    expect(await createOwnerApi(rpcClient({ ok: false, error: 'wrong_day' }).client).setTodayField('s', 'd', 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'wrong_day' } });
+    expect(await createOwnerApi(rpcClient({ ok: false, error: 'bad_field' }).client).setTodayField('s', 'd', 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'bad_field' } });
+    expect(await createOwnerApi(rpcClient({ ok: false, error: 'weird' }).client).setTodayField('s', 'd', 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'unknown', detail: 'weird' } });
   });
 
   it('mapError knows the new owner codes', () => {
     expect(mapError({ message: 'too_many_expenses' })).toEqual({ code: 'too_many_expenses' });
+    expect(mapError({ message: 'wrong_day' })).toEqual({ code: 'wrong_day' });
   });
 });
 

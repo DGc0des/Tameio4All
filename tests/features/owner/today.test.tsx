@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { joinJuicePreset } from '../../../src/core/presets';
+import { WRONG_DAY_NOTICE } from '../../../src/features/register/live/syncEngine';
 import { loadEntryMode } from '../../../src/data/local/openClosing';
 import { memoryStore } from '../../../src/data/local/storage';
 import type { LiveHandlers } from '../../../src/data/remote/live';
@@ -68,7 +69,7 @@ describe('TodayScreen', () => {
       await Promise.resolve();
     });
     type('500');
-    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledWith(SHOP, 'd:10000', { text: '500', mode: 'amount' }, null));
+    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledWith(SHOP, '2026-11-07', 'd:10000', { text: '500', mode: 'amount' }, null));
   });
 
   it('an edit while connecting is held back, then sent with base version 0 once live', async () => {
@@ -77,7 +78,7 @@ describe('TodayScreen', () => {
     type('500');
     expect(api.setTodayField).not.toHaveBeenCalled();
     act(() => channels[0]!.emitStatus('live'));
-    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledWith(SHOP, 'd:10000', { text: '500', mode: 'amount' }, 0));
+    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledWith(SHOP, '2026-11-07', 'd:10000', { text: '500', mode: 'amount' }, 0));
   });
 
   it('a broadcast updates the view', async () => {
@@ -100,6 +101,20 @@ describe('TodayScreen', () => {
     await loaded();
     fireEvent.click(screen.getByRole('button', { name: '# Κομμάτια' }));
     expect(loadEntryMode(store, SHOP)).toBe('count');
+  });
+
+  it('M1: an owner write refused as wrong_day is dropped with the day-change notice and resyncs', async () => {
+    const { api, channels } = setup({ setTodayField: vi.fn(() => fail<{ version: number; revision: number }>({ code: 'wrong_day' })) });
+    await loaded();
+    act(() => channels[0]!.emitStatus('live'));
+    await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(2));
+    await act(async () => { await Promise.resolve(); });
+    type('500');
+    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(WRONG_DAY_NOTICE));
+    await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(box('100€').value).toBe(''));
+    expect(screen.queryByRole('alert')).toBeNull(); // not fatal
   });
 
   it('not_owner shows its message with a retry', async () => {

@@ -2,7 +2,7 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import type { PastExpense } from '../../core/suggestions';
 import type { DResult, DeviceApi, DeviceContext, StaffSession } from './deviceApi';
 import { fromServerResult, mapDeviceError } from './deviceErrors';
-import { openShopChannel, parseSnapshot } from './live';
+import { openShopChannel, parseFieldAck, parseSnapshot } from './live';
 
 type Reply<T> = PromiseLike<{ data: T; error: unknown }>;
 
@@ -130,10 +130,8 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
       if (!r.ok) return r;
       const failure = fromServerResult(r.data, { key });
       if (failure) return { ok: false, error: failure };
-      const j = r.data as Record<string, unknown>;
-      return Number.isSafeInteger(j.version) && Number.isSafeInteger(j.revision)
-        ? { ok: true, data: { version: j.version as number, revision: j.revision as number } }
-        : { ok: false, error: bad };
+      const ack = parseFieldAck(r.data);
+      return ack ? { ok: true, data: ack } : { ok: false, error: bad };
     },
     live: (shop, me, h) => openShopChannel(client, shop, me, h),
     async suggestionData() {

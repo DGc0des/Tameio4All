@@ -11,6 +11,7 @@ import type { OwnerApi } from '../../data/remote/ownerApi';
 import { Card } from '../../ui/Card';
 import { deviceErrorMessage } from '../phone/model/messages';
 import { deriveClosing } from '../register/derive';
+import { OWNER_QUEUE_AUTHOR } from '../register/live/fields';
 import { useLiveClosing } from '../register/live/useLiveClosing';
 import { LiveClosingView } from '../register/LiveClosingView';
 import { INVALID_CONFIG_MESSAGE } from '../register/messages';
@@ -25,7 +26,7 @@ export interface TodayScreenProps {
   newId?: () => string;
 }
 
-const OWNER = { name: OWNER_PRESENCE_NAME };
+const OWNER = { name: OWNER_PRESENCE_NAME, id: OWNER_QUEUE_AUTHOR };
 const OWNER_AUTHOR = { kind: 'owner' } as const;
 const NO_HISTORY: SupplierHistory = {};
 

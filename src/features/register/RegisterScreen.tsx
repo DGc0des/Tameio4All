@@ -17,7 +17,7 @@ import { EnvelopeSheet } from './EnvelopeSheet';
 import { CashierSheet, HeaderMenu } from './HeaderMenu';
 import { amountValue, channelKey } from './live/fields';
 import { useLiveClosing } from './live/useLiveClosing';
-import type { Writer } from './live/syncEngine';
+import { SIGN_OUT_DRAIN_MS, type Writer } from './live/syncEngine';
 import { LiveClosingView } from './LiveClosingView';
 import { INVALID_CONFIG_MESSAGE } from './messages';
 import type { ShareFn } from './share';
@@ -66,13 +66,15 @@ export function RegisterScreen(props: RegisterProps) {
     [api, session.token, session.name, ctx.shopId],
   );
   const [fatal, setFatal] = useState<DeviceError | null>(null);
-  const live = useLiveClosing(writer, store, ctx.shopId, { name: session.name }, now, {
+  // The queue's author is this cashier: another cashier's unsent edits on this phone are never sent with our token.
+  const me = useMemo(() => ({ name: session.name, id: session.staffId }), [session.name, session.staffId]);
+  const live = useLiveClosing(writer, store, ctx.shopId, me, now, {
     onFatal: (e) => {
       setFatal(e);
       onServerError(e);
     },
   });
-  const { state, draft, edit, flush, focus, resync, clearNotice, restart } = live;
+  const { state, draft, edit, flush, focus, resync, drain, clearNotice, restart } = live;
   const snapshot = state.snapshot;
   // The closing's pinned config, never device_context's (an older/newer config would compute other totals).
   const config = snapshot !== null && isShopConfig(snapshot.config) ? snapshot.config : null;
@@ -130,8 +132,10 @@ export function RegisterScreen(props: RegisterProps) {
     }
   }, [active]);
 
+  // Our queued edits go out with our token before the session ends (bounded wait). Whatever is not sent by
+  // then stays stored under this cashier and is never sent as the next one.
   const signOut = async () => {
-    flush();
+    await drain(SIGN_OUT_DRAIN_MS);
     await api.signOut(session.token);
     onSignOut();
   };

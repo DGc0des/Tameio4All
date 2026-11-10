@@ -1,5 +1,5 @@
 import type { ShopConfig } from '../../core/config';
-import type { FieldKey, ServerField, Snapshot } from '../../features/register/live/fields';
+import type { FieldAck, FieldKey, ServerField, Snapshot } from '../../features/register/live/fields';
 import type { OwnerError } from './errors';
 import type { LiveChannel, LiveHandlers } from './live';
 
@@ -72,8 +72,12 @@ export interface OwnerApi {
   updateDevice(userId: string, patch: { label?: string; revoke?: true }): Promise<Result<void>>;
   /** Today's shared open closing for the shop. */
   todayClosing(shopId: string): Promise<Result<Snapshot>>;
-  /** `stale` (baseVersion mismatch) is data, not an error: it carries the field's current server state. */
-  setTodayField(shopId: string, key: FieldKey, value: unknown, baseVersion: number | null): Promise<Result<{ version: number; revision: number } | { stale: ServerField }>>;
+  /**
+   * Writes one field of the shop's closing for `businessDate` (the day on screen; another day than the
+   * shop's current one is `wrong_day`). `stale` (baseVersion mismatch) is data, not an error: it carries
+   * the field's current server state. The ack carries the value the server stored.
+   */
+  setTodayField(shopId: string, businessDate: string, key: FieldKey, value: unknown, baseVersion: number | null): Promise<Result<FieldAck | { stale: ServerField }>>;
   /** Realtime channel for the shop (broadcasts + presence). */
   live(shopId: string, me: { name: string }, h: LiveHandlers): LiveChannel;
 }

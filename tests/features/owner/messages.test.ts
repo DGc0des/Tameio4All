@@ -12,7 +12,7 @@ const CONFIG_CODES: Record<ConfigErrorCode, true> = {
 const OWNER_ERRORS: Record<OwnerError['code'], OwnerError> = {
   not_owner: { code: 'not_owner' }, version_conflict: { code: 'version_conflict', currentVersion: 3 },
   staff_name_taken: { code: 'staff_name_taken' }, bad_pin_format: { code: 'bad_pin_format' }, bad_config: { code: 'bad_config' },
-  bad_field: { code: 'bad_field' }, too_many_expenses: { code: 'too_many_expenses' },
+  bad_field: { code: 'bad_field' }, too_many_expenses: { code: 'too_many_expenses' }, wrong_day: { code: 'wrong_day' },
   bad_name: { code: 'bad_name' }, invalid_credentials: { code: 'invalid_credentials' }, email_not_confirmed: { code: 'email_not_confirmed' },
   email_taken: { code: 'email_taken' }, weak_password: { code: 'weak_password' }, rate_limited: { code: 'rate_limited' },
   link_invalid: { code: 'link_invalid' }, session_expired: { code: 'session_expired' }, network: { code: 'network' },

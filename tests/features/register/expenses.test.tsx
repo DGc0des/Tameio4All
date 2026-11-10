@@ -30,7 +30,7 @@ function Harness({ max = 10, history = HISTORY }: { max?: number; history?: Supp
   const binding: FieldBinding = {
     edit: (key, value) => {
       edits.push({ key, value });
-      setPending((p) => [...p, { key, value, businessDate: EMPTY.businessDate, baseVersion: null, queuedOffline: false, seq: p.length + 1 }]);
+      setPending((p) => [...p, { author: 'staff-maria', key, value, businessDate: EMPTY.businessDate, baseVersion: null, queuedOffline: false, seq: p.length + 1 }]);
     },
     flush,
     focus: vi.fn(),
