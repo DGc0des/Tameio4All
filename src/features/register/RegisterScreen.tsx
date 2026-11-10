@@ -48,6 +48,9 @@ type SheetName = 'envelope' | 'submit' | 'cashier';
 
 export const OFFLINE_SUBMIT_REASON = 'Χρειάζεται σύνδεση για υποβολή';
 export const PENDING_SUBMIT_REASON = 'Περιμένει αποθήκευση…';
+export const CONNECTING_SUBMIT_REASON = 'Σύνδεση…';
+/** The engine stopped after a failure the gate did not take over: nothing is saved until «Δοκίμασε ξανά». */
+export const HALTED_SUBMIT_REASON = 'Δεν αποθηκεύεται — δοκίμασε ξανά';
 export const INVALID_CONFIG_MESSAGE = 'Οι ρυθμίσεις του καταστήματος δεν είναι έγκυρες';
 
 export function RegisterScreen(props: RegisterProps) {
@@ -69,7 +72,7 @@ export function RegisterScreen(props: RegisterProps) {
       onServerError(e);
     },
   });
-  const { state, draft, edit, flush, focus, resync, clearNotice } = live;
+  const { state, draft, edit, flush, focus, resync, clearNotice, restart } = live;
   const snapshot = state.snapshot;
   // The closing's pinned config, never device_context's (an older/newer config would compute other totals).
   const config = snapshot !== null && isShopConfig(snapshot.config) ? snapshot.config : null;
@@ -148,11 +151,19 @@ export function RegisterScreen(props: RegisterProps) {
     </header>
   );
   const cashierSheet = active && sheet === 'cashier' && <CashierSheet name={session.name} onSignOut={signOut} onClose={() => setSheet(null)} />;
-  // The engine is offline (or stopped after a failure the gate did not take over); the gate's own banner covers a cached context.
+  // The engine stopped after a failure the gate did not take over (it would have unmounted us): offer a
+  // fresh engine. Otherwise the engine is offline; the gate's own banner covers a cached context.
+  const retryLive = () => {
+    setFatal(null);
+    restart();
+  };
   const banner =
     fatal !== null ? (
       <p className="notice" role="alert">
-        {deviceErrorMessage(fatal)}
+        {deviceErrorMessage(fatal)}{' '}
+        <button type="button" className="btn btn-text" onClick={retryLive}>
+          Δοκίμασε ξανά
+        </button>
       </p>
     ) : (
       !offline &&
@@ -175,9 +186,11 @@ export function RegisterScreen(props: RegisterProps) {
               <p role="alert">{INVALID_CONFIG_MESSAGE}</p>
             </Card>
           ) : (
-            <p className="notice-soft">
-              {state.status === 'offline' ? 'Το ταμείο θα φορτώσει μόλις υπάρξει σύνδεση.' : 'Φόρτωση…'}
-            </p>
+            fatal === null && (
+              <p className="notice-soft">
+                {state.status === 'offline' ? 'Το ταμείο θα φορτώσει μόλις υπάρξει σύνδεση.' : 'Φόρτωση…'}
+              </p>
+            )
           )}
         </main>
         {cashierSheet}
@@ -190,9 +203,10 @@ export function RegisterScreen(props: RegisterProps) {
   const unsaved = state.pending.some((p) => p.businessDate === snapshot.businessDate);
   const submitBlocked =
     submitBlockReason(derived, draft) ??
+    (fatal !== null ? HALTED_SUBMIT_REASON : null) ??
     (offline || state.status === 'offline' ? OFFLINE_SUBMIT_REASON : null) ??
     (unsaved ? PENDING_SUBMIT_REASON : null) ??
-    (state.status !== 'live' ? OFFLINE_SUBMIT_REASON : null);
+    (state.status !== 'live' ? CONNECTING_SUBMIT_REASON : null);
 
   const openSubmit = () => {
     const inputs = JSON.stringify(derived.inputs);

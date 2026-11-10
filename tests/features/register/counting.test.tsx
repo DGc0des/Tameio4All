@@ -72,8 +72,10 @@ describe('CountCard', () => {
     const d = draft({});
     render(<CountCard title="Χαρτονομίσματα" denominations={BILLS} totalCents={0} draft={d} derived={deriveClosing(cfg, d)} binding={binding({ 'd:2000': ['ΝΙΚΟΣ'] })} viewMode="amount" />);
     const row = screen.getByLabelText('20€').closest('.row') as HTMLElement;
-    expect(within(row).getByLabelText('Επεξεργάζεται: ΝΙΚΟΣ').textContent).toBe('ΝΙΚΟΣ');
-    expect(screen.getAllByLabelText(/^Επεξεργάζεται/)).toHaveLength(1);
+    const tag = row.querySelector('.presence') as HTMLElement;
+    expect(tag.textContent).toBe('Επεξεργάζεται: ΝΙΚΟΣ');
+    expect(within(tag).getByText('Επεξεργάζεται:').className).toBe('sr-only');
+    expect(document.querySelectorAll('.presence')).toHaveLength(1);
   });
 });
 
@@ -116,7 +118,7 @@ describe('ChannelsCard', () => {
     expect(b.edit).toHaveBeenCalledWith('c:wolt', { text: '45.60' });
     fireEvent.blur(screen.getByLabelText('WOLT'));
     expect(b.flush).toHaveBeenCalledWith('c:wolt');
-    expect(within(screen.getByLabelText('EFOOD').closest('.row') as HTMLElement).getByLabelText('Επεξεργάζεται: Ιδιοκτήτης')).toBeTruthy();
+    expect((screen.getByLabelText('EFOOD').closest('.row') as HTMLElement).querySelector('.presence')?.textContent).toBe('Επεξεργάζεται: Ιδιοκτήτης');
     expect(screen.getAllByRole('button', { name: /^Άθροισμα για/ })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Άθροισμα για ΚΕΡΜΑΤΑ' }));
     expect(onCalculator).toHaveBeenCalledWith('kermata');

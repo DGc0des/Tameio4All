@@ -257,6 +257,7 @@ describe('network and reconnect', () => {
     act(() => t.ch.emitStatus('live'));
     await settle();
     await settle();
+    await settle();
     expect(t.writer.write).toHaveBeenCalledTimes(2);
     expect(t.writer.write.mock.calls[1]![0]).toMatchObject({ key: 'c:wolt', value: { text: '1' }, baseVersion: null });
     expect(t.r.state.pending).toEqual([]);
@@ -489,5 +490,46 @@ describe('fix round 1', () => {
     expect(t.r.state.snapshot?.fields['c:wolt']).toMatchObject({ version: 3, value: { text: '9' } });
     expect(t.r.state.snapshot?.revision).toBe(3);
     expect(wolt(t.r)).toBe('9');
+  });
+});
+
+describe('restart after a fatal error', () => {
+  it('disposes the halted engine and starts a fresh one: channel reopened, persisted queue sent', async () => {
+    const t = await mount(snap());
+    t.writer.write.mockImplementationOnce(() => Promise.resolve(failR({ code: 'unknown', detail: 'boom' })));
+    act(() => { t.r.edit('c:wolt', { text: '7' }); t.r.flush(); });
+    await settle();
+    expect(t.onFatal).toHaveBeenCalledTimes(1);
+    expect(t.r.state.status).toBe('offline');
+    const first = t.channels[0]!;
+    act(() => t.r.restart());
+    await settle();
+    expect(first.close).toHaveBeenCalledTimes(1);
+    expect(t.channels).toHaveLength(2);
+    act(() => t.channels[1]!.emitStatus('live'));
+    await settle();
+    expect(t.writer.write).toHaveBeenCalledTimes(2);
+    expect(t.state.server.fields['c:wolt']?.value).toEqual({ text: '7' });
+    expect(t.r.state.pending).toEqual([]);
+    expect(wolt(t.r)).toBe('7');
+  });
+
+  it('after a failed first load, restart loads the snapshot; under StrictMode one channel stays open', async () => {
+    const fw = fakeWriter(snap([field('c:wolt', '3', 1)]));
+    // Fails until the restart (StrictMode's discarded first mount loads too).
+    fw.writer.load.mockImplementation(() => Promise.resolve(failR({ code: 'unknown', detail: '500' })));
+    const onFatal = vi.fn();
+    const store = memoryStore();
+    const hook = renderHook(() => useLiveClosing(fw.writer, store, SHOP, ME, NOW, { onFatal }), { reactStrictMode: true });
+    await settle();
+    expect(onFatal).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.draft).toBeNull();
+    fw.writer.load.mockImplementation(() => Promise.resolve(okR(fw.state.server)));
+    act(() => hook.result.current.restart());
+    await settle();
+    act(() => fw.ch.emitStatus('live'));
+    await settle();
+    expect(wolt(hook.result.current)).toBe('3');
+    expect(fw.channels.filter((c) => c.close.mock.calls.length === 0)).toHaveLength(1);
   });
 });

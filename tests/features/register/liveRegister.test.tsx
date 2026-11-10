@@ -7,7 +7,7 @@ import { memoryStore, type KeyValueStore } from '../../../src/data/local/storage
 import type { DeviceApi, DeviceContext, StaffSession } from '../../../src/data/remote/deviceApi';
 import { PhoneApp } from '../../../src/features/phone/PhoneApp';
 import { RegisterScreen } from '../../../src/features/register/RegisterScreen';
-import { FAKE_CONFIG_ID, FAKE_SHOP_ID, fakeDeviceApi, fakeServer, type FakeServer } from '../phone/fakeDeviceApi';
+import { FAKE_CONFIG_ID, FAKE_SHOP_ID, fail, fakeDeviceApi, fakeLive, fakeServer, ok, type FakeServer } from '../phone/fakeDeviceApi';
 
 afterEach(cleanup);
 
@@ -22,11 +22,12 @@ interface Phone {
   api: DeviceApi;
   store: KeyValueStore;
   q: ReturnType<typeof within>;
+  container: HTMLElement;
   onServerError: ReturnType<typeof vi.fn>;
 }
 
-function phone(server: FakeServer, session: StaffSession, store: KeyValueStore = memoryStore()): Phone {
-  const api = fakeDeviceApi({}, server);
+function phone(server: FakeServer, session: StaffSession, store: KeyValueStore = memoryStore(), overrides: Partial<DeviceApi> = {}): Phone {
+  const api = fakeDeviceApi(overrides, server);
   const onServerError = vi.fn();
   const { container } = render(
     <RegisterScreen
@@ -46,8 +47,11 @@ function phone(server: FakeServer, session: StaffSession, store: KeyValueStore =
       onServerError={onServerError}
     />,
   );
-  return { api, store, q: within(container), onServerError };
+  return { api, store, q: within(container), container, onServerError };
 }
+
+/** Presence pills' full text (visible name + screen-reader prefix). */
+const tags = (el: HTMLElement) => [...el.querySelectorAll('.presence')].map((t) => t.textContent);
 
 /** Lets fake writes, broadcasts and presence (microtasks) land. */
 const settle = () =>
@@ -115,13 +119,15 @@ describe('phones on the shared live closing', () => {
     fireEvent.focus(field(a, '50€'));
     await settle();
     const row = field(b, '50€').closest('.row') as HTMLElement;
-    expect(within(row).getByLabelText('Επεξεργάζεται: ΜΑΡΙΑ')).toBeTruthy();
-    expect(b.q.queryAllByLabelText(/^Επεξεργάζεται/)).toHaveLength(1);
+    // Visible name, read out as «Επεξεργάζεται: ΜΑΡΙΑ».
+    expect(tags(row)).toEqual(['Επεξεργάζεται: ΜΑΡΙΑ']);
+    expect(within(row).getByText('ΜΑΡΙΑ')).toBeTruthy();
+    expect(tags(b.container)).toHaveLength(1);
     // Never on the phone's own view.
-    expect(a.q.queryByLabelText('Επεξεργάζεται: ΜΑΡΙΑ')).toBeNull();
+    expect(tags(a.container)).toEqual([]);
     fireEvent.blur(field(a, '50€'));
     await settle();
-    expect(b.q.queryByLabelText('Επεξεργάζεται: ΜΑΡΙΑ')).toBeNull();
+    expect(tags(b.container)).toEqual([]);
   });
 
   it('Υποβολή waits while an edit is not saved yet', async () => {
@@ -223,7 +229,7 @@ describe('phones on the shared live closing', () => {
     );
     await settle();
     expect(server.openChannels()).toBe(1);
-    const p: Phone = { api, store: memoryStore(), q: within(container), onServerError: vi.fn() };
+    const p: Phone = { api, store: memoryStore(), q: within(container), container, onServerError: vi.fn() };
     typeAndLeave(p, '100€', '200');
     await settle();
     expect(server.fields['d:10000']?.value).toEqual({ text: '200', mode: 'amount' });
@@ -234,6 +240,54 @@ describe('phones on the shared live closing', () => {
     expect(server.openChannels()).toBe(2);
     cleanup();
     expect(server.openChannels()).toBe(0);
+  });
+});
+
+describe('after a failure the gate does not take over', () => {
+  it('a failed first load shows the error and «Δοκίμασε ξανά»; the retry opens the register', async () => {
+    const server = fakeServer();
+    const getOpenClosing = vi.fn<DeviceApi['getOpenClosing']>(() => fail({ code: 'unknown', detail: '500' }));
+    const p = phone(server, MARIA, memoryStore(), { getOpenClosing });
+    await settle();
+    expect(p.q.getByRole('alert').textContent).toContain('Κάτι πήγε στραβά.');
+    expect(p.onServerError).toHaveBeenCalledWith({ code: 'unknown', detail: '500' });
+    expect(p.q.queryByText('Το ταμείο θα φορτώσει μόλις υπάρξει σύνδεση.')).toBeNull();
+    expect(p.q.queryByLabelText('100€')).toBeNull();
+    getOpenClosing.mockImplementation(() => ok(server.snapshot()));
+    fireEvent.click(p.q.getByRole('button', { name: 'Δοκίμασε ξανά' }));
+    await settle();
+    expect(p.q.getByLabelText('100€')).toBeTruthy();
+    expect(p.q.queryByRole('alert')).toBeNull();
+    expect(server.openChannels()).toBe(1);
+  });
+
+  it('a write stopped mid-session blocks Υποβολή with «Δεν αποθηκεύεται»; the retry sends the queued edit', async () => {
+    const server = fakeServer();
+    const setField = vi.fn<DeviceApi['setField']>(() => fail({ code: 'unknown', detail: '503' }));
+    const p = phone(server, MARIA, memoryStore(), { setField });
+    await settle();
+    typeAndLeave(p, '100€', '800');
+    await settle();
+    expect(p.q.getByRole('alert').textContent).toContain('Κάτι πήγε στραβά.');
+    expect(barSubmit(p).disabled).toBe(true);
+    expect(p.q.getByText('Δεν αποθηκεύεται — δοκίμασε ξανά')).toBeTruthy();
+    expect(p.q.queryByText('Χρειάζεται σύνδεση για υποβολή')).toBeNull();
+    setField.mockImplementation((...a) => server.setField(...a));
+    fireEvent.click(p.q.getByRole('button', { name: 'Δοκίμασε ξανά' }));
+    await settle();
+    expect(server.fields['d:10000']?.value).toEqual({ text: '800', mode: 'amount' });
+    expect(field(p, '100€').value).toBe('800');
+    expect(barSubmit(p).disabled).toBe(false);
+    expect(server.openChannels()).toBe(1);
+  });
+
+  it('while connecting, Υποβολή says «Σύνδεση…»', async () => {
+    const server = fakeServer();
+    // A channel that never reaches live.
+    const p = phone(server, MARIA, memoryStore(), { live: vi.fn((_s, _m, h) => fakeLive(h)) });
+    await settle();
+    expect(barSubmit(p).disabled).toBe(true);
+    expect(p.q.getByText('Σύνδεση…')).toBeTruthy();
   });
 });
 

@@ -36,7 +36,8 @@ export function PresenceTags({ binding, keys }: { binding: FieldBinding; keys: r
   return (
     <>
       {names.map((name) => (
-        <span key={name} className="presence" aria-label={`Επεξεργάζεται: ${name}`}>
+        <span key={name} className="presence">
+          <span className="sr-only">Επεξεργάζεται: </span>
           {name}
         </span>
       ))}

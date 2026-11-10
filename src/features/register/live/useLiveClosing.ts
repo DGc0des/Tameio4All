@@ -30,6 +30,11 @@ export interface LiveClosing {
   resync(): Promise<void>;
   /** The UI shows `state.notice` once, then clears it. */
   clearNotice(): void;
+  /**
+   * Disposes the engine (closing its channel) and starts a fresh one from what is persisted (queue +
+   * cached snapshot): the way out of a halted engine after a fatal error the caller did not take over.
+   */
+  restart(): void;
 }
 
 const fresh = (store: KeyValueStore, shopId: string): EngineState =>
@@ -60,6 +65,8 @@ export function useLiveClosing(
   const [es, setEs] = useState<EngineState>(() => fresh(store, shopId));
   const engineRef = useRef<SyncEngine | null>(null);
   const name = me.name;
+  // Bumped by restart(): a new effect run disposes the old engine (cleanup first) and starts another.
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     const engine = createSyncEngine({
@@ -78,17 +85,18 @@ export function useLiveClosing(
       engine.dispose();
       if (engineRef.current === engine) engineRef.current = null;
     };
-  }, [store, shopId, name]);
+  }, [store, shopId, name, generation]);
 
   const edit = useCallback((key: FieldKey, value: unknown) => engineRef.current?.edit(key, value), []);
   const flush = useCallback((key?: FieldKey) => engineRef.current?.flush(key), []);
   const focus = useCallback((key: FieldKey | null) => engineRef.current?.focus(key), []);
   const resync = useCallback(() => engineRef.current?.resync() ?? Promise.resolve(), []);
   const clearNotice = useCallback(() => engineRef.current?.clearNotice(), []);
+  const restart = useCallback(() => setGeneration((g) => g + 1), []);
 
   const state = useMemo(() => toLiveState(es), [es]);
   const { snapshot, pending } = es;
   const draft = useMemo(() => visibleDraft({ snapshot, pending }), [snapshot, pending]);
 
-  return { state, draft, edit, flush, focus, resync, clearNotice };
+  return { state, draft, edit, flush, focus, resync, clearNotice, restart };
 }
