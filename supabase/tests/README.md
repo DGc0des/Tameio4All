@@ -24,5 +24,7 @@ partitions once it is used), the broadcast/policy assertions cannot run. In that
 `NOTICE ... SKIPPED: realtime.messages has no partitions here` and skip those blocks (080 T2 message count +
 payload, 080 I2 presence-only insert policy, 090 T8 `submitted` payload); everything else still runs. A skipped
 block is not a pass: check `select count(*) from pg_inherits where inhparent = 'realtime.messages'::regclass`
-and re-run once it is > 0. Last full run (2026-11-10, dev) had partitions, so nothing skipped.
+and re-run once it is > 0. Last full run (2026-11-10, dev) had partitions, so nothing skipped; 080 and 090 were
+re-run whole on 2026-11-11 after `20261108000003_live_fixes` (owner writes take the business date; acks carry the
+stored value), partitions present, nothing skipped.
 

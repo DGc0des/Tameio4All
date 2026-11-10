@@ -15,7 +15,8 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   closing's fields (`draftFromFields`).
 - `src/features/register/live/` — the live shared closing engine. `fields.ts` (field model, key regex, value
   guards, `Snapshot`/`PendingEdit`/`ServerField` types), `merge.ts` (pure snapshot + pending edits → draft,
-  last-write-wins reducers), `syncEngine.ts` (send queue, replay, stale/wrong_day handling),
+  last-write-wins reducers, the +1 revision rule), `syncEngine.ts` (per-author send queue, replay, stale/wrong_day
+  handling, sign-out `drain`),
   `useLiveClosing.ts` (React binding; takes a `Writer`).
 - `src/data/local/` — the only code that touches localStorage: theme, `phone.ts` (stored staff session +
   cached device context) and `openClosing.ts` (per shop: cached snapshot, pending edit queue, entry mode).
@@ -144,16 +145,19 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   | `e:<id>:d` / `e:<id>:a` | `{text}` (description / amount; only after `e:<id>` exists) |
 
 - **Cross-file invariant: field keys and values.** The key regex `^(d:[0-9]{1,6}|c:[A-Za-z0-9_-]{1,40}|e:[A-Za-z0-9-]{1,64}(:[da])?)$`
-  and the exact key sets/value shapes live in SQL (`private.closing_field_ok`, migrations `…0001`, `…0001b`,
-  `…0001c`) AND in `fields.ts` (`KEY_RE`, `isFieldValue`, `parseKey`). Change one side → new migration + same
+  and the exact key sets/value shapes live in SQL (`private.closing_field_ok`, migrations `…0001`, `…0001b`)
+  AND in `fields.ts` (`KEY_RE`, `isFieldValue`, `parseKey`). Change one side → new migration + same
   commit. Length is counted in code points (`char_length` in SQL; the TS guard must count the same way, not
   `.length`). The SQL regex is looser than TS in one place: it accepts non-canonical keys such as `d:0100`;
   `parseKey` rejects them, so a bad field must be dropped individually when parsing a snapshot, never null the
   whole snapshot.
 - **One write path.** Phones write only through `set_closing_field(token, date, key, value, base_version)`, owners
-  through `owner_set_closing_field(shop, key, value, base_version)`. The function validates, stamps the author
+  through `owner_set_closing_field(shop, date, key, value, base_version)` (migration `…0003_live_fixes`; the date is
+  the snapshot's — the day on screen — and anything but the shop's business date is `wrong_day`, like the phone).
+  Both go through `private.write_closing_field` (latest body: `…0003`), which validates, stamps the author
   (expense `addedBy` is set server-side on creation and kept on later writes), bumps the field `version` and the
-  closing `revision`, and broadcasts a `field` event on `shop:<shopId>` **inside the function** (`realtime.send`,
+  closing `revision`, returns `{ok:true, version, revision, value}` — `value` is what was **stored** (the client's
+  ack applies it, never only what it sent: the author may differ) — and broadcasts a `field` event on `shop:<shopId>` **inside the function** (`realtime.send`,
   private). Clients may insert only `presence` rows into `realtime.messages` (policy: `extension = 'presence'`
   and `can_use_shop_topic`); they can never forge a `field`/`submitted` broadcast. Never add another write path.
 - **Last-write-wins + optional stale check.** A write with `base_version = null` always lands (LWW); a write with
@@ -161,22 +165,47 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   Rejected writes do not bump `revision`. The expense cap (`maxExpenses` of the pinned config) counts visible
   (not removed) lines; creating or un-removing a line needs a free slot (`too_many_expenses`).
 - **Offline replay.** The client keeps a pending edit queue per shop (`data/local/openClosing.ts`), each edit with
-  its `baseVersion`; replay sends them in order. A persisted item whose base was `null` gets a base from the
+  its `baseVersion` and its **author** (`PendingEdit.author`: the cashier's staff id, or `OWNER_QUEUE_AUTHOR` =
+  `'owner'`); replay sends them in order. **The queue is per author:** an engine (`EngineState.author`, from
+  `useLiveClosing`'s `me.id`) loads, shows and sends only its author's items — they go out with that person's
+  credentials, so cashier A's unsent edits are never sent as cashier B, nor the owner's as a phone's in a shared
+  browser. Other authors' items stay stored, hidden; `savePending(store, shop, author, mine, currentDate)` is a
+  read-modify-write that keeps them and drops other authors' items of a day before `currentDate` (unsendable).
+  An item stored without an author (pre-tagging) fails the shape check and is dropped. **Sign-out** drains first:
+  `drain(SIGN_OUT_DRAIN_MS = 3000)` flushes typing and waits until nothing of the day is queued or in flight (at
+  once `false` when offline/halted), then `staff_sign_out`; whatever is left stays stored under the cashier. A persisted item whose base was `null` gets a base from the
   reloaded snapshot on startup (otherwise a replay after a remount would silently overwrite a newer value).
   `stale` → adopt the server value (a stale write with the same value counts as an ack), `network` → keep and
-  retry (fixed 3 s, no backoff), `wrong_day` → drop edits of the old day, tell the cashier, resync,
+  retry (fixed 3 s, no backoff), `wrong_day` (phone and owner) → drop edits of the old day, tell the person, resync,
   `bad_field`/`too_many_expenses` → drop the item, notice, resync; any other error (`session_invalid`,
   `device_revoked`, …) → keep the item, halt the engine and call `onFatal` (phone: `onServerError` → gate; owner:
   `ownerErrorMessage`). A halted engine reports non-live; `restart()` resumes it.
-- **`useLiveClosing`** needs stable `store`, `shopId` and `me.name` (they are effect dependencies — an inline
-  object restarts the channel on every render). Do not render boxes while the draft is `null` (no snapshot yet).
+- **Revision: the +1 rule.** The local `snapshot.revision` (what Υποβολή sends) means "every write up to here is
+  in this snapshot". It advances only when an ack or broadcast carries exactly `revision + 1` (whether or not that
+  field was newer than ours — a superseded write still counts); a higher one is a gap (a broadcast late or lost):
+  the field is applied by its own version rule, the revision is kept, and the engine resyncs. A load takes the
+  higher of its revision and ours (ours is always complete, and the merge keeps our newer fields). Never use
+  `max` on an ack/broadcast revision: a submit could then pass the server's revision check without a write the
+  phone never saw. A wrong guess costs at most one extra `draft_changed`.
+- **`useLiveClosing`** needs stable `store`, `shopId`, `me.name` and `me.id` (they are effect dependencies — an
+  inline object restarts the channel on every render; RegisterScreen memoizes `me`). Do not render boxes while the
+  draft is `null` (no snapshot yet). RegisterScreen, while the gate is online, also treats a cached snapshot whose
+  `businessDate` is not `ctx.businessDate` as no snapshot (startup shows «Φόρτωση…», never yesterday's boxes:
+  anything typed there would be tagged with the old day and dropped).
 - **Channel.** At most one live channel per shop on the shared client at a time: close before reopen
   (`openShopChannel` waits for the old same-topic channel to leave; two simultaneous wrappers for one shop clash).
   Authorization = private channel + `realtime.messages` policies calling `private.can_use_shop_topic(topic)`:
   owner of the shop, or a phone with a live staff session in that shop. A revoked phone / deactivated cashier /
-  signed-out token loses access and writes.
+  signed-out token loses **writes** at once (every call re-checks the session) and cannot **join** the channel.
+  Known limit: Realtime checks the policy at channel join (and on token refresh), not per message — a client
+  already joined keeps *receiving* broadcasts until it rejoins or its access token is refreshed. Likewise an idle
+  phone keeps showing yesterday's numbers after the day change until something makes it resync (a write, a
+  broadcast of the new day, a reconnect, a reload).
+  Known clash: an owner signing in on a paired phone's browser leaves the register mounted-but-hidden, so opening
+  «Σήμερα» for the same shop there would open a second channel on one topic (see `live.ts`).
 - **Presence** (who is looking at the register, `name` only) is the only thing clients publish directly.
-  Owner presence name is «Ιδιοκτήτης».
+  Owner presence name is «Ιδιοκτήτης». Presence names are self-declared by clients (cosmetic only; nothing
+  trusts them — authorship of fields comes from the server).
 - **Submit.** `submit_closing(token, config_id, date, inputs, revision, key)` (the 5-arg stage-1 form is gone).
   Order of checks: session → date/inputs → idempotency-key lookup (a repeat is answered before anything else) →
   `wrong_day` → `config_mismatch` (config must be the closing's pinned one) → revision. A `revision` that is not
@@ -194,14 +223,17 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
   resyncs and asks the cashier to review); every other submit/suggestion failure does (the gate decides). The
   register submits only through `DeviceApi.submit` as the signed-in cashier; nothing is stored as a local
   "submission".
-- **Wrong day.** The server only accepts writes and submits for the session's business date (`wrong_day`);
-  nothing is silently written to another day. The client drops wrong-day pending edits with a visible notice.
+- **Wrong day.** The server only accepts writes and submits for the session's business date (owner writes: the
+  shop's business date) (`wrong_day`); nothing is silently written to another day. The client drops wrong-day pending edits with a visible notice.
 - **Local keys.** Owner and phone share the `openClosing` local keys per shop in one browser (same shop → same
-  cached snapshot / queue). Stage-1 keys `draft`, `draft-submitted`, `unsent` are no longer read or written
+  cached snapshot; one queue key holding everyone's items, each engine using only its author's). Stage-1 keys `draft`, `draft-submitted`, `unsent` are no longer read or written
   (`drafts.ts`/`useDraftAutosave`/the unsent-draft notice were removed); they may linger on devices that ran
   stage 1 and are harmless.
 - Expense suggestions come from `DeviceApi.suggestionData` (refetched after each successful submit); the owner
   Today view has no suggestion history.
+- **Owner «Σήμερα»** shows the same boxes, totals and Φάκελος as the register: it reuses `LiveClosingView`, the
+  register's `BottomBar` (without `onSubmit` there is no Υποβολή button) and `EnvelopeSheet` over the same
+  `deriveClosing` → `planEnvelope` result. No submit from the owner.
 
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.
