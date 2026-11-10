@@ -75,7 +75,7 @@ const newPresenceKey = (): string =>
     ? crypto.randomUUID()
     : `p-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 
-/** How long a reopen waits for an older channel of the same topic to finish leaving. */
+/** After this long waiting for an older channel of the same topic to finish leaving, the reopen reports offline (and keeps waiting). */
 export const REMOVAL_TIMEOUT_MS = 3000;
 
 /**
@@ -90,12 +90,6 @@ const removalsOf = (client: object): Map<string, Promise<unknown>> => {
   if (!m) removals.set(client, (m = new Map()));
   return m;
 };
-const withTimeout = (p: Promise<unknown>): Promise<unknown> =>
-  new Promise((resolve) => {
-    const t = setTimeout(resolve, REMOVAL_TIMEOUT_MS);
-    void p.then(() => { clearTimeout(t); resolve(undefined); });
-  });
-
 /**
  * Listens to the shop's private realtime topic and tracks presence. Clients never broadcast (the
  * server does, from the write functions). After close() no handler is called again.
@@ -106,8 +100,9 @@ const withTimeout = (p: Promise<unknown>): Promise<unknown> =>
  * supabase-js hands back an existing channel for the same topic, and a closed channel only leaves
  * its registry after an async unsubscribe. So the channel is created only after any older one for
  * this topic has been removed; otherwise reopening (StrictMode, gate reload) could reuse the dying one.
- * If the old channel is still registered after REMOVAL_TIMEOUT_MS the new one is NOT created: the status
- * goes 'offline' and re-opening later (a reconnect/resync) is the caller's job.
+ * A leave can take up to realtime-js's 10 s timeout (dead socket after a phone resume): after
+ * REMOVAL_TIMEOUT_MS the status goes 'offline' and the open keeps waiting, then continues offline -> live.
+ * Contract: one live channel per shop at a time on the shared client; close() before reopening.
  */
 export function openShopChannel(client: SupabaseClient, shopId: string, me: { name: string }, h: LiveHandlers): LiveChannel {
   const selfKey = newPresenceKey();
@@ -132,28 +127,41 @@ export function openShopChannel(client: SupabaseClient, shopId: string, me: { na
     if (closed) return;
     const inflight = removalsOf(client);
     const registered = () => client.getChannels().filter((c) => c.topic === `realtime:${topic}`);
+    // Reports offline once if the wait is slow, but never gives up: a removal always settles.
+    let announced = false;
+    const wait = async (p: Promise<unknown>) => {
+      const t = setTimeout(() => {
+        if (closed || announced) return;
+        announced = true;
+        h.onStatus('offline');
+        h.onPresence([]);
+      }, REMOVAL_TIMEOUT_MS);
+      try {
+        await p;
+      } finally {
+        clearTimeout(t);
+      }
+    };
     try {
-      const pending = inflight.get(topic);
-      if (pending) await withTimeout(pending);
-      if (closed) return;
-      if (!inflight.has(topic)) {
-        for (const old of registered()) {
+      for (let own = 0; own < 3; ) {
+        const pending = inflight.get(topic);
+        if (pending) {
+          await wait(pending);
+        } else {
+          const old = registered()[0];
+          if (!old) break;
+          own++;
           const p: Promise<unknown> = Promise.resolve(client.removeChannel(old)).catch(() => {});
           inflight.set(topic, p);
           void p.then(() => { if (inflight.get(topic) === p) inflight.delete(topic); });
-          await withTimeout(p);
-          if (closed) return;
+          await wait(p);
         }
+        if (closed) return;
       }
     } catch {
       /* best effort */
     }
     if (closed) return;
-    if (registered().length > 0) {
-      h.onStatus('offline');
-      h.onPresence([]);
-      return;
-    }
     const mine = client.channel(topic, { config: { private: true, presence: { key: selfKey } } });
     ch = mine;
     mine.on('broadcast', { event: 'field' }, (msg: { payload?: unknown }) => {

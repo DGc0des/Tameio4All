@@ -307,21 +307,65 @@ describe('openShopChannel', () => {
   });
 });
 
-describe('openShopChannel removal that never settles', () => {
-  it('reports offline after the timeout instead of hanging or reusing the old channel', async () => {
+describe('openShopChannel slow removal', () => {
+  it('reports offline at 3 s, keeps waiting, then ends live on a fresh channel with self excluded', async () => {
     vi.useFakeTimers();
     try {
-      const c = channelClient({ neverRemove: true });
-      const old = c.client.channel('shop:s');
+      const c = channelClient();
+      const first = openShopChannel(c.client, 's', { name: 'A' }, mkHandlers());
+      await vi.advanceTimersByTimeAsync(1);
+      const old = c.ch;
+      // the old leave takes 8 s
+      c.raw.removeChannel.mockImplementationOnce(async () => {
+        await new Promise((r) => setTimeout(r, 8000));
+        c.registry.splice(c.registry.indexOf(old), 1);
+        return 'ok';
+      });
+      first.close();
       const h = mkHandlers();
-      openShopChannel(c.client, 's', { name: 'x' }, h);
-      await vi.advanceTimersByTimeAsync(REMOVAL_TIMEOUT_MS - 100);
-      expect(h.onStatus).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(200);
-      expect(h.onStatus).toHaveBeenLastCalledWith('offline');
+      openShopChannel(c.client, 's', { name: 'ΜΑΡΙΑ' }, h);
+      await vi.advanceTimersByTimeAsync(REMOVAL_TIMEOUT_MS + 100);
+      expect(h.onStatus.mock.calls.map((x) => x[0])).toEqual(['connecting', 'offline']);
       expect(h.onPresence).toHaveBeenCalledWith([]);
-      expect(c.created).toEqual([old]);
+      expect(c.created).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(c.created).toHaveLength(2);
+      const fresh = c.ch;
+      expect(fresh).not.toBe(old);
+      fresh.status('SUBSCRIBED');
+      expect(h.onStatus).toHaveBeenLastCalledWith('live');
+      const key = fresh.opts.config.presence.key;
+      fresh.setPresence({ [key]: [{ name: 'ΜΑΡΙΑ', focus: null }], o: [{ name: 'ΝΙΚΟΣ', focus: null }] });
+      fresh.handlers['presence:sync']!({});
+      expect(h.onPresence).toHaveBeenLastCalledWith([{ name: 'ΝΙΚΟΣ', focus: null }]);
       expect(c.raw.removeChannel).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('close() during the wait creates no channel and calls no handler afterwards', async () => {
+    vi.useFakeTimers();
+    try {
+      const c = channelClient();
+      const first = openShopChannel(c.client, 's', { name: 'A' }, mkHandlers());
+      await vi.advanceTimersByTimeAsync(1);
+      const old = c.ch;
+      c.raw.removeChannel.mockImplementationOnce(async () => {
+        await new Promise((r) => setTimeout(r, 8000));
+        c.registry.splice(c.registry.indexOf(old), 1);
+        return 'ok';
+      });
+      first.close();
+      const h = mkHandlers();
+      const second = openShopChannel(c.client, 's', { name: 'B' }, h);
+      await vi.advanceTimersByTimeAsync(1000);
+      second.close();
+      const calls = h.onStatus.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(c.created).toHaveLength(1);
+      expect(h.onStatus.mock.calls.length).toBe(calls);
+      expect(h.onPresence).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
