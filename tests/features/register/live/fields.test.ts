@@ -47,3 +47,25 @@ describe('isFieldValue (mirrors closing_field_ok)', () => {
     expect(isFieldValue('bad', { text: '' })).toBe(false);
   });
 });
+
+describe('R11 twin-of-SQL strictness', () => {
+  const author = { kind: 'owner' };
+  it('rejects extra properties (exact key sets)', () => {
+    expect(isFieldValue('c:w', { text: '1', extra: 1 })).toBe(false);
+    expect(isFieldValue('e:1:a', { text: '1', mode: 'count' })).toBe(false);
+    expect(isFieldValue('d:5', { text: '1', mode: 'count', extra: 1 })).toBe(false);
+    expect(isFieldValue('e:1', { addedBy: author, removed: false, order: 5, extra: 1 })).toBe(false);
+    expect(isFieldValue('e:1', { addedBy: author, removed: false })).toBe(false);
+  });
+  it('counts code points like char_length', () => {
+    expect(isFieldValue('c:w', { text: '😀'.repeat(200) })).toBe(true);
+    expect(isFieldValue('c:w', { text: '😀'.repeat(201) })).toBe(false);
+  });
+  it('parseKey rejects d: keys with a leading zero (and zero denom)', () => {
+    expect(parseKey('d:0100')).toBeNull();
+    expect(parseKey('d:05')).toBeNull();
+    expect(parseKey('d:0')).toBeNull();
+    expect(parseKey('d:100')).toEqual({ kind: 'denom', denom: 100 });
+    expect(isFieldValue('d:0100', { text: '', mode: 'amount' })).toBe(false);
+  });
+});

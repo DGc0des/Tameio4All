@@ -30,9 +30,12 @@ export type ParsedKey =
   | { kind: 'expenseDesc'; id: string }
   | { kind: 'expenseAmount'; id: string };
 
-/** null for anything that does not match KEY_RE. */
+/** null for anything that does not match KEY_RE, and for non-canonical denomination keys (leading zero / zero). */
 export function parseKey(key: string): ParsedKey | null {
   if (!isFieldKey(key)) return null;
+  // KEY_RE is the SQL twin (it accepts d:0100); here a denomination must be a canonical positive
+  // integer so two keys can never name one entry.
+  if (key.startsWith('d:') && !/^d:[1-9][0-9]{0,5}$/.test(key)) return null;
   if (key.startsWith('d:')) return { kind: 'denom', denom: Number(key.slice(2)) };
   if (key.startsWith('c:')) return { kind: 'channel', id: key.slice(2) };
   const rest = key.slice(2);
@@ -49,17 +52,22 @@ export interface ExpenseMeta {
 
 type Obj = Record<string, unknown>;
 const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
-const isText = (x: unknown): x is string => typeof x === 'string' && x.length <= MAX_TEXT;
+const isText = (x: unknown): x is string => typeof x === 'string' && [...x].length <= MAX_TEXT; // code points, like SQL char_length
 
-export const isTextValue = (v: unknown): v is { text: string } => isObj(v) && isText(v.text);
+// Exact key sets, like SQL (`v_keys = array[...]`): no extra properties.
+const hasKeys = (v: Obj, keys: string[]): boolean => {
+  const k = Object.keys(v);
+  return k.length === keys.length && keys.every((x) => k.includes(x));
+};
+export const isTextValue = (v: unknown): v is { text: string } => isObj(v) && hasKeys(v, ['text']) && isText(v.text);
 export const isDenomValue = (v: unknown): v is { text: string; mode: EntryMode } =>
-  isTextValue(v) && ((v as Obj).mode === 'amount' || (v as Obj).mode === 'count');
+  isObj(v) && hasKeys(v, ['mode', 'text']) && isText(v.text) && (v.mode === 'amount' || v.mode === 'count');
 // Stricter than SQL (which only needs an object): the server always writes a real author, and a
 // line whose author is unreadable could not be submitted anyway.
 const isAuthor = (x: unknown): x is ExpenseAuthor =>
   isObj(x) && (x.kind === 'owner' || (x.kind === 'staff' && typeof x.id === 'string' && x.id.length > 0));
 export const isExpenseMeta = (v: unknown): v is ExpenseMeta =>
-  isObj(v) && typeof v.removed === 'boolean' && typeof v.order === 'number' && Number.isFinite(v.order) && isAuthor(v.addedBy);
+  isObj(v) && hasKeys(v, ['addedBy', 'order', 'removed']) && typeof v.removed === 'boolean' && typeof v.order === 'number' && Number.isFinite(v.order) && isAuthor(v.addedBy);
 
 /** True when `value` has the shape the server accepts for `key`. */
 export function isFieldValue(key: FieldKey, value: unknown): boolean {
