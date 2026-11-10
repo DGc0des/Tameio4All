@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { joinJuicePreset } from '../../../src/core/presets';
 import { loadEntryMode } from '../../../src/data/local/openClosing';
@@ -18,7 +18,6 @@ const SHOP = '3f2c1a9e-5b7d-4c8e-9f10-112233445566';
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   id: 'oc-1', businessDate: '2026-11-07', configId: 'c1', config: joinJuicePreset, revision: 0, lastSubmit: null, fields: {}, ...over,
 });
-const settle = () => act(async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); });
 
 function setup(over: Parameters<typeof fakeApi>[0] = {}) {
   const channels: FakeLive[] = [];
@@ -35,45 +34,62 @@ function setup(over: Parameters<typeof fakeApi>[0] = {}) {
   const view = render(<TodayScreen api={api} shopId={SHOP} store={store} now={() => new Date(2026, 10, 7, 22, 0)} newId={() => 'id-1'} />);
   return { api, store, channels, ...view };
 }
+/** Waits for the closing to render. */
+const loaded = () => screen.findByLabelText('100€');
 const box = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
+
+const type = (value: string) => {
+  fireEvent.focus(box('100€'));
+  fireEvent.change(box('100€'), { target: { value } });
+  fireEvent.blur(box('100€'));
+};
+const FIELD = { key: 'd:10000', value: { text: '300', mode: 'amount' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T20:00:00Z', revision: 1, businessDate: '2026-11-07' };
 
 describe('TodayScreen', () => {
   it('shows an empty closing with the not-submitted line and no submit button', async () => {
     setup();
-    await settle();
-    expect(box('100€').value).toBe('');
+    expect((await loaded() as HTMLInputElement).value).toBe('');
     expect(screen.getByText('Δεν έχει υποβληθεί ακόμα')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Υποβολή' })).toBeNull();
   });
 
   it('shows who submitted and when', async () => {
     setup({ todayClosing: vi.fn(() => ok(snap({ lastSubmit: { closingId: 'x', staffName: 'ΜΑΡΙΑ', at: '2026-11-07T20:30:00Z' } }))) });
-    await settle();
-    expect(screen.getByText(/^Υποβλήθηκε \d\d:\d\d · ΜΑΡΙΑ$/)).toBeTruthy();
+    expect(await screen.findByText(/^Υποβλήθηκε \d\d:\d\d · ΜΑΡΙΑ$/)).toBeTruthy();
   });
 
-  it('an owner edit calls setTodayField', async () => {
+  it('an owner edit on a live channel calls setTodayField with a null base version', async () => {
     const { api, channels } = setup();
-    await settle();
+    await loaded();
     act(() => channels[0]!.emitStatus('live'));
-    fireEvent.focus(box('100€'));
-    fireEvent.change(box('100€'), { target: { value: '500' } });
-    fireEvent.blur(box('100€'));
-    await settle();
-    expect(api.setTodayField).toHaveBeenCalledWith(SHOP, 'd:10000', { text: '500', mode: 'amount' }, 0);
+    // The live status triggers a resync; wait for it to be asked and answered.
+    await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    type('500');
+    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledWith(SHOP, 'd:10000', { text: '500', mode: 'amount' }, null));
+  });
+
+  it('an edit while connecting is held back, then sent with base version 0 once live', async () => {
+    const { api, channels } = setup();
+    await loaded();
+    type('500');
+    expect(api.setTodayField).not.toHaveBeenCalled();
+    act(() => channels[0]!.emitStatus('live'));
+    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledWith(SHOP, 'd:10000', { text: '500', mode: 'amount' }, 0));
   });
 
   it('a broadcast updates the view', async () => {
     const { channels } = setup();
-    await settle();
-    act(() => channels[0]!.emitField({ key: 'd:10000', value: { text: '300', mode: 'amount' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T20:00:00Z', revision: 1, businessDate: '2026-11-07' }));
-    await settle();
-    expect(box('100€').value).toBe('300');
+    await loaded();
+    act(() => channels[0]!.emitField(FIELD));
+    await waitFor(() => expect(box('100€').value).toBe('300'));
   });
 
   it('joins as «Ιδιοκτήτης» and closes its channel on unmount', async () => {
     const { api, channels, unmount } = setup();
-    await settle();
+    await loaded();
     expect(api.live).toHaveBeenCalledWith(SHOP, { name: 'Ιδιοκτήτης' }, expect.anything());
     unmount();
     expect(channels[0]!.close).toHaveBeenCalled();
@@ -81,15 +97,14 @@ describe('TodayScreen', () => {
 
   it('remembers the entry mode per shop on this device', async () => {
     const { store } = setup();
-    await settle();
+    await loaded();
     fireEvent.click(screen.getByRole('button', { name: '# Κομμάτια' }));
     expect(loadEntryMode(store, SHOP)).toBe('count');
   });
 
   it('not_owner shows its message with a retry', async () => {
     setup({ todayClosing: vi.fn(() => fail<Snapshot>({ code: 'not_owner' })) });
-    await settle();
-    expect(screen.getByRole('alert').textContent).toContain(ownerErrorMessage({ code: 'not_owner' }));
+    expect((await screen.findByRole('alert')).textContent).toContain(ownerErrorMessage({ code: 'not_owner' }));
     expect(screen.getByRole('button', { name: 'Δοκίμασε ξανά' })).toBeTruthy();
   });
 });
@@ -97,8 +112,8 @@ describe('TodayScreen', () => {
 describe('ShopLayout today tab', () => {
   it('has «Σήμερα» as the first tab', async () => {
     render(<ShopLayout api={fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'JJ' }])) })} shopId={SHOP} tab="today" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={vi.fn()} />);
-    await settle();
-    const tabs = screen.getByRole('navigation', { name: 'Ενότητες καταστήματος' }).querySelectorAll('button');
+    const nav = await screen.findByRole('navigation', { name: 'Ενότητες καταστήματος' });
+    const tabs = nav.querySelectorAll('button');
     expect(tabs[0]!.textContent).toBe('Σήμερα');
     expect(tabs[0]!.getAttribute('aria-current')).toBe('page');
   });

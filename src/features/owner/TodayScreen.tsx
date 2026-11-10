@@ -12,8 +12,8 @@ import { Card } from '../../ui/Card';
 import { deviceErrorMessage } from '../phone/model/messages';
 import { deriveClosing } from '../register/derive';
 import { useLiveClosing } from '../register/live/useLiveClosing';
-import { INVALID_CONFIG_MESSAGE } from '../register/RegisterScreen';
 import { LiveClosingView } from '../register/LiveClosingView';
+import { INVALID_CONFIG_MESSAGE } from '../register/messages';
 import { OWNER_PRESENCE_NAME, createTodayWriter } from './todayWriter';
 
 export interface TodayScreenProps {

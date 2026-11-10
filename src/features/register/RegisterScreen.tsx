@@ -19,6 +19,7 @@ import { amountValue, channelKey } from './live/fields';
 import { useLiveClosing } from './live/useLiveClosing';
 import type { Writer } from './live/syncEngine';
 import { LiveClosingView } from './LiveClosingView';
+import { INVALID_CONFIG_MESSAGE } from './messages';
 import type { ShareFn } from './share';
 import { SubmitSheet } from './SubmitSheet';
 
@@ -51,7 +52,6 @@ export const PENDING_SUBMIT_REASON = 'Περιμένει αποθήκευση…
 export const CONNECTING_SUBMIT_REASON = 'Σύνδεση…';
 /** The engine stopped after a failure the gate did not take over: nothing is saved until «Δοκίμασε ξανά». */
 export const HALTED_SUBMIT_REASON = 'Δεν αποθηκεύεται — δοκίμασε ξανά';
-export const INVALID_CONFIG_MESSAGE = 'Οι ρυθμίσεις του καταστήματος δεν είναι έγκυρες';
 
 export function RegisterScreen(props: RegisterProps) {
   const { ctx, session, api, store, now, newId, share, themePref, active, offline, onTheme, onOwner, onSignOut, onServerError } = props;
