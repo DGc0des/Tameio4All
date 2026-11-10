@@ -176,6 +176,10 @@ Whole-stage review task by task (Tasks 1-8) plus the Task 9 verification run. Co
 | M23 | Realtime authorization is checked at channel join (and token refresh), not per message: a revoked device / deactivated cashier / expired session already joined keeps receiving broadcasts until rejoin or token refresh; an idle phone keeps yesterday's numbers after the day change until a resync | Known limit, documented in CLAUDE.md (writes are refused at once). Options: server-side kick on revoke, a day-change timer that resyncs | open |
 | M24 | An owner signing in on a paired phone's browser leaves the register mounted-but-hidden, so «Σήμερα» for the same shop opens a second channel on one topic (the clash documented in `live.ts`) | Known limit; unmount the register while the owner area is open, or share one channel | open |
 | L61 | Presence names are self-declared by clients (a client can show any name in a box tag) | Cosmetic only; nothing trusts presence | open |
+| L62 | Sign-out waits up to 3 s for unsent edits (`drain`); if they could not be sent (offline/timeout) sign-out proceeds with no notice — they stay queued under that cashier, replay on that cashier's next sign-in the same day, and are dropped silently the next day | Add a warning when `drain` returns false | open |
+| L63 | During the sign-out drain (now up to 3 s) closing and reopening the CashierSheet resets its local `busy` guard, so a second drain + `signOut` can run; boxes stay editable during the drain | Lift the in-progress flag above the sheet | open |
+| L64 | A write still in flight when the drain times out is not cancelled and may land after `staff_sign_out` (ignored after dispose or counted as a stale-equal ack on replay; no loss found, untested) | Test it, or abort in-flight writes on sign-out | open |
+| L65 | A few phoneApp gate tests fail intermittently (~1 in 15 full runs), already on `fa50962` before the final fixes | Find the timing dependency in the gate tests | open |
 
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
