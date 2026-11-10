@@ -122,28 +122,50 @@ describe('submit with revision', () => {
 });
 
 type Cb = (arg: unknown) => void;
+/** Mimics realtime-js: channel(topic) returns an existing channel for the topic; removal leaves the registry only after a tick. */
 function channelClient() {
-  const handlers: Record<string, Cb> = {};
-  let subscribeCb: ((s: string) => void) | null = null;
-  let presence: Record<string, unknown[]> = {};
-  const ch = {
-    on: vi.fn((type: string, filter: { event: string }, cb: Cb) => { handlers[`${type}:${filter.event}`] = cb; return ch; }),
-    subscribe: vi.fn((cb: (s: string) => void) => { subscribeCb = cb; return ch; }),
-    track: vi.fn(() => Promise.resolve('ok')),
-    presenceState: vi.fn(() => presence),
+  type Stub = ReturnType<typeof makeCh>;
+  const registry: Stub[] = [];
+  const created: Stub[] = [];
+  const makeCh = (topic: string) => {
+    const handlers: Record<string, Cb> = {};
+    let subscribeCb: ((s: string) => void) | null = null;
+    let presence: Record<string, unknown[]> = {};
+    const ch = {
+      topic: `realtime:${topic}`,
+      handlers,
+      on: vi.fn((type: string, filter: { event: string }, cb: Cb) => { handlers[`${type}:${filter.event}`] = cb; return ch; }),
+      subscribe: vi.fn((cb: (s: string) => void) => { subscribeCb = cb; return ch; }),
+      track: vi.fn(() => Promise.resolve('ok')),
+      presenceState: vi.fn(() => presence),
+      status: (s: string) => subscribeCb?.(s),
+      setPresence: (p: Record<string, unknown[]>) => { presence = p; },
+      opts: undefined as unknown as { config: { private: boolean; presence: { key: string } } },
+    };
+    return ch;
   };
   const client = {
-    channel: vi.fn(() => ch),
-    removeChannel: vi.fn(() => Promise.resolve('ok')),
+    channel: vi.fn((topic: string, opts: Stub['opts']) => {
+      const existing = registry.find((c) => c.topic === `realtime:${topic}`);
+      if (existing) return existing;
+      const ch = makeCh(topic);
+      ch.opts = opts;
+      registry.push(ch);
+      created.push(ch);
+      return ch;
+    }),
+    getChannels: vi.fn(() => [...registry]),
+    removeChannel: vi.fn(async (ch: Stub) => {
+      await new Promise((r) => setTimeout(r, 5));
+      const i = registry.indexOf(ch);
+      if (i >= 0) registry.splice(i, 1);
+      return 'ok';
+    }),
     realtime: { setAuth: vi.fn(() => Promise.resolve()) },
   };
-  return {
-    client: client as unknown as SupabaseClient, raw: client, ch, handlers,
-    status: (s: string) => subscribeCb?.(s),
-    setPresence: (p: Record<string, unknown[]>) => { presence = p; },
-  };
+  return { client: client as unknown as SupabaseClient, raw: client, created, registry, get ch() { return created[created.length - 1]!; } };
 }
-const flush = () => new Promise((r) => setTimeout(r, 0));
+const flush = () => new Promise((r) => setTimeout(r, 20));
 const mkHandlers = () => ({ onField: vi.fn(), onSubmitted: vi.fn(), onPresence: vi.fn(), onStatus: vi.fn() }) satisfies LiveHandlers;
 
 describe('openShopChannel', () => {
@@ -153,29 +175,30 @@ describe('openShopChannel', () => {
     openShopChannel(c.client, 'shop1', { name: 'ΜΑΡΙΑ' }, h);
     expect(h.onStatus).toHaveBeenCalledWith('connecting');
     await flush();
-    const [topic, opts] = c.raw.channel.mock.calls[0] as unknown as [string, { config: { private: boolean; presence: { key: string } } }];
-    expect(topic).toBe('shop:shop1');
-    expect(opts.config.private).toBe(true);
-    expect(opts.config.presence.key.length).toBeGreaterThan(8);
+    expect(c.raw.channel.mock.calls[0]![0]).toBe('shop:shop1');
+    expect(c.ch.opts.config.private).toBe(true);
+    expect(c.ch.opts.config.presence.key.length).toBeGreaterThan(8);
     expect(c.raw.realtime.setAuth).toHaveBeenCalled();
     expect(c.ch.subscribe).toHaveBeenCalledTimes(1);
-    expect(c.raw.channel.mock.invocationCallOrder[0]).toBeLessThan(c.ch.subscribe.mock.invocationCallOrder[0]!);
+    expect(c.raw.realtime.setAuth.mock.invocationCallOrder[0]).toBeLessThan(c.raw.channel.mock.invocationCallOrder[0]!);
   });
 
-  it('maps statuses and tracks presence once live; setFocus re-tracks', async () => {
+  it('maps statuses and tracks presence once live; setFocus re-tracks; going offline clears presence', async () => {
     const c = channelClient();
     const h = mkHandlers();
     const live = openShopChannel(c.client, 's', { name: 'ΜΑΡΙΑ' }, h);
     await flush();
-    c.status('SUBSCRIBED');
+    c.ch.status('SUBSCRIBED');
     expect(h.onStatus).toHaveBeenLastCalledWith('live');
     expect(c.ch.track).toHaveBeenCalledWith({ name: 'ΜΑΡΙΑ', focus: null });
     live.setFocus('c:wolt');
     expect(c.ch.track).toHaveBeenLastCalledWith({ name: 'ΜΑΡΙΑ', focus: 'c:wolt' });
-    for (const s of ['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED']) {
-      c.status('SUBSCRIBED');
-      c.status(s);
+    for (const st of ['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED']) {
+      c.ch.status('SUBSCRIBED');
+      h.onPresence.mockClear();
+      c.ch.status(st);
       expect(h.onStatus).toHaveBeenLastCalledWith('offline');
+      expect(h.onPresence).toHaveBeenCalledWith([]);
     }
   });
 
@@ -183,17 +206,19 @@ describe('openShopChannel', () => {
     const c = channelClient();
     const h = mkHandlers();
     openShopChannel(c.client, 's', { name: 'x' }, h);
-    c.handlers['broadcast:field']!({ payload: { ...field('c:wolt'), revision: 5, business_date: '2026-11-07' } });
+    await flush();
+    const hs = c.ch.handlers;
+    hs['broadcast:field']!({ payload: { ...field('c:wolt'), revision: 5, business_date: '2026-11-07' } });
     expect(h.onField).toHaveBeenCalledWith({
       key: 'c:wolt', value: { text: '5' }, version: 2, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T10:00:00Z', revision: 5, businessDate: '2026-11-07',
     });
-    c.handlers['broadcast:field']!({ payload: { ...field('d:0100'), revision: 5, business_date: 'd' } });
-    c.handlers['broadcast:field']!({ payload: { ...field('c:a'), business_date: 'd' } });
-    c.handlers['broadcast:field']!({});
+    hs['broadcast:field']!({ payload: { ...field('d:0100'), revision: 5, business_date: 'd' } });
+    hs['broadcast:field']!({ payload: { ...field('c:a'), business_date: 'd' } });
+    hs['broadcast:field']!({});
     expect(h.onField).toHaveBeenCalledTimes(1);
-    c.handlers['broadcast:submitted']!({ payload: { closing_id: 'cl', staff_name: 'ΝΙΚΟΣ', at: 't' } });
+    hs['broadcast:submitted']!({ payload: { closing_id: 'cl', staff_name: 'ΝΙΚΟΣ', at: 't' } });
     expect(h.onSubmitted).toHaveBeenCalledWith({ closingId: 'cl', staffName: 'ΝΙΚΟΣ', at: 't' });
-    c.handlers['broadcast:submitted']!({ payload: { closing_id: 1 } });
+    hs['broadcast:submitted']!({ payload: { closing_id: 1 } });
     expect(h.onSubmitted).toHaveBeenCalledTimes(1);
   });
 
@@ -201,12 +226,13 @@ describe('openShopChannel', () => {
     const c = channelClient();
     const h = mkHandlers();
     openShopChannel(c.client, 's', { name: 'ΜΑΡΙΑ' }, h);
-    const selfKey = (c.raw.channel.mock.calls[0] as unknown as [string, { config: { presence: { key: string } } }])[1].config.presence.key;
-    c.setPresence({
+    await flush();
+    const selfKey = c.ch.opts.config.presence.key;
+    c.ch.setPresence({
       [selfKey]: [{ name: 'ΜΑΡΙΑ', focus: null }],
       other: [{ name: 'ΝΙΚΟΣ', focus: 'c:wolt' }, { name: 'ΝΙΚΟΣ', focus: 'bogus' }],
     });
-    c.handlers['presence:sync']!({});
+    c.ch.handlers['presence:sync']!({});
     expect(h.onPresence).toHaveBeenCalledWith([{ name: 'ΝΙΚΟΣ', focus: 'c:wolt' }, { name: 'ΝΙΚΟΣ', focus: null }]);
   });
 
@@ -215,24 +241,74 @@ describe('openShopChannel', () => {
     const h = mkHandlers();
     const live = openShopChannel(c.client, 's', { name: 'x' }, h);
     await flush();
-    c.status('SUBSCRIBED');
+    const ch = c.ch;
+    ch.status('SUBSCRIBED');
     live.close();
-    expect(c.raw.removeChannel).toHaveBeenCalledWith(c.ch);
+    expect(c.raw.removeChannel).toHaveBeenCalledWith(ch);
     const calls = h.onStatus.mock.calls.length;
-    c.status('CLOSED');
-    c.handlers['broadcast:field']!({ payload: { ...field('c:a'), revision: 1, business_date: 'd' } });
-    c.handlers['presence:sync']!({});
+    ch.status('CLOSED');
+    ch.handlers['broadcast:field']!({ payload: { ...field('c:a'), revision: 1, business_date: 'd' } });
+    ch.handlers['presence:sync']!({});
     live.setFocus('c:a');
     expect(h.onStatus.mock.calls.length).toBe(calls);
     expect(h.onField).not.toHaveBeenCalled();
     expect(h.onPresence).not.toHaveBeenCalled();
-    expect(c.ch.track).toHaveBeenCalledTimes(1);
+    expect(ch.track).toHaveBeenCalledTimes(1);
   });
 
-  it('closing before the auth refresh finishes never subscribes', async () => {
+  it('closing before the auth refresh finishes never creates or subscribes a channel', async () => {
     const c = channelClient();
     openShopChannel(c.client, 's', { name: 'x' }, mkHandlers()).close();
     await flush();
-    expect(c.ch.subscribe).not.toHaveBeenCalled();
+    expect(c.created).toHaveLength(0);
+  });
+
+  it('a pre-existing channel for the topic is removed before the new one is created', async () => {
+    const c = channelClient();
+    const old = c.client.channel('shop:s') as never;
+    c.raw.channel.mockClear();
+    openShopChannel(c.client, 's', { name: 'x' }, mkHandlers());
+    await flush();
+    expect(c.raw.removeChannel).toHaveBeenCalledWith(old);
+    expect(c.created).toHaveLength(2);
+    expect(c.ch).not.toBe(old);
+    expect(c.ch.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('StrictMode-like open -> close -> open ends live on a fresh channel with correct self-exclusion', async () => {
+    const c = channelClient();
+    const h1 = mkHandlers();
+    const first = openShopChannel(c.client, 's', { name: 'ΜΑΡΙΑ' }, h1);
+    await flush();
+    const firstCh = c.ch;
+    firstCh.status('SUBSCRIBED');
+    first.close();
+    const h2 = mkHandlers();
+    openShopChannel(c.client, 's', { name: 'ΜΑΡΙΑ' }, h2);
+    await flush();
+    expect(c.created).toHaveLength(2);
+    const second = c.ch;
+    expect(second).not.toBe(firstCh);
+    expect(c.registry).toEqual([second]);
+    second.status('SUBSCRIBED');
+    expect(h2.onStatus).toHaveBeenLastCalledWith('live');
+    const selfKey = second.opts.config.presence.key;
+    expect(selfKey).not.toBe(firstCh.opts.config.presence.key);
+    second.setPresence({ [selfKey]: [{ name: 'ΜΑΡΙΑ', focus: null }], o: [{ name: 'ΝΙΚΟΣ', focus: null }] });
+    second.handlers['presence:sync']!({});
+    expect(h2.onPresence).toHaveBeenLastCalledWith([{ name: 'ΝΙΚΟΣ', focus: null }]);
+    expect(h1.onPresence).not.toHaveBeenCalled();
+  });
+});
+
+describe('live delegation', () => {
+  it('device and owner apis open the channel on the shared client', async () => {
+    for (const make of [createDeviceApi, createOwnerApi]) {
+      const c = channelClient();
+      const live = make(c.client).live('shop9', { name: 'x' }, mkHandlers());
+      await flush();
+      expect(c.raw.channel).toHaveBeenCalledWith('shop:shop9', expect.anything());
+      live.close();
+    }
   });
 });

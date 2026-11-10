@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { parseKey, type FieldKey, type ServerField, type Snapshot } from '../../features/register/live/fields';
 
 export type LiveStatus = 'connecting' | 'live' | 'offline';
@@ -78,61 +78,81 @@ const newPresenceKey = (): string =>
 /**
  * Listens to the shop's private realtime topic and tracks presence. Clients never broadcast (the
  * server does, from the write functions). After close() no handler is called again.
+ *
+ * Status: 'connecting' first; after an error the status goes offline -> live again (supabase-js
+ * rejoins by itself) with no 'connecting' in between. Going offline also reports empty presence.
+ *
+ * supabase-js hands back an existing channel for the same topic, and a closed channel only leaves
+ * its registry after an async unsubscribe. So the channel is created only after any older one for
+ * this topic has been removed; otherwise reopening (StrictMode, gate reload) could reuse the dying one.
  */
 export function openShopChannel(client: SupabaseClient, shopId: string, me: { name: string }, h: LiveHandlers): LiveChannel {
   const selfKey = newPresenceKey();
+  const topic = `shop:${shopId}`;
   let closed = false;
   let subscribed = false;
   let focus: FieldKey | null = null;
-  const ch = client.channel(`shop:${shopId}`, { config: { private: true, presence: { key: selfKey } } });
+  let ch: RealtimeChannel | null = null;
 
   const track = () => {
-    if (closed || !subscribed) return;
+    if (closed || !subscribed || !ch) return;
     void Promise.resolve(ch.track({ name: me.name, focus })).catch(() => {});
   };
 
-  ch.on('broadcast', { event: 'field' }, (msg: { payload?: unknown }) => {
-    if (closed) return;
-    const f = parseFieldBroadcast(msg.payload);
-    if (f) h.onField(f);
-  });
-  ch.on('broadcast', { event: 'submitted' }, (msg: { payload?: unknown }) => {
-    if (closed) return;
-    const s = parseSubmitInfo(msg.payload);
-    if (s) h.onSubmitted(s);
-  });
-  ch.on('presence', { event: 'sync' }, () => {
-    if (closed) return;
-    const out: { name: string; focus: FieldKey | null }[] = [];
-    for (const [key, metas] of Object.entries(ch.presenceState() as Record<string, unknown[]>)) {
-      if (key === selfKey) continue;
-      for (const m of metas) {
-        if (!isObj(m) || !isStr(m.name)) continue;
-        out.push({ name: m.name, focus: isStr(m.focus) && parseKey(m.focus) !== null ? m.focus : null });
-      }
+  const start = async () => {
+    // A private channel authorizes with the current access token, so refresh it before joining.
+    try {
+      await client.realtime.setAuth();
+    } catch {
+      /* join anyway; the server decides */
     }
-    h.onPresence(out);
-  });
+    if (closed) return;
+    try {
+      for (const old of client.getChannels().filter((c) => c.topic === `realtime:${topic}`)) await client.removeChannel(old);
+    } catch {
+      /* best effort */
+    }
+    if (closed) return;
+    const mine = client.channel(topic, { config: { private: true, presence: { key: selfKey } } });
+    ch = mine;
+    mine.on('broadcast', { event: 'field' }, (msg: { payload?: unknown }) => {
+      if (closed) return;
+      const f = parseFieldBroadcast(msg.payload);
+      if (f) h.onField(f);
+    });
+    mine.on('broadcast', { event: 'submitted' }, (msg: { payload?: unknown }) => {
+      if (closed) return;
+      const s = parseSubmitInfo(msg.payload);
+      if (s) h.onSubmitted(s);
+    });
+    mine.on('presence', { event: 'sync' }, () => {
+      if (closed) return;
+      const out: { name: string; focus: FieldKey | null }[] = [];
+      for (const [key, metas] of Object.entries(mine.presenceState() as Record<string, unknown[]>)) {
+        if (key === selfKey) continue;
+        for (const m of metas) {
+          if (!isObj(m) || !isStr(m.name)) continue;
+          out.push({ name: m.name, focus: isStr(m.focus) && parseKey(m.focus) !== null ? m.focus : null });
+        }
+      }
+      h.onPresence(out);
+    });
+    mine.subscribe((status: string) => {
+      if (closed) return;
+      if (status === 'SUBSCRIBED') {
+        subscribed = true;
+        h.onStatus('live');
+        track();
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        subscribed = false;
+        h.onStatus('offline');
+        h.onPresence([]);
+      }
+    });
+  };
 
   h.onStatus('connecting');
-  // A private channel authorizes with the current access token, so refresh it before joining.
-  void Promise.resolve()
-    .then(() => client.realtime.setAuth())
-    .catch(() => {})
-    .then(() => {
-      if (closed) return;
-      ch.subscribe((status: string) => {
-        if (closed) return;
-        if (status === 'SUBSCRIBED') {
-          subscribed = true;
-          h.onStatus('live');
-          track();
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          subscribed = false;
-          h.onStatus('offline');
-        }
-      });
-    });
+  void start();
 
   return {
     setFocus(key) {
@@ -142,7 +162,7 @@ export function openShopChannel(client: SupabaseClient, shopId: string, me: { na
     close() {
       if (closed) return;
       closed = true;
-      void Promise.resolve(client.removeChannel(ch)).catch(() => {});
+      if (ch) void Promise.resolve(client.removeChannel(ch)).catch(() => {});
     },
   };
 }
