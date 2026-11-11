@@ -1,3 +1,4 @@
+import { addDaysIso, isIsoDate } from '../../../app/dates';
 import type { ShopConfig } from '../../../core/config';
 import { isShopConfig } from '../../../core/config';
 import { evaluateTotals, validateClosingInputs, type ClosingInputs } from '../../../core/formula';
@@ -9,6 +10,7 @@ import {
   KEY_RE, amountValue, channelKey, denomKey, denomValue, expenseAmountKey, expenseDescKey, expenseKey, expenseMetaValue,
   isFieldValue, parseKey, textValue, type FieldKey, type ServerField, type Snapshot,
 } from '../../register/live/fields';
+import type { HistoryDay, HistoryList } from './types';
 
 export const OWNER_NAME = 'Ιδιοκτήτης';
 export const UNKNOWN_AUTHOR = '—';
@@ -136,3 +138,23 @@ export function applyLocalEdit(s: Snapshot, key: FieldKey, value: unknown): Snap
   return { ...s, fields: { ...s.fields, [key]: { key, value, version, updatedByName: '', updatedAt: '' } } };
 }
 
+
+/** What one day of the week view shows. */
+export type WeekCellKind = 'submitted' | 'unsubmitted' | 'in_progress' | 'empty' | 'future';
+export interface WeekCell { date: string; kind: WeekCellKind; /** The list's day for a submitted/unsubmitted cell. */ day?: HistoryDay }
+
+/**
+ * The seven days Monday → Sunday of the week starting at `monday`. «Today» is the server's `list.today`
+ * (never the browser's clock): a day with no row is in progress today, empty before today, future after it.
+ * Days of the list outside the week are ignored; an unknown `monday` gives no cells.
+ */
+export function weekCells(list: HistoryList, monday: string): WeekCell[] {
+  if (!isIsoDate(monday)) return [];
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = addDaysIso(monday, i);
+    const day = list.days.find((d) => d.businessDate === date);
+    if (day !== undefined) return { date, kind: day.status, day };
+    if (date > list.today) return { date, kind: 'future' };
+    return { date, kind: date === list.today ? 'in_progress' : 'empty' };
+  });
+}

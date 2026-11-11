@@ -4,9 +4,10 @@ import { evaluateTotals, type ClosingInputs } from '../../../../src/core/formula
 import { planEnvelope } from '../../../../src/core/envelope';
 import { deriveClosing } from '../../../../src/features/register/derive';
 import { draftFromFields } from '../../../../src/features/register/live/merge';
+import type { HistoryDay, HistoryList } from '../../../../src/features/owner/history/types';
 import { denomKey, expenseKey, expenseMetaValue, textValue, type Snapshot } from '../../../../src/features/register/live/fields';
 import {
-  OWNER_NAME, UNKNOWN_AUTHOR, applyLocalEdit, breakdown, openInputs, snapshotFromInputs, summarizeInputs, summarizeOpen,
+  OWNER_NAME, UNKNOWN_AUTHOR, applyLocalEdit, breakdown, openInputs, snapshotFromInputs, summarizeInputs, summarizeOpen, weekCells,
 } from '../../../../src/features/owner/history/model';
 
 const config = joinJuicePreset;
@@ -123,5 +124,49 @@ describe('summarizeOpen / openInputs', () => {
   it('is null for an unreadable config', () => {
     expect(summarizeOpen(open({}, {}))).toBeNull();
     expect(openInputs(open({}, {}))).toBeNull();
+  });
+});
+
+describe('weekCells', () => {
+  const MON = '2026-11-09';
+  const current = { id: 'v1', kind: 'staff' as const, authorName: 'ΜΑΡΙΑ', createdAt: '2026-11-09T21:00:00Z', configId: 'cfg1', inputs: inputs2, correctsId: null };
+  const submittedDay = (businessDate: string): HistoryDay => ({ status: 'submitted', businessDate, current, versionCount: 1 });
+  const open: Snapshot = { id: 'o', businessDate: '2026-11-10', configId: 'cfg1', config, revision: 1, lastSubmit: null, fields: {} };
+  const unsubmittedDay = (businessDate: string): HistoryDay => ({ status: 'unsubmitted', businessDate, open: { ...open, businessDate } });
+  const listOf = (today: string, days: HistoryDay[]): HistoryList => ({ today, from: '2026-10-13', to: today, configs: {}, days });
+
+  it('has seven cells, Monday first, dates in order', () => {
+    const cells = weekCells(listOf('2026-11-11', []), MON);
+    expect(cells.map((c) => c.date)).toEqual(['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14', '2026-11-15']);
+  });
+
+  it('classifies each day of the current week: submitted, unsubmitted, in progress, empty past, future', () => {
+    const days = [submittedDay('2026-11-09'), unsubmittedDay('2026-11-10')];
+    const cells = weekCells(listOf('2026-11-12', days), MON);
+    expect(cells.map((c) => c.kind)).toEqual(['submitted', 'unsubmitted', 'empty', 'in_progress', 'future', 'future', 'future']);
+    expect(cells[0]!.day).toBe(days[0]);
+    expect(cells[1]!.day).toBe(days[1]);
+    expect(cells[2]!.day).toBeUndefined();
+    expect(cells[3]!.day).toBeUndefined();
+  });
+
+  it('today with a submission is a submitted cell', () => {
+    const cells = weekCells(listOf('2026-11-11', [submittedDay('2026-11-11')]), MON);
+    expect(cells[2]!.kind).toBe('submitted');
+  });
+
+  it('a past week has no future and no in-progress cells', () => {
+    const cells = weekCells(listOf('2026-11-20', [submittedDay('2026-11-12')]), MON);
+    expect(cells.map((c) => c.kind)).toEqual(['empty', 'empty', 'empty', 'submitted', 'empty', 'empty', 'empty']);
+  });
+
+  it('a week entirely after today is all future', () => {
+    expect(weekCells(listOf('2026-11-01', []), MON).every((c) => c.kind === 'future')).toBe(true);
+  });
+
+  it('ignores days outside the week, and an unknown Monday gives no cells', () => {
+    const cells = weekCells(listOf('2026-11-20', [submittedDay('2026-11-08'), submittedDay('2026-11-16')]), MON);
+    expect(cells.every((c) => c.kind === 'empty')).toBe(true);
+    expect(weekCells(listOf('2026-11-20', []), 'nonsense')).toEqual([]);
   });
 });

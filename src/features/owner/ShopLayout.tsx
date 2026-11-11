@@ -46,7 +46,7 @@ export function ShopLayout({ api, shopId, tab, date, navigate, store, now, email
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const rename = useAction();
-  /** The history date range, kept here because the list unmounts while a day is open. Per shop. */
+  /** The history week shown (its Monday and Sunday), kept here because the list unmounts while a day is open. Per shop. */
   const [historyRange, setHistoryRange] = useState<({ shopId: string } & HistoryRange) | null>(null);
   const keepHistoryRange = useCallback((from: string, to: string) => setHistoryRange({ shopId, from, to }), [shopId]);
 

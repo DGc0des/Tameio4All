@@ -1,23 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { formatDayEl, isIsoDate } from '../../../app/dates';
+import { addDaysIso, formatDayMonthLongEl, formatTimeEl, formatWeekRangeEl, formatWeekdayEl, weekStartIso } from '../../../app/dates';
 import { formatEuro } from '../../../core/money';
 import type { OwnerApi } from '../../../data/remote/ownerApi';
-import { Card } from '../../../ui/Card';
 import { ownerErrorMessage } from '../model/messages';
 import type { OwnerNavigate } from '../OwnerUi';
-import { summarizeInputs, summarizeOpen, type Summary } from './model';
-import type { HistoryDay, HistoryList } from './types';
+import { summarizeInputs, summarizeOpen, weekCells, type Summary, type WeekCell } from './model';
+import type { HistoryList } from './types';
 
 type Load =
   | { status: 'loading' }
   | { status: 'error'; message: string; retryable: boolean }
-  | { status: 'ready'; list: HistoryList };
+  | { status: 'ready'; list: HistoryList; monday: string };
 
-const EMPTY_MESSAGE = 'Δεν υπάρχουν κλεισίματα σε αυτό το διάστημα.';
-
-/** The server's own default range applies to a side that is not a valid date. */
-const validOrNull = (s: string): string | null => (isIsoDate(s) ? s : null);
-
+/** The week shown, as the Monday and Sunday that were fetched. */
 export interface HistoryRange {
   from: string;
   to: string;
@@ -27,73 +22,79 @@ export interface HistoryScreenProps {
   api: OwnerApi;
   shopId: string;
   navigate: OwnerNavigate;
-  /** The range to open with (read once, at mount); without it the server's default (last 30 days) applies. */
+  /** The week to open (its Monday is `from`; read once, at mount); without it the server's default applies and the week of its `today` is shown. */
   initialRange?: HistoryRange | null;
-  /** Called after a successful load with the range the server answered for (never unvalidated typed text). */
+  /** Called after a successful load with the shown week's Monday and Sunday. */
   onRangeLoaded?: (from: string, to: string) => void;
 }
 
 export function HistoryScreen({ api, shopId, navigate, initialRange = null, onRangeLoaded }: HistoryScreenProps) {
-  /** Only the mount-time value counts: later changes of the prop must not refetch or reset the inputs. */
+  /** Only the mount-time value counts: later changes of the prop must not refetch or move the week. */
   const initial = useRef(initialRange);
   const reportRange = useRef(onRangeLoaded);
   reportRange.current = onRangeLoaded;
-  const [from, setFrom] = useState(initial.current?.from ?? '');
-  const [to, setTo] = useState(initial.current?.to ?? '');
+  /** The Monday of the week on screen (or being fetched); null until the server has told us «today». */
+  const [shown, setShown] = useState<string | null>(initial.current === null ? null : weekStartIso(initial.current.from));
+  /** The shop's today from the last successful answer; every «this week» / «yesterday» comes from it. */
+  const [today, setToday] = useState<string | null>(null);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   /** The newest request; an older response is dropped. */
   const latest = useRef(0);
-  /** What «Ξανά» repeats. */
-  const last = useRef<{ from: string | null; to: string | null }>({ from: null, to: null });
+  /** What «Ξανά» repeats: a Monday, or null for the server default. */
+  const last = useRef<string | null>(null);
 
-  const fetchRange = useCallback(
-    (f: string | null, t: string | null) => {
+  const fetchWeek = useCallback(
+    (monday: string | null) => {
       const request = ++latest.current;
-      last.current = { from: f, to: t };
+      last.current = monday;
+      if (monday !== null) setShown(monday);
       setLoad({ status: 'loading' });
-      void api.listClosings(shopId, f, t).then((r) => {
+      void api.listClosings(shopId, monday, monday === null ? null : addDaysIso(monday, 6)).then((r) => {
         if (request !== latest.current) return; // superseded: the newer request settles the state
         if (!r.ok) {
           return setLoad({ status: 'error', message: ownerErrorMessage(r.error), retryable: r.error.code !== 'bad_range' });
         }
-        // A side we left to the server shows the server's value.
-        if (f === null) setFrom(r.data.from);
-        if (t === null) setTo(r.data.to);
-        setLoad({ status: 'ready', list: r.data });
-        reportRange.current?.(r.data.from, r.data.to);
+        const shownMonday = monday ?? weekStartIso(r.data.today);
+        setShown(shownMonday);
+        setToday(r.data.today);
+        setLoad({ status: 'ready', list: r.data, monday: shownMonday });
+        reportRange.current?.(shownMonday, addDaysIso(shownMonday, 6));
       });
     },
     [api, shopId],
   );
 
   useEffect(() => {
-    fetchRange(initial.current?.from ?? null, initial.current?.to ?? null);
+    fetchWeek(initial.current === null ? null : weekStartIso(initial.current.from));
     return () => {
       latest.current += 1; // unmounted or shop changed: nothing may land
     };
-  }, [fetchRange]);
+  }, [fetchWeek]);
 
-  const change = (side: 'from' | 'to', value: string) => {
-    if (side === 'from') setFrom(value);
-    else setTo(value);
-    if (!isIsoDate(value)) return;
-    fetchRange(validOrNull(side === 'from' ? value : from), validOrNull(side === 'to' ? value : to));
-  };
+  const thisMonday = today === null ? null : weekStartIso(today);
+  const onCurrentWeek = shown !== null && shown === thisMonday;
 
   return (
-    <>
-      <Card>
-        <div className="history-range">
-          <label className="date-label">
-            Από
-            <input type="date" className="text-field" value={from} onChange={(e) => change('from', e.target.value)} />
-          </label>
-          <label className="date-label">
-            Έως
-            <input type="date" className="text-field" value={to} onChange={(e) => change('to', e.target.value)} />
-          </label>
+    <div className="history-week">
+      {shown !== null && (
+        <div className="week-nav">
+          <span className="week-range">{formatWeekRangeEl(shown)}</span>
+          <span className="week-buttons">
+            <button type="button" className="pill" aria-label="Προηγούμενη εβδομάδα" onClick={() => fetchWeek(addDaysIso(shown, -7))}>
+              ←
+            </button>
+            <button type="button" className="pill" disabled={today === null} onClick={() => today !== null && navigate({ name: 'shop', shopId, tab: 'history', date: addDaysIso(today, -1) })}>
+              Χθες
+            </button>
+            <button type="button" className="pill pill-primary" disabled={thisMonday === null || onCurrentWeek} onClick={() => thisMonday !== null && fetchWeek(thisMonday)}>
+              Αυτή η εβδομάδα
+            </button>
+            <button type="button" className="pill" aria-label="Επόμενη εβδομάδα" disabled={thisMonday === null || shown >= thisMonday} onClick={() => fetchWeek(addDaysIso(shown, 7))}>
+              →
+            </button>
+          </span>
         </div>
-      </Card>
+      )}
       {load.status === 'loading' && <p className="notice-soft">Φόρτωση…</p>}
       {load.status === 'error' && (
         <>
@@ -101,62 +102,100 @@ export function HistoryScreen({ api, shopId, navigate, initialRange = null, onRa
             {load.message}
           </p>
           {load.retryable && (
-            <button type="button" className="btn btn-text" onClick={() => fetchRange(last.current.from, last.current.to)}>
+            <button type="button" className="btn btn-text" onClick={() => fetchWeek(last.current)}>
               Ξανά
             </button>
           )}
         </>
       )}
-      {load.status === 'ready' &&
-        (load.list.days.length === 0 ? (
-          <p className="notice-soft">{EMPTY_MESSAGE}</p>
-        ) : (
-          <Card>
-            {load.list.days.map((day) => (
-              <DayRow key={day.businessDate} day={day} list={load.list} onOpen={() => navigate({ name: 'shop', shopId, tab: 'history', date: day.businessDate })} />
-            ))}
-          </Card>
-        ))}
-    </>
+      {load.status === 'ready' && (
+        <div className="week-grid">
+          {weekCells(load.list, load.monday).map((cell) => (
+            <DayCard key={cell.date} cell={cell} list={load.list} today={load.list.today} navigate={navigate} shopId={shopId} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function summaryOf(day: HistoryDay, list: HistoryList): Summary | null {
-  return day.status === 'submitted' ? summarizeInputs(Object.hasOwn(list.configs, day.current.configId) ? list.configs[day.current.configId] : undefined, day.current.inputs) : summarizeOpen(day.open);
+function summaryOf(cell: WeekCell, list: HistoryList): Summary | null {
+  const day = cell.day;
+  if (day === undefined) return null;
+  return day.status === 'submitted'
+    ? summarizeInputs(Object.hasOwn(list.configs, day.current.configId) ? list.configs[day.current.configId] : undefined, day.current.inputs)
+    : summarizeOpen(day.open);
 }
 
-function DayRow({ day, list, onOpen }: { day: HistoryDay; list: HistoryList; onOpen: () => void }) {
-  const summary = summaryOf(day, list);
-  return (
-    <button type="button" className="history-row" onClick={onOpen}>
-      <span className="history-head">
-        <b>{formatDayEl(day.businessDate)}</b>
-        {day.status === 'submitted' ? (
-          <span className="history-meta">
-            {day.current.authorName}
-            {day.versionCount > 1 && ` · ${day.versionCount} υποβολές`}
-            {day.current.kind === 'owner_correction' && <span className="badge">διορθωμένο</span>}
-          </span>
-        ) : (
-          <span className="history-meta">Δεν υποβλήθηκε</span>
-        )}
+function DayCard({ cell, list, today, navigate, shopId }: { cell: WeekCell; list: HistoryList; today: string; navigate: OwnerNavigate; shopId: string }) {
+  const head = (
+    <span className="week-head">
+      <span className="week-day">
+        <b>{formatWeekdayEl(cell.date)}</b>
+        {cell.date === today && cell.kind === 'submitted' && <span className="badge">Σήμερα</span>}
       </span>
+      <span className="week-date">{formatDayMonthLongEl(cell.date)}</span>
+    </span>
+  );
+
+  if (cell.kind === 'future') {
+    return (
+      <div className="week-card is-faded">
+        {head}
+        <span className="week-empty">—</span>
+      </div>
+    );
+  }
+
+  const open = () => navigate({ name: 'shop', shopId, tab: 'history', date: cell.date });
+  if (cell.kind === 'in_progress') {
+    return (
+      <button type="button" className="week-card is-progress" onClick={() => navigate({ name: 'shop', shopId, tab: 'today' })}>
+        {head}
+        <span className="week-note">Σε εξέλιξη</span>
+      </button>
+    );
+  }
+  if (cell.kind === 'empty') {
+    return (
+      <button type="button" className="week-card is-faded" onClick={open}>
+        {head}
+        <span className="week-empty">—</span>
+      </button>
+    );
+  }
+
+  const summary = summaryOf(cell, list);
+  const day = cell.day;
+  return (
+    <button type="button" className={cell.kind === 'unsubmitted' ? 'week-card is-unsubmitted' : 'week-card'} onClick={open}>
+      {head}
       {summary === null ? (
-        <span className="history-meta">Δεν διαβάζεται</span>
+        <span className="week-note">Δεν διαβάζεται</span>
       ) : (
         <>
           {summary.totals.map((t) => (
-            <span key={t.id} className="history-line">
+            <span key={t.id} className="week-line">
               <span>{t.label}</span>
               <span>{formatEuro(t.cents)}</span>
             </span>
           ))}
-          <span className="history-line">
+          <span className="week-line">
             <span>Έξοδα</span>
             <span>{formatEuro(summary.expensesCents)}</span>
           </span>
         </>
       )}
+      <span className="week-foot">
+        {day?.status === 'submitted' ? (
+          <>
+            <span>{`${day.current.authorName} · ${formatTimeEl(day.current.createdAt)}`}</span>
+            {day.current.kind === 'owner_correction' ? <span className="badge">διορθωμένο</span> : day.versionCount > 1 ? <span className="badge">{day.versionCount} υποβολές</span> : null}
+          </>
+        ) : (
+          <span>Δεν υποβλήθηκε</span>
+        )}
+      </span>
     </button>
   );
 }

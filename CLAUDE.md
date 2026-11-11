@@ -38,9 +38,9 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
   owner sees and edits today's live closing through `todayWriter.ts` (`createTodayWriter`, the owner `Writer`
   adapter over `OwnerApi`). A bare shop route still lands on «Ρυθμίσεις».
 - `src/features/owner/history/` — «Ιστορικό» (stage 3): `types.ts` (`HistoryList`/`HistoryDay`/`DayDetail`/
-  `ClosingVersion`), pure `model.ts` (`summarizeInputs`/`summarizeOpen`, `breakdown`, `snapshotFromInputs`,
+  `ClosingVersion`), pure `model.ts` (`summarizeInputs`/`summarizeOpen`, `weekCells`, `breakdown`, `snapshotFromInputs`,
   `applyLocalEdit`; every number goes through `evaluateTotals`/`planEnvelope`, never throws on unreadable
-  stored data), and three screens over an injected `OwnerApi`: `HistoryScreen` (range list), `DayScreen` (one
+  stored data), and three screens over an injected `OwnerApi`: `HistoryScreen` (Monday–Sunday week of day cards via `weekCells`; «today» only from the server's `listClosings`), `DayScreen` (one
   day: versions, breakdown, Φάκελος), `CorrectionEditor` (edit + save a correction). Routes:
   `#/owner/shop/<id>/history` and `…/history/<YYYY-MM-DD>` (`router.ts`; a malformed date segment is dropped).
 - `src/features/phone/` — phone shell (lazy `PhoneEntry` builds the real `DeviceApi`): `model/gate.ts` is the
