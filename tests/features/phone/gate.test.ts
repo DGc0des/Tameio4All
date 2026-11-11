@@ -58,6 +58,13 @@ describe('gateReducer — loading', () => {
     expect(notDevice.s === 'unpaired' && notDevice.notice).toBeTruthy();
   });
 
+  it('invalid_code on load (the stored link was replaced) → unpaired with the "ask for the new link" notice', () => {
+    expect(gateReducer(loading, { t: 'load_failed', error: { code: 'invalid_code' }, cached: null, stored: null })).toEqual({
+      s: 'unpaired',
+      notice: 'Ο κωδικός καταστήματος δεν ισχύει. Ζήτα τον νέο σύνδεσμο.',
+    });
+  });
+
   it('a non-network load failure never opens the cached register: load_error', () => {
     const unknown = { code: 'unknown', detail: 'boom' } as const;
     expect(gateReducer(loading, { t: 'load_failed', error: unknown, cached: ctx, stored: session })).toEqual({ s: 'load_error', error: unknown });
@@ -126,6 +133,11 @@ describe('gateReducer — transitions', () => {
       notice: 'Η συσκευή αποσυνδέθηκε από τον ιδιοκτήτη.',
     });
     expect(gateReducer(signedOut, { t: 'server_error', error: { code: 'device_revoked' } }).s).toBe('unpaired');
+  });
+
+  it('server_error not_a_device → loading (the one load path may return silently with the stored key)', () => {
+    expect(gateReducer(ready, { t: 'server_error', error: { code: 'not_a_device' } })).toEqual(loading);
+    expect(gateReducer(signedOut, { t: 'server_error', error: { code: 'not_a_device' } })).toEqual(loading);
   });
 
   it('other server errors leave the gate as it is', () => {

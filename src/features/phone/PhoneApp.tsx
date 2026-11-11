@@ -1,15 +1,22 @@
-import { useCallback, useEffect, useReducer, type ReactNode } from 'react';
-import { clearCachedContext, clearStaffSession, loadCachedContext, loadStaffSession, saveCachedContext, saveStaffSession } from '../../data/local/phone';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { clearCachedContext, clearStaffSession, saveStaffSession } from '../../data/local/phone';
 import type { ThemePref } from '../../data/local/prefs';
 import type { KeyValueStore } from '../../data/local/storage';
 import type { DeviceApi, DeviceError, StaffSession } from '../../data/remote/deviceApi';
 import { RegisterScreen } from '../register/RegisterScreen';
 import type { ShareFn } from '../register/share';
 import { Card } from '../../ui/Card';
+import { Sheet } from '../../ui/Sheet';
+import { JoinScreen } from './JoinScreen';
 import { gateReducer } from './model/gate';
+import { joinStore } from './model/join';
+import { loadGate } from './model/load';
 import { deviceErrorMessage } from './model/messages';
-import { PairScreen } from './PairScreen';
+import { platformLabel } from './model/platform';
 import { SignInScreen } from './SignInScreen';
+
+/** A store link that was opened (`#/join/<key>`); `key: null` = the link was malformed. */
+export type JoinLink = { key: string | null };
 
 export interface PhoneAppProps {
   /** null = the server connection is not configured. */
@@ -23,6 +30,10 @@ export interface PhoneAppProps {
   active: boolean;
   onTheme: () => void;
   onOwner: () => void;
+  /** The store link in the address bar right now (App parses it), or null. Taken once, then `onLinkTaken`. */
+  link: JoinLink | null;
+  /** The link has been taken: App replaces the hash with `#/` (so a reload does not run it again). */
+  onLinkTaken: () => void;
 }
 
 function Message({ title, children }: { title: string; children: ReactNode }) {
@@ -69,26 +80,16 @@ const OfflineBanner = ({ onRetry }: { onRetry: () => void }) => (
   </p>
 );
 
-/** The phone shell: pairing → staff sign-in → register, driven only by gateReducer. */
-export function PhoneApp({ api, store, now, newId, share, themePref, active, onTheme, onOwner }: PhoneAppProps) {
+/** The phone shell: store entry → staff sign-in → register, driven only by gateReducer. */
+export function PhoneApp({ api, store, now, newId, share, themePref, active, onTheme, onOwner, link: linkProp, onLinkTaken }: PhoneAppProps) {
   const [gate, dispatch] = useReducer(gateReducer, { s: 'loading' });
+  const label = useMemo(() => platformLabel(typeof navigator === 'undefined' ? '' : navigator.userAgent), []);
 
+  // The one load path (incl. the silent re-join with a stored key: model/load.ts).
   const load = useCallback(async () => {
     if (api === null) return dispatch({ t: 'no_client' });
-    // Definitely no auth session (e.g. an owner signed in here and out again): not a paired device, whatever
-    // the cache says. As `loaded ctx:null` the gate goes to pairing and the cached session/context are cleared.
-    // A failed lookup only means "couldn't tell" (offline with an expired access token): context() decides,
-    // falling back to the cached register when offline.
-    const auth = await api.session();
-    if (auth.ok && auth.data === null) return dispatch({ t: 'loaded', ctx: null, stored: null });
-    const r = await api.context();
-    if (r.ok) {
-      if (r.data !== null) saveCachedContext(store, r.data);
-      dispatch({ t: 'loaded', ctx: r.data, stored: loadStaffSession(store) });
-    } else {
-      dispatch({ t: 'load_failed', error: r.error, cached: loadCachedContext(store), stored: loadStaffSession(store) });
-    }
-  }, [api, store]);
+    dispatch(await loadGate(api, store, label));
+  }, [api, store, label]);
 
   // The one load path: runs on mount and whenever the gate asks for a reload by entering `loading`.
   const reloading = gate.s === 'loading';
@@ -120,7 +121,59 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
     };
   }, [offline, retry]);
 
-  const onPaired = useCallback(() => dispatch({ t: 'paired' }), []);
+  // Link intake: the link is copied into state once (a re-render or StrictMode's second effect run with the
+  // same link must not take it twice) and App clears the hash. A later, new link is taken again.
+  const [link, setLink] = useState<JoinLink | null>(null);
+  const linkTaken = useRef(false);
+  useEffect(() => {
+    if (linkProp === null) {
+      linkTaken.current = false;
+      return;
+    }
+    if (linkTaken.current) return;
+    linkTaken.current = true;
+    setLink({ key: linkProp.key });
+    onLinkTaken();
+  }, [linkProp, onLinkTaken]);
+
+  // A link on a phone that is already in a store: same store → nothing to do; another store → ask first.
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
+  const [switchKey, setSwitchKey] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const inStore = gate.s === 'signed_out' || gate.s === 'ready';
+  const actedOn = useRef<JoinLink | null>(null);
+  useEffect(() => {
+    if (link === null || !inStore || api === null || actedOn.current === link) return;
+    actedOn.current = link;
+    const key = link.key;
+    if (key === null) return setLink(null);
+    void joinStore(api, store, key, label).then((r) => {
+      if (!r.ok && r.error.code === 'other_shop') return setSwitchKey(key);
+      setLink(null);
+      if (!r.ok) setLinkNotice(deviceErrorMessage(r.error));
+    });
+  }, [link, inStore, api, store, label]);
+
+  const cancelSwitch = useCallback(() => {
+    setSwitchKey(null);
+    setLink(null);
+  }, []);
+  const confirmSwitch = async () => {
+    if (api === null || switchKey === null) return;
+    setSwitching(true);
+    const r = await joinStore(api, store, switchKey, label, { switchShop: true });
+    setSwitching(false);
+    setSwitchKey(null);
+    setLink(null);
+    // Reload: the stored staff session is for the old store and is cleared by the gate's rules.
+    if (r.ok) dispatch({ t: 'paired' });
+    else setLinkNotice(deviceErrorMessage(r.error));
+  };
+
+  const onPaired = useCallback(() => {
+    setLink(null);
+    dispatch({ t: 'paired' });
+  }, []);
   const signedOutShopId = gate.s === 'signed_out' ? gate.ctx.shopId : '';
   const onSignedIn = useCallback(
     (signed: StaffSession) => {
@@ -142,6 +195,31 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
 
   const onSignOut = useCallback(() => dispatch({ t: 'signed_out' }), []);
 
+  /** Above the sign-in screen / register: what became of a link, and the switch-store question. */
+  const linkOverlay = (shopName: string) => (
+    <>
+      {linkNotice !== null && (
+        <p className="notice" role="alert">
+          {linkNotice}{' '}
+          <button type="button" className="btn btn-text" onClick={() => setLinkNotice(null)}>
+            Κλείσιμο
+          </button>
+        </p>
+      )}
+      {switchKey !== null && (
+        <Sheet title="Αλλαγή καταστήματος" onClose={cancelSwitch}>
+          <p>{`Η συσκευή είναι στο «${shopName}». Να μπει στο κατάστημα του συνδέσμου;`}</p>
+          <button type="button" className="btn btn-text" onClick={cancelSwitch}>
+            Άκυρο
+          </button>{' '}
+          <button type="button" className="btn btn-primary" disabled={switching} onClick={() => void confirmSwitch()}>
+            Αλλαγή
+          </button>
+        </Sheet>
+      )}
+    </>
+  );
+
   switch (gate.s) {
     case 'loading':
       return <p className="notice-soft">Φόρτωση…</p>;
@@ -157,12 +235,27 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
       return <LoadErrorScreen error={gate.error} onRetry={retry} />;
     case 'unpaired':
       // api is non-null here: without a client the gate is `unconfigured`.
-      return api && <PairScreen api={api} notice={gate.notice} onPaired={onPaired} onOwner={onOwner} />;
+      // A new link remounts the screen, so its key is filled in and tried once.
+      return (
+        api && (
+          <JoinScreen
+            key={link === null ? 'typed' : `link:${link.key ?? ''}`}
+            api={api}
+            store={store}
+            label={label}
+            notice={link !== null && link.key === null ? 'Ο σύνδεσμος δεν είναι σωστός.' : gate.notice}
+            initialKey={link?.key ?? null}
+            onJoined={onPaired}
+            onOwner={onOwner}
+          />
+        )
+      );
     case 'signed_out':
       return (
         api && (
           <>
             {gate.offline && <OfflineBanner onRetry={retry} />}
+            {linkOverlay(gate.ctx.shopName)}
             <SignInScreen api={api} shopName={gate.ctx.shopName} onSignedIn={onSignedIn} onServerError={onServerError} onOwner={onOwner} />
           </>
         )
@@ -175,6 +268,7 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
       return (
         <>
           {gate.offline && <OfflineBanner onRetry={retry} />}
+          {linkOverlay(ctx.shopName)}
           <RegisterScreen
             key={`${ctx.shopId}:${ctx.businessDate}`}
             ctx={ctx}

@@ -342,6 +342,17 @@ describe('navigation', () => {
     expect(screen.queryByRole('menuitem', { name: 'Προσωπικό' })).toBeNull();
   });
 
+  it('a store link #/join/<key> opens the phone area, joins once and clears the hash to #/', async () => {
+    window.location.hash = '#/join/ABCDEFGHJKLMNPQR';
+    const api = fakeDeviceApi();
+    await start(memoryStore(), true, api);
+    expect(window.location.hash).toBe('#/');
+    await settle();
+    expect(api.join).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api.join).mock.calls[0]?.[0]).toBe('ABCDEFGHJKLMNPQR');
+    expect(screen.getByLabelText('100€')).toBeTruthy();
+  });
+
   it('a day change found at submit reloads into the new day’s closing', async () => {
     const tomorrow = { shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-08' };
     const context = vi
