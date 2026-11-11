@@ -40,10 +40,16 @@ describe('time', () => {
     expect(isLocked('garbage', now)).toBe(false);
   });
 
-  it('formats clock and date in Greek style', () => {
-    const iso = new Date(2026, 8, 29, 9, 5).toISOString();
-    expect(formatClock(iso)).toBe('09:05');
-    expect(formatDate(iso)).toBe('29/09/2026');
+  it('formats clock and date in shop time (Europe/Athens), whatever the machine zone', () => {
+    expect(formatClock('2026-11-11T22:30:00Z')).toBe('00:30');     // EET, UTC+2
+    expect(formatDate('2026-11-11T22:30:00Z')).toBe('12/11/2026');
+    expect(formatClock('2026-07-01T21:30:00Z')).toBe('00:30');     // EEST, UTC+3
+    expect(formatDate('2026-07-01T21:30:00Z')).toBe('02/07/2026');
+    expect(formatDate('2026-09-29T06:05:00Z')).toBe('29/09/2026');
+  });
+  it('returns unparseable input unchanged', () => {
+    expect(formatClock('nope')).toBe('nope');
+    expect(formatDate('nope')).toBe('nope');
   });
 });
 
