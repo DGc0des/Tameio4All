@@ -172,8 +172,12 @@ export function DayScreen({ api, shopId, date, navigate, now, newId = randomId }
                   onClick={() => setSelectedId(v.id)}
                 >
                   <span className="history-head">
-                    <b>{formatTimeEl(v.createdAt)}</b>
-                    <span className="history-meta">{v.authorName}</span>
+                    <span>
+                      {/* A correction may be made on a later day than the business day: it gets the full stamp. */}
+                      <b>{v.kind === 'owner_correction' ? formatStampEl(v.createdAt) : formatTimeEl(v.createdAt)}</b>
+                      {' · '}
+                      <span className="history-meta">{v.authorName}</span>
+                    </span>
                   </span>
                 </button>
               ))}

@@ -18,9 +18,28 @@ const EMPTY_MESSAGE = 'Δεν υπάρχουν κλεισίματα σε αυτ�
 /** The server's own default range applies to a side that is not a valid date. */
 const validOrNull = (s: string): string | null => (isIsoDate(s) ? s : null);
 
-export function HistoryScreen({ api, shopId, navigate }: { api: OwnerApi; shopId: string; navigate: OwnerNavigate }) {
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+export interface HistoryRange {
+  from: string;
+  to: string;
+}
+
+export interface HistoryScreenProps {
+  api: OwnerApi;
+  shopId: string;
+  navigate: OwnerNavigate;
+  /** The range to open with (read once, at mount); without it the server's default (last 30 days) applies. */
+  initialRange?: HistoryRange | null;
+  /** Called after a successful load with the range the server answered for (never unvalidated typed text). */
+  onRangeLoaded?: (from: string, to: string) => void;
+}
+
+export function HistoryScreen({ api, shopId, navigate, initialRange = null, onRangeLoaded }: HistoryScreenProps) {
+  /** Only the mount-time value counts: later changes of the prop must not refetch or reset the inputs. */
+  const initial = useRef(initialRange);
+  const reportRange = useRef(onRangeLoaded);
+  reportRange.current = onRangeLoaded;
+  const [from, setFrom] = useState(initial.current?.from ?? '');
+  const [to, setTo] = useState(initial.current?.to ?? '');
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   /** The newest request; an older response is dropped. */
   const latest = useRef(0);
@@ -41,13 +60,14 @@ export function HistoryScreen({ api, shopId, navigate }: { api: OwnerApi; shopId
         if (f === null) setFrom(r.data.from);
         if (t === null) setTo(r.data.to);
         setLoad({ status: 'ready', list: r.data });
+        reportRange.current?.(r.data.from, r.data.to);
       });
     },
     [api, shopId],
   );
 
   useEffect(() => {
-    fetchRange(null, null);
+    fetchRange(initial.current?.from ?? null, initial.current?.to ?? null);
     return () => {
       latest.current += 1; // unmounted or shop changed: nothing may land
     };
@@ -102,7 +122,7 @@ export function HistoryScreen({ api, shopId, navigate }: { api: OwnerApi; shopId
 }
 
 function summaryOf(day: HistoryDay, list: HistoryList): Summary | null {
-  return day.status === 'submitted' ? summarizeInputs(list.configs[day.current.configId], day.current.inputs) : summarizeOpen(day.open);
+  return day.status === 'submitted' ? summarizeInputs(Object.hasOwn(list.configs, day.current.configId) ? list.configs[day.current.configId] : undefined, day.current.inputs) : summarizeOpen(day.open);
 }
 
 function DayRow({ day, list, onOpen }: { day: HistoryDay; list: HistoryList; onOpen: () => void }) {

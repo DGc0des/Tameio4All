@@ -9,7 +9,7 @@ import { DevicesScreen } from './DevicesScreen';
 import { ErrorText, OwnerHeader, type OwnerNavigate } from './OwnerUi';
 import { OwnerStaffScreen } from './OwnerStaffScreen';
 import { DayScreen } from './history/DayScreen';
-import { HistoryScreen } from './history/HistoryScreen';
+import { HistoryScreen, type HistoryRange } from './history/HistoryScreen';
 import { TodayScreen } from './TodayScreen';
 import { SettingsScreen } from './settings/SettingsScreen';
 import { useAction } from './useAction';
@@ -46,6 +46,9 @@ export function ShopLayout({ api, shopId, tab, date, navigate, store, now, email
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const rename = useAction();
+  /** The history date range, kept here because the list unmounts while a day is open. Per shop. */
+  const [historyRange, setHistoryRange] = useState<({ shopId: string } & HistoryRange) | null>(null);
+  const keepHistoryRange = useCallback((from: string, to: string) => setHistoryRange({ shopId, from, to }), [shopId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,7 +141,17 @@ export function ShopLayout({ api, shopId, tab, date, navigate, store, now, email
         ))}
       </nav>
       <main className="page">
-        <TabBody tab={tab} date={date} api={api} shopId={shopId} navigate={navigate} store={store} now={now} />
+        <TabBody
+          tab={tab}
+          date={date}
+          api={api}
+          shopId={shopId}
+          navigate={navigate}
+          store={store}
+          now={now}
+          historyRange={historyRange?.shopId === shopId ? historyRange : null}
+          onHistoryRange={keepHistoryRange}
+        />
       </main>
       <footer className="notice-soft" style={{ padding: '0 12px 16px' }}>
         <button type="button" className="link" onClick={onExit}>
@@ -161,15 +174,17 @@ interface TabBodyProps {
   navigate: OwnerNavigate;
   store: KeyValueStore;
   now: () => Date;
+  historyRange: HistoryRange | null;
+  onHistoryRange: (from: string, to: string) => void;
 }
 
-function TabBody({ tab, date, api, shopId, navigate, store, now }: TabBodyProps) {
+function TabBody({ tab, date, api, shopId, navigate, store, now, historyRange, onHistoryRange }: TabBodyProps) {
   if (tab === 'today') return <TodayScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
   if (tab === 'history') {
     return date ? (
       <DayScreen key={shopId + date} api={api} shopId={shopId} date={date} navigate={navigate} now={now} />
     ) : (
-      <HistoryScreen key={shopId} api={api} shopId={shopId} navigate={navigate} />
+      <HistoryScreen key={shopId} api={api} shopId={shopId} navigate={navigate} initialRange={historyRange} onRangeLoaded={onHistoryRange} />
     );
   }
   if (tab === 'settings') return <SettingsScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { OwnerRoute } from '../../../../src/app/router';
 import { formatDayEl } from '../../../../src/app/dates';
 import { joinJuicePreset } from '../../../../src/core/presets';
 import { formatEuro } from '../../../../src/core/money';
@@ -116,6 +118,13 @@ describe('HistoryScreen', () => {
     }
   });
 
+  it('a config id that names an Object.prototype member is unreadable, not looked up on the prototype', async () => {
+    setup(list([submitted('2026-11-10', version('v1', { configId: 'constructor' })), submitted('2026-11-09', version('v2', { configId: 'toString' }))]));
+    await screen.findByRole('button', { name: new RegExp(formatDayEl('2026-11-10')) });
+    expect(within(row('2026-11-10')).getByText('Δεν διαβάζεται')).toBeTruthy();
+    expect(within(row('2026-11-09')).getByText('Δεν διαβάζεται')).toBeTruthy();
+  });
+
   it('tapping a row (even an unreadable one) navigates to that day', async () => {
     const { navigate } = setup(list([submitted('2026-11-10', version('v1')), submitted('2026-11-09', version('v2', { configId: 'bad' }))]));
     await screen.findByRole('button', { name: new RegExp(formatDayEl('2026-11-10')) });
@@ -219,6 +228,85 @@ describe('HistoryScreen', () => {
     });
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('button', { name: new RegExp(formatDayEl('2026-11-08')) })).toBeTruthy();
+  });
+});
+
+describe('HistoryScreen initial range', () => {
+  it('fetches the given range instead of the default and shows it in the inputs', async () => {
+    const listClosings = vi.fn((_s: string, f: string | null, t: string | null) => ok(list([], { from: f ?? '2026-10-13', to: t ?? '2026-11-11' })));
+    render(<HistoryScreen api={fakeApi({ listClosings })} shopId={SHOP} navigate={vi.fn()} initialRange={{ from: '2026-09-01', to: '2026-09-30' }} onRangeLoaded={vi.fn()} />);
+    expect(listClosings).toHaveBeenCalledWith(SHOP, '2026-09-01', '2026-09-30');
+    expect((screen.getByLabelText('Από') as HTMLInputElement).value).toBe('2026-09-01');
+    expect((screen.getByLabelText('Έως') as HTMLInputElement).value).toBe('2026-09-30');
+    await screen.findByText('Δεν υπάρχουν κλεισίματα σε αυτό το διάστημα.');
+  });
+
+  it('reports the server-echoed range only after a successful load', async () => {
+    const onRangeLoaded = vi.fn();
+    const pending: ((r: Result<HistoryList>) => void)[] = [];
+    const listClosings = vi.fn(() => new Promise<Result<HistoryList>>((res) => pending.push(res)));
+    render(<HistoryScreen api={fakeApi({ listClosings })} shopId={SHOP} navigate={vi.fn()} onRangeLoaded={onRangeLoaded} />);
+    expect(onRangeLoaded).not.toHaveBeenCalled();
+    await act(async () => {
+      pending[0]!({ ok: true, data: list([]) });
+    });
+    expect(onRangeLoaded).toHaveBeenLastCalledWith('2026-10-13', '2026-11-11');
+    onRangeLoaded.mockClear();
+    fireEvent.change(screen.getByLabelText('Από'), { target: { value: '2026-10-01' } });
+    await act(async () => {
+      pending[1]!({ ok: false, error: { code: 'bad_range' } });
+    });
+    expect(onRangeLoaded).not.toHaveBeenCalled();
+  });
+});
+
+describe('ShopLayout history range', () => {
+  const OTHER = '9b8a7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d';
+  const echo = (_s: string, f: string | null, t: string | null) => ok(list([submitted('2026-11-10', version('v1'))], { from: f ?? '2026-10-13', to: t ?? '2026-11-11' }));
+
+  const store = memoryStore();
+  function Harness({ api }: { api: ReturnType<typeof fakeApi> }) {
+    const [route, setRoute] = useState<OwnerRoute>({ name: 'shop', shopId: SHOP, tab: 'history' });
+    if (route.name !== 'shop') return null;
+    return (
+      <>
+        <button type="button" onClick={() => setRoute({ name: 'shop', shopId: OTHER, tab: 'history' })}>test: other shop</button>
+        <ShopLayout api={api} shopId={route.shopId} tab={route.tab} date={route.date} navigate={setRoute} store={store}
+          now={() => new Date(2026, 10, 11, 12)} email="o@test.gr" onSignOut={vi.fn()} onExit={vi.fn()} />
+      </>
+    );
+  }
+  const harnessApi = () =>
+    fakeApi({
+      listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί' }, { id: OTHER, name: 'Άλλο' }])),
+      listClosings: vi.fn(echo),
+    });
+
+  it('keeps the chosen range across list → day → «← Ιστορικό»', async () => {
+    const api = harnessApi();
+    render(<Harness api={api} />);
+    await screen.findByRole('button', { name: new RegExp(formatDayEl('2026-11-10')) });
+    fireEvent.change(screen.getByLabelText('Από'), { target: { value: '2026-09-01' } });
+    expect(api.listClosings).toHaveBeenLastCalledWith(SHOP, '2026-09-01', '2026-11-11');
+    await waitFor(() => expect(screen.queryByText('Φόρτωση…')).toBeNull());
+    fireEvent.click(row('2026-11-10'));
+    fireEvent.click(await screen.findByRole('button', { name: '← Ιστορικό' }));
+    await screen.findByRole('button', { name: new RegExp(formatDayEl('2026-11-10')) });
+    expect(api.listClosings).toHaveBeenLastCalledWith(SHOP, '2026-09-01', '2026-11-11');
+    expect((screen.getByLabelText('Από') as HTMLInputElement).value).toBe('2026-09-01');
+    expect((screen.getByLabelText('Έως') as HTMLInputElement).value).toBe('2026-11-11');
+  });
+
+  it("a different shop's history starts with the server default, not the first shop's range", async () => {
+    const api = harnessApi();
+    render(<Harness api={api} />);
+    await screen.findByRole('button', { name: new RegExp(formatDayEl('2026-11-10')) });
+    fireEvent.change(screen.getByLabelText('Από'), { target: { value: '2026-09-01' } });
+    await waitFor(() => expect(screen.queryByText('Φόρτωση…')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'test: other shop' }));
+    await waitFor(() => expect(api.listClosings).toHaveBeenCalledWith(OTHER, null, null));
+    await waitFor(() => expect((screen.getByLabelText('Από') as HTMLInputElement).value).toBe('2026-10-13'));
+    expect(api.listClosings).not.toHaveBeenCalledWith(OTHER, '2026-09-01', expect.anything());
   });
 });
 

@@ -126,7 +126,7 @@ describe('DayScreen', () => {
     await loaded();
     const versions = region('2 υποβολές');
     const rows = within(versions).getAllByRole('button');
-    expect(rows.map((r) => r.textContent)).toEqual(['21:42ΜΑΡΙΑ', '19:05ΓΙΑΝΝΗΣ']);
+    expect(rows.map((r) => r.textContent)).toEqual(['21:42 · ΜΑΡΙΑ', '19:05 · ΓΙΑΝΝΗΣ']);
     expect(screen.queryByText('Βλέπεις παλαιότερη έκδοση')).toBeNull();
 
     fireEvent.click(rows[1]!);
@@ -141,6 +141,14 @@ describe('DayScreen', () => {
     expect(screen.queryByText('Βλέπεις παλαιότερη έκδοση')).toBeNull();
     expect(within(region('Καταμέτρηση')).getByText('100€ × 14')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Διόρθωση' })).toBeTruthy();
+  });
+
+  it('an owner correction row in the list carries the full stamp (a later day is visible), staff rows only the time', async () => {
+    const corrected = version('v3', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', createdAt: '2026-11-10T12:32:00Z', correctsId: 'v2' });
+    setup(day({ versions: [corrected, v2, v1] }));
+    await loaded();
+    const rows = within(region('3 υποβολές')).getAllByRole('button');
+    expect(rows.map((r) => r.textContent)).toEqual(['Τρι 10/11 14:32 · Ιδιοκτήτης', '21:42 · ΜΑΡΙΑ', '19:05 · ΓΙΑΝΝΗΣ']);
   });
 
   it('omits the versions list when there is a single version', async () => {
