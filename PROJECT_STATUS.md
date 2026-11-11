@@ -7,7 +7,8 @@
 - [ ] Plan 4a — owner app: auth, shop, settings + formula builder, staff/PIN, pairing codes, devices (code complete; pending the manual end-to-end check on the dev project)
 - [ ] Plan 4b / stage 1 — phone side (pair, server config + staff, PIN sign-in, server submit, business day, day-change setting; LOCAL_SHOP removed): code complete; pending the manual two-browser check (see Not verified)
 - [ ] Stage 2 — live shared closing (open closing per day, per-field LWW writes, offline replay, realtime broadcast + presence, revision-checked submit, owner «Σήμερα» tab): code complete; SQL 010–090 pass on dev; pending the real-device checks (see Not verified)
-- [ ] Plan 5 — closings, history, suggestions, PWA, deploy
+- [ ] Stage 3 — owner closing history and corrections («Ιστορικό» tab: closings as an append-only version log, range list, day detail with versions + Φάκελος, owner corrections saved as new versions with conflict handling, filing an unsubmitted day): code complete on `stage-3-history`; SQL 040/070/090/100/110 pass on dev, the full 010–110 run is not recorded; pending the manual browser check (see Not verified)
+- [ ] Plan 5 — closings, suggestions, PWA, deploy (closing history landed in stage 3)
 
 ## Product decisions
 - 2026-11-07: Αποβάρα removed from the register (menu item, `#/tare` route, TareScreen). `tareItems`
@@ -89,7 +90,7 @@ Whole-branch review of Supabase schema, RLS policies, and RPCs for security. Con
 - Shop rename: there is no update grant on `shops.name` — add one or an RPC. → done (grant + policy).
 - Unlock a staff member without changing the PIN (today only `set_staff_pin` clears a lockout). → done (`unlock_staff`).
 - Telling "revoked" from "not paired" on the phone: a `device_status()` RPC, or document `verify_staff_pin(null, null)`. → moved to Plan 4b.
-- Device label in closing history: `closings.device_user_id` has no FK to `devices`. → moved to Plan 5.
+- Device label in closing history: `closings.device_user_id` has no FK to `devices`. → moved to Plan 5; still open after stage 3 (history shows the author's name only).
 
 ## Stage 1 findings (phone sign-in + server submit)
 Whole-stage review round by round (Tasks 1-8). Continues the severity scheme above. Fixed items keep their "why".
@@ -181,6 +182,36 @@ Whole-stage review task by task (Tasks 1-8) plus the Task 9 verification run. Co
 | L64 | A write still in flight when the drain times out is not cancelled and may land after `staff_sign_out` (ignored after dispose or counted as a stale-equal ack on replay; no loss found, untested) | Test it, or abort in-flight writes on sign-out | open |
 | L65 | A few phoneApp gate tests fail intermittently (~1 in 15 full runs), already on `fa50962` before the final fixes | Find the timing dependency in the gate tests | open |
 
+## Stage 3 findings (owner closing history and corrections)
+Whole-stage review task by task (Tasks 1-7); the Task 8 verification run found nothing new. Continues the severity
+scheme above (no High findings this stage). Fixed items keep their "why"; the minors the reviewers deferred are grouped by area.
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| M25 | The first 100 test could not tell the `seq` rule from the forbidden `created_at` order: both submissions got the same `now()` inside one transaction, so T1/T8 would pass under either | 100 backdates the second submission by an hour (and asserts it is older by `created_at`), so the current version, list, day and suggestions assertions only pass under `seq` | fixed — commit `eaaad73` |
+| M26 | `owner_save_closing` ran the idempotency lookup before taking its locks: two same-key calls in flight both missed it, and the second one (once it got the lock) answered `closing_changed` instead of `repeat` although its correction was stored | Migration `20261111000002b_owner_save_closing_relock` repeats the lookup right after the advisory lock and `open_closings … for update` (the early lookup stays); applied to dev as `owner_save_closing_relock`; 110 and 100 re-run whole | fixed — but the interleaving itself is untested (L73) |
+| M27 | The day screen kept `editing` when another version was selected (the editor could sit next to an older version) and read `day.configs[id]` without an own-property guard | The editor replaces the version list while open and always starts from the current version; `configOf` uses `Object.hasOwn` | fixed — Task 7 |
+| L66 | 100: T9 catches any `check_violation`, not specifically `closings_kind_shape`; no positive `owner_correction` insert case; T5 has no 366/367-day boundary and no `p_to`-only case | Tighten when 100 is next touched | open |
+| L67 | The list's `configs` holds the configs of the current versions only (the day detail carries all of them); parsers and screens must not expect more | By design | open (by design) |
+| L68 | 090 was re-run whole on dev after the stage-3 migrations, but the connector never showed whether its realtime block (T8) raised the `SKIPPED` NOTICE or ran | Check `pg_inherits` for `realtime.messages` partitions when re-running | open |
+| L69 | The owner can attribute a new expense line to any staff member of the shop (the server accepts it) | Trusted role; the owner may also leave lines as `{kind:'owner'}` | open — accepted |
+| L70 | 110 has no test for: an unsubmitted day with a non-null `expected_current_id` (→ `closing_changed`, `current_id` null); `config_mismatch` on the unsubmitted branch; today with an open closing but no submission (→ `no_closing_day`) | Add to 110 | open |
+| L71 | The advisory-lock key builds its date with `p_business_date::text`, which follows `DateStyle` | Use `to_char(…, 'YYYY-MM-DD')` | open |
+| L72 | 110 has unused variables (`exp_`, `cases`) | Clean up | open |
+| L73 | The same-key race and the owner-vs-staff-submit locking in `owner_save_closing` are written but exercised by no test (single-transaction SQL tests cannot interleave) | Needs two real sessions (see Not verified) | open |
+| L74 | `parseHistoryList`/`parseDayDetail` are lenient on purpose: missing `configs`/`staff_names` → `{}`, missing `corrects_closing_id` → `null`. Untested: `version_count` < 1 or non-integer, a non-object `configs`, the `closingDay` `ok:false` mapping | Add tests or tighten | open |
+| L75 | `model.ts`: `formatStampEl` maps `en-GB` weekday names and falls back to English if the runtime ICU differs; `snapshotFromInputs` does not check `newId()` output against the expense-id charset; `applyLocalEdit` accepts `e:<id>:d`/`:a` without an `e:<id>` line; the inputs → snapshot round trip drops expenses beyond `maxExpenses` and zero values (impossible for validated stored inputs); untested: duplicate-id replacement, a non-canonical denomination skip, `summarizeOpen` with an invalid box | Accept / test when touched | open |
+| L76 | `HistoryScreen`: list-row tests only check wiring against `summarizeInputs`, no literal amounts; no test that «Ξανά» repeats a non-default range; date inputs keep what was typed when the server answers a different range; the fetch effect refetches `(null, null)` on `api`/`shopId` change without resetting `from`/`to` (masked by `key={shopId}`) | Test / reset | open |
+| L77 | `DayScreen`: `.day-title` has no CSS rule; a version row's accessible name runs time and author together («21:42ΜΑΡΙΑ»); no test that a reload drops an in-flight earlier response | Polish | open |
+| L78 | `CorrectionEditor`: the key-on-version-id comment is misleading (the loading state is what remounts it); `editing` stays true when a reload returns an unreadable current or an error, so a later «Ξανά» reopens the editor silently; one stale render of the old day's editor on a date change; the editor shows no author on expense rows and no Φάκελος; untested: closing the conflict sheet then saving again, the `config_mismatch` «Φόρτωση νέας» refetch, an unsubmitted-day save leaving the editor. The brief's invalid-box test value `'5-3'` is sanitized to `53` by the box, so the test uses `'1.234'` (same requirement: an invalid box blocks save) | Polish / add tests | open |
+
+Known open items (by design or deferred, not review findings):
+- An unfinished correction is lost on leaving the screen (the editor's state is local; «Άκυρο», a tab switch or a reload drops it, with no confirmation).
+- There is no void UI: `closings.voided_at` exists and every read ignores voided rows, but nothing sets it from the app.
+- The owner can attribute a line to any staff member of the shop (L69).
+- No device label in history: `closings.device_user_id` has no FK to `devices` (open since Plan 3), and owner rows have none.
+- On dev, the `seq` back-fill followed `created_at, id` order; from then on `seq` (insertion order) is the only ordering of versions.
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped
@@ -193,8 +224,12 @@ UI (jsdom + Testing Library): primitives, counting cards, expenses + learned sug
 Owner model — pure, no supabase-js loaded (`tests/app/ownerRouter.test.ts`, `tests/data/ownerApi.test.ts`, `tests/data/ownerLocal.test.ts`, `tests/data/remoteErrors.test.ts`, `tests/features/owner/{model,messages,preview,settingsDraft}.test.ts`): settings reducer, terms, preview, limits, pairing, messages, `mapError`, owner API parameter names, owner drafts, auth storage.
 Owner UI (`tests/features/owner/*.test.tsx`, jsdom + Testing Library against `fakeApi.ts`, never loads supabase-js): auth + link errors, shops, new shop, settings publish/conflict/draft, formula builder + preview, staff, devices + pairing countdown.
 Database: supabase/tests 010–090 (RLS, owner functions, pairing/PIN lockout, submit/idempotency/suggestions, owner app, staff sessions + business date + day change, session submit + schema 2, open closing (per-field LWW/stale, strict shapes, expense authors + cap, owner variants, realtime topic authorization incl. revoked phone/deactivated cashier, no direct table access), live submit (revision check, pinned config, `last_submit`, owner-authored lines)) — all nine run whole against the dev project on 2026-11-10 after the stage-2 migrations, all passing; 080 and 090 re-run whole (as committed) on 2026-11-11 after `20261108000003_live_fixes` (ack carries the stored value, owner `wrong_day`), both passing with partitions present (5) (each ends in ROLLBACK). On that run `realtime.messages` had daily partitions, so the 080 T2/I2 and 090 T8 broadcast/policy blocks executed instead of skipping (they raise a NOTICE and skip when no partition exists). `list_migrations` shows all five stage-2 migrations applied on dev, plus `live_fixes` (2026-11-11).
+Stage 3 database: `100_history.sql` (version log `seq`, `owner_list_closings`, `owner_get_closing_day`, suggestions on the current version, a voided current version falling back to the previous one, `not_owner` for a foreign owner/unknown shop/phone, backdated `created_at` proving `seq` decides) and `110_owner_save_closing.sql` (`owner_save_closing`: new version rows with the original untouched, `open_closings` untouched, same-key repeat/conflict, `closing_changed` after a stale expectation or a staff resubmission (sequential), `not_owner`, `bad_inputs`, authorship of deactivated/never-signed-in staff, `config_mismatch`, filing an unsubmitted day). What was actually run on dev (`fstfuhogvsdaiwpfdmep`) during stage 3: Task 1 — 100 whole, then 040, 070 and 090 whole (all pass unchanged); Task 2 — 110 whole, then 100 and 090; after the relock fix (`owner_save_closing_relock`) — 110 and 100 whole; security advisors after each migration: only the usual «authenticated can execute SECURITY DEFINER» warning for the new public functions, no new finding category. The full 010–110 run was **not** repeated at the end (see Not verified).
+Stage 3 app (pure, no supabase-js): `tests/data/history.test.ts` (shape-checked parsers), `tests/data/ownerApi.test.ts` + `remoteErrors.test.ts` + `tests/features/owner/messages.test.ts` (RPC parameter names, `saveClosing` mapping, the six error strings), `tests/app/ownerRouter.test.ts` + `dates.test.ts` (history routes, `formatStampEl`), `tests/features/owner/history/model.test.ts` (summaries, breakdown, inputs → local snapshot, `applyLocalEdit`). UI against `fakeApi.ts`: `history.test.tsx` (range list, «Δεν υποβλήθηκε», «διορθωμένο», errors/retry), `day.test.tsx` (versions, older version, breakdown, Φάκελος, unreadable versions, unsubmitted day, superseded response), `correction.test.tsx` (prefill, edit + save with ids/authors kept, owner-authored lines, blocked states, one call per double click, retry key reuse, `closing_changed` conflict sheet with both choices, `config_mismatch`, filing an unsubmitted day).
 Live closing (pure, no supabase-js): `tests/features/register/live/*` (field model + key regex, merge, sync engine: queue/replay/stale/wrong_day/halt/restart), `tests/data/liveRemote.test.ts` (shape-checked parsers, channel wrapper against a stub), `tests/data/openClosing.test.ts` (local storage), register + owner «Σήμερα» flows against fakes.
 Phone: gate reducer, phone local storage, DeviceApi mapping, sign-in/pair screens, register submit flow, owner day-change screen (`tests/features/phone/*`, `tests/data/*`, `tests/features/owner/*`) — `npm test` 601/601 on 53 files, `npm run typecheck` clean, `npm run build` ok (2026-11-11, after the final-review fixes on `stage-2-live-closing`; one of ~15 full runs hit a 1 s `waitFor` timeout in phoneApp «an offline phone re-checks…» under parallel load, unrelated to this wave — passes on re-run). A run overlapping a sleeping machine once showed 21 timeout failures; re-run, 580/580 in 3.3 s of test time.
+
+Stage 3 verification (2026-11-11, `stage-3-history` at `45c7de4`): `npm test` 677/677 on 58 files (3.85 s), `npm run typecheck` clean, `npm run build` ok (OwnerEntry chunk 76.45 kB, 20.10 kB gzip).
 
 CI (GitHub Actions: `npm ci` → typecheck → test on Node 22) ran green on GitHub for `b281da3` —
 https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
@@ -239,4 +274,14 @@ CI now runs the production build (`npm run build`) as well, after test.
   6. Cheap Android phone: `backdrop-filter` blur + realtime updates while typing (jank, battery), and the on-screen keyboard.
   7. Submit from two phones around the same time: the second gets `draft_changed`, reviews, resubmits; `last_submit` and the `submitted` broadcast show on the other devices.
   8. A new shop day while a phone is open: edits of the old day are dropped with the notice, the register reloads onto the new day.
+- Stage 3 (owner history and corrections), NOT verified:
+  - SQL tests 010–110 run whole together against dev after both stage-3 migrations, and `list_migrations` showing `closing_versions`, `owner_save_closing`, `owner_save_closing_relock` (the Supabase connector was not available for the final verification; only the per-task runs listed under Tests were done, so an older file among 010–080 could be affected by the `closings` column changes without anyone having seen it).
+  - The same-key race and the owner-vs-staff-submit locking in `owner_save_closing` (advisory lock + `open_closings … for update`, the relock lookup) are written but exercised by no test: single-transaction SQL tests cannot interleave two sessions.
+  - Manual checks, needs the user in a real browser against dev:
+    1. Submit twice from a phone, open «Ιστορικό», check the list totals against the register's Σύνοψη, open the day, correct an amount, confirm the phone register and «Υποβλήθηκε …» are unchanged and the list shows «διορθωμένο».
+    2. Two owner tabs correcting the same day → the conflict dialog, both choices («Φόρτωση νέας», «Αποθήκευση πάνω της»).
+    3. A phone resubmitting while the owner's editor is open on today.
+    4. A missed day (open closing, no submit, after the day change) appears as «Δεν υποβλήθηκε» and can be filed.
+    5. Five tabs and the day detail on a real phone (360 px wide).
+    6. A year-long range on a shop with real data (response size, render time).
 - Realtime partitions are created by the Realtime service, not by us: if it is idle for days (free tier), `realtime.send` would only WARN and broadcasts would silently stop until traffic recreates them. Not observed; re-check with the 080 skip NOTICE (`select count(*) from pg_inherits where inhparent = 'realtime.messages'::regclass`).
