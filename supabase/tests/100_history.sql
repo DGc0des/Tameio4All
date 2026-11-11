@@ -73,10 +73,17 @@ insert into public.open_closings (id, shop_id, business_date, config_id) values
 insert into public.open_closing_fields (open_closing_id, key, value, version) values
   ('00000000-0000-0000-0000-0000000000f1', 'd:10000', '{"text":"3","mode":"count"}', 1);
 
+-- Rows of one transaction share now(): make the SECOND submission the older one by created_at, so any
+-- implementation that orders by created_at (forbidden) picks the first one and fails T1/T2/T6/T8.
+update public.closings set created_at = now() - interval '1 hour' where id = current_setting('t.c2')::uuid;
+
 -- T1 seq unique + increasing; current_closing = the second submission
 do $$ begin
   if (select seq from public.closings where id = current_setting('t.c2')::uuid) <= (select seq from public.closings where id = current_setting('t.c1')::uuid) then
     raise exception 'T1 second submission does not have the higher seq';
+  end if;
+  if (select created_at from public.closings where id = current_setting('t.c2')::uuid) >= (select created_at from public.closings where id = current_setting('t.c1')::uuid) then
+    raise exception 'T1 setup: second submission is not older by created_at';
   end if;
   if (select count(distinct seq) from public.closings) <> (select count(*) from public.closings) then raise exception 'T1 seq not unique'; end if;
   if (select id from private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date)) is distinct from current_setting('t.c2')::uuid then
