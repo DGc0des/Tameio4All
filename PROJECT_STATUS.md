@@ -247,11 +247,12 @@ Branch `fix/review-2026-11-11`. Continues the severity scheme above.
 
 | ID | Issue | Fix | Status |
 |---|---|---|---|
-| M38 | No Supabase request had a timeout: a stalled connection (weak Wi-Fi, not fully offline) hung for minutes, `loadGate` sat on «Φόρτωση…» with no retry, and the sync engine (one load and one write in flight) sent nothing and kept Υποβολή disabled | `src/data/remote/timeoutFetch.ts`, set once in `client.ts`: 15 s, rejects with `request_timeout`, mapped to `network` by both `NETWORK_RE`; a caller's own abort passes through unchanged | fixed — `bc5c5a9` |
+| M38 | No Supabase request had a timeout: a stalled connection (weak Wi-Fi, not fully offline) hung for minutes, `loadGate` sat on «Φόρτωση…» with no retry, and the sync engine (one load and one write in flight) sent nothing and kept Υποβολή disabled | `src/data/remote/timeoutFetch.ts`, set once in `client.ts`: 15 s per attempt (RPC calls, POST, fail as `network` after 15 s; GET table reads are retried by postgrest-js up to 3× with 1/2/4 s waits, so ≈ 67 s, see L92), rejects with `request_timeout`, mapped to `network` by both `NETWORK_RE`; a caller's own abort passes through unchanged | fixed — `bc5c5a9` |
 | L87 | Owner «Σήμερα» showed no date and had no stale-day guard: on a slow/offline start it showed another day's cached snapshot under «Σήμερα», and edits typed there were dropped as `wrong_day` | `TodayScreen` shows the date (`formatDayEl`) and renders a snapshot only when its `businessDate` equals `loadedDate` (last successful load in this mount; `staleDay` guard) | fixed — `cc8d0eb` |
 | L88 | `formatClock`/`formatDate` used the browser's time zone; every other timestamp uses Europe/Athens | `formatClock` via `formatTimeEl`, `formatDate` via an Athens `Intl.DateTimeFormat`; unparseable input is returned unchanged | fixed — `1786594` |
 | L89 | `TodayScreen` kept `expectedOverride` (set after `closing_changed`) until a save succeeded: if a cashier submitted in between, the next «Καταχώρηση αλλαγών» was guarded on the outdated id and failed once | `expectedOverride` is `{forSubmit, id}` and is used only while `forSubmit === lastSubmit.closingId` | fixed — `12a7256` |
-| L90 | A response whose body stalls after the headers is not covered by the request timeout (the timer is cleared when the fetch settles) | Deferred minor | open |
+| L90 | A response whose body stalls after the headers is not covered by the request timeout (the timer is cleared when the fetch settles); a caller's own abort arriving while the body is read is not forwarded either (the caller-signal listener is removed once headers arrive); no caller passes a signal today | Deferred minor | open |
+| L92 | GET table reads (owner settings/staff/devices reads) time out after ≈ 67 s, not 15 s, because postgrest-js retries a timed-out GET 3× (1/2/4 s waits) | Options: `db: { retry: false }` (also drops 503/520 retries) or accept | open |
 | L91 | An owner opening «Σήμερα» offline sees no cached numbers (accepted trade-off of L87) | Accepted | open — accepted |
 
 ## Tests
@@ -287,7 +288,8 @@ CI now runs the production build (`npm run build`) as well, after test.
 - Review fixes 2026-11-11 (M38, L87–L89), NOT verified: the 15 s timeout has only run against fakes — not on a real
   phone with a stalled network (devtools throttling "offline after connect", or a captive Wi-Fi), and not that
   supabase-js surfaces the timeout to `mapDeviceError`/`mapError` as `Error: request_timeout` / `AuthRetryableFetchError`
-  against the real API.
+  against the real API. Also check one owner GET screen (settings or staff) as well as the phone gate, to see the ≈ 67 s
+  case once.
 - Stage 4 (store link entry), NOT verified:
   - Real-device happy path (plan Task 7 Step 5), needs the user with the deployed stage-4 build: owner «Συσκευές» →
     scan the QR with the phone camera → name + PIN → register; clear site data → open the link again → name + PIN;

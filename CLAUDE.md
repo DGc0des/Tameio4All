@@ -24,7 +24,8 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   cached device context) and `openClosing.ts` (per shop: cached snapshot, pending edit queue, entry mode).
   Every call is failure-safe; `pickStore()` falls back to memory when storage is unavailable.
 - `src/data/remote/` — the only code importing supabase-js. `timeoutFetch.ts` is the client's fetch: every request
-  fails as `network` after `REQUEST_TIMEOUT_MS` = 15 s. `owner.ts` (`createOwnerApi`) is the
+  gives up each attempt after `REQUEST_TIMEOUT_MS` = 15 s: RPC calls (POST) fail as `network` after 15 s; GET table
+  reads are retried by postgrest-js up to 3× (1/2/4 s waits), so they give up after ≈ 67 s. `owner.ts` (`createOwnerApi`) is the
   one path for owner reads/writes; `errors.ts` maps every failure into the closed `OwnerError`
   union; `client.ts` builds the PKCE client. `supabase.ts` exports `getSupabase()`: the ONE shared
   client (owner and phone use the same instance). `deviceApi.ts` (the `DeviceApi` interface),
@@ -60,7 +61,8 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   one rolled-back transaction each (see its README).
 
 ## Invariants
-- Every Supabase request goes through `timeoutFetch` (set once in `client.ts`). A timeout rejects with the fixed
+- Every Supabase request goes through `timeoutFetch` (set once in `client.ts`). The 15 s is per attempt: RPC calls (POST) fail as `network` after 15 s; GET table reads are retried by postgrest-js
+  up to 3× (1/2/4 s waits) and give up after ≈ 67 s. A timeout rejects with the fixed
   message `request_timeout`, which both `mapDeviceError` and `mapError` map to `network` (cross-file: the message in
   `timeoutFetch.ts` and both `NETWORK_RE`). Never add a second client or a raw `fetch`.
 - Money is integer cents everywhere in core. Parse with `parseAmount`; display with `formatEuro`
