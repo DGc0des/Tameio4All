@@ -38,6 +38,8 @@ describe('mapError', () => {
 
   it('recognises network failures', () => {
     expect(mapError(new TypeError('Failed to fetch'))).toEqual({ code: 'network' });
+    expect(mapError(new Error('request_timeout'))).toEqual({ code: 'network' });
+    expect(mapError({ message: 'Error: request_timeout', code: '' })).toEqual({ code: 'network' });
     expect(mapError({ message: 'TypeError: Load failed', code: '' })).toEqual({ code: 'network' });
     expect(mapError({ name: 'AuthRetryableFetchError', message: '' })).toEqual({ code: 'network' });
   });

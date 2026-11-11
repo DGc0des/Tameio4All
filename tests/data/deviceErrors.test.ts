@@ -6,6 +6,8 @@ import { deviceErrorMessage } from '../../src/features/phone/model/messages';
 describe('mapDeviceError', () => {
   it('maps fetch failures to network', () => {
     expect(mapDeviceError(new TypeError('Failed to fetch'))).toEqual({ code: 'network' });
+    expect(mapDeviceError(new Error('request_timeout'))).toEqual({ code: 'network' });
+    expect(mapDeviceError({ message: 'Error: request_timeout', code: '' })).toEqual({ code: 'network' });
     expect(mapDeviceError({ name: 'AuthRetryableFetchError', message: 'x' })).toEqual({ code: 'network' });
   });
   it('maps raised postgres messages', () => {

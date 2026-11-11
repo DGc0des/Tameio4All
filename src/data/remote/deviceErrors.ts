@@ -2,7 +2,7 @@ import type { FieldKey } from '../../features/register/live/fields';
 import type { DeviceError } from './deviceApi';
 import { parseStaleCurrent } from './live';
 
-const NETWORK_RE = /failed to fetch|networkerror|load failed|fetch failed|network request failed/i;
+const NETWORK_RE = /failed to fetch|networkerror|load failed|fetch failed|network request failed|request_timeout/i;
 const str = (x: unknown): string => (typeof x === 'string' ? x : '');
 
 /** Server functions raise these as the error message (join_shop). */

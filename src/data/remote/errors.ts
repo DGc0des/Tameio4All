@@ -30,7 +30,7 @@ export type OwnerError =
   | { code: 'network' }
   | { code: 'unknown'; detail: string };
 
-const NETWORK_RE = /failed to fetch|networkerror|load failed|fetch failed|network request failed/i;
+const NETWORK_RE = /failed to fetch|networkerror|load failed|fetch failed|network request failed|request_timeout/i;
 const str = (x: unknown): string => (typeof x === 'string' ? x : '');
 
 /** Never throws, whatever it is given. */
