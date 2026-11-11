@@ -8,6 +8,7 @@ export type Gate =
   | { s: 'offline_no_cache' }
   /** The context load failed for a reason other than the network: no cached register, only a retry. */
   | { s: 'load_error'; error: DeviceError }
+  /** Not in a store: the entry screen (JoinScreen). */
   | { s: 'unpaired'; notice: string | null }
   | { s: 'signed_out'; ctx: DeviceContext; offline: boolean }
   | { s: 'ready'; ctx: DeviceContext; session: StaffSession; offline: boolean };
@@ -43,7 +44,10 @@ export function gateReducer(g: Gate, e: GateEvent): Gate {
     case 'loaded':
       return e.ctx === null ? { s: 'unpaired', notice: null } : fromContext(e.ctx, e.stored, false);
     case 'load_failed':
-      if (e.error.code === 'device_revoked' || e.error.code === 'not_a_device') return unpairedBy(e.error);
+      // invalid_code: the stored link was replaced (load.ts tried it once); the entry screen asks for the new one.
+      if (e.error.code === 'device_revoked' || e.error.code === 'not_a_device' || e.error.code === 'invalid_code') {
+        return unpairedBy(e.error);
+      }
       // Only a dropped connection falls back to the cache; any other failure must not show a stale register.
       if (e.error.code !== 'network') return { s: 'load_error', error: e.error };
       return e.cached === null ? { s: 'offline_no_cache' } : fromContext(e.cached, e.stored, true);
@@ -61,8 +65,11 @@ export function gateReducer(g: Gate, e: GateEvent): Gate {
     case 'server_error':
       switch (e.error.code) {
         case 'device_revoked':
-        case 'not_a_device':
           return unpairedBy(e.error);
+        case 'not_a_device':
+          // Reload through the one load path: it re-joins once with a stored key (silent return), or lands on
+          // the entry screen with this notice. A late one (another screen call failing after that) changes nothing.
+          return g.s === 'ready' || g.s === 'signed_out' ? RELOAD : g;
         case 'session_invalid':
         case 'wrong_day':
           // The day may have changed: the context is stale too.

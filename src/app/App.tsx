@@ -7,6 +7,7 @@ import { PhoneApp, type PhoneAppProps } from '../features/phone/PhoneApp';
 import { shareCard, type ShareFn } from '../features/register/share';
 import { parseAuthRedirect } from './authRedirect';
 import { ErrorBoundary } from './ErrorBoundary';
+import { parseJoinRoute } from './joinKey';
 import { randomId } from './ids';
 import { ownerHash, parseAppRoute, routeHash, useHash, type OwnerRoute } from './router';
 import { applyTheme, nextTheme } from './theme';
@@ -38,6 +39,8 @@ export function App({ appStore, deviceApi, now = systemNow, newId = randomId, sh
   const [redirect, setRedirect] = useState(() => parseAuthRedirect(window.location.search));
   const [themePref, setThemePref] = useState(() => loadTheme(store));
   const appRoute = parseAppRoute(hash);
+  // A store link (#/join/<key>) is in the register area; the phone takes the key once and the hash becomes #/.
+  const joinRoute = parseJoinRoute(hash);
 
   useEffect(() => applyTheme(themePref), [themePref]);
 
@@ -62,6 +65,8 @@ export function App({ appStore, deviceApi, now = systemNow, newId = randomId, sh
     active: onRegister,
     onTheme: cycleTheme,
     onOwner: () => setHash('#/owner'),
+    link: joinRoute,
+    onLinkTaken: () => setHash(routeHash('register'), { replace: true }),
   };
 
   return (

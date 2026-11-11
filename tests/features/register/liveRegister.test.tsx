@@ -391,6 +391,8 @@ describe('a signed-out phone', () => {
         active
         onTheme={vi.fn()}
         onOwner={vi.fn()}
+        link={null}
+        onLinkTaken={vi.fn()}
       />,
     );
     expect(await screen.findByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
