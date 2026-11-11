@@ -4,7 +4,6 @@ import { evaluateTotals, type ClosingInputs } from '../../../src/core/formula';
 import { joinJuicePreset } from '../../../src/core/presets';
 import { buildFirstConfig } from '../../../src/features/owner/model/firstSetup';
 import { checkLabel, checkName, isEmail, isPin, STAFF_NAME_MAX } from '../../../src/features/owner/model/limits';
-import { formatCountdown, formatPairingCode, secondsLeft } from '../../../src/features/owner/model/pairing';
 import { formatClock, formatDate, isLocked } from '../../../src/features/owner/model/time';
 
 describe('limits', () => {
@@ -29,18 +28,6 @@ describe('limits', () => {
     expect(isEmail('owner@shop.gr')).toBe(true);
     expect(isEmail('owner@shop')).toBe(false);
     expect(isEmail(' owner@shop.gr')).toBe(false);
-  });
-});
-
-describe('pairing', () => {
-  it('groups the code and counts down', () => {
-    expect(formatPairingCode('ABCDEFGH')).toBe('ABCD-EFGH');
-    expect(formatPairingCode('ABC')).toBe('ABC');
-    expect(secondsLeft(10_000, 0)).toBe(10);
-    expect(secondsLeft(10_000, 9_001)).toBe(1);
-    expect(secondsLeft(10_000, 20_000)).toBe(0);
-    expect(formatCountdown(600)).toBe('10:00');
-    expect(formatCountdown(5)).toBe('0:05');
   });
 });
 

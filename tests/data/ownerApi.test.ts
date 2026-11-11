@@ -52,20 +52,79 @@ describe('createOwnerApi', () => {
     await api.createStaff('s1', 'ΜΑΡΙΑ', '1234');
     await api.setStaffPin('st1', '9876');
     await api.unlockStaff('st1');
-    await api.createPairingCode('s1');
+    await api.joinKey('s1');
+    await api.rotateJoinKey('s1');
+    await api.listDevices('s1');
+    await api.removeDevice('u1');
     expect(calls.map((c) => [c[1], Object.keys(c[2] as object)])).toEqual([
       ['create_shop', ['p_name', 'p_config']],
       ['create_staff', ['p_shop_id', 'p_name', 'p_pin']],
       ['set_staff_pin', ['p_staff_id', 'p_pin']],
       ['unlock_staff', ['p_staff_id']],
-      ['create_pairing_code', ['p_shop_id']],
+      ['owner_get_join_key', ['p_shop_id']],
+      ['owner_rotate_join_key', ['p_shop_id']],
+      ['owner_list_devices', ['p_shop_id']],
+      ['owner_remove_device', ['p_device_user_id']],
     ]);
   });
 
   it('reports a direct update that changed no row as not_owner', async () => {
     const { api } = fake({ data: [], error: null });
     expect(await api.renameShop('s1', 'X')).toEqual({ ok: false, error: { code: 'not_owner' } });
-    expect(await api.updateDevice('u1', { revoke: true })).toEqual({ ok: false, error: { code: 'not_owner' } });
+    expect(await api.renameDevice('u1', 'Ταμείο')).toEqual({ ok: false, error: { code: 'not_owner' } });
+  });
+
+  it('renames a device with a label-only update of its row', async () => {
+    const { api, calls } = fake({ data: [{ user_id: 'u1' }], error: null });
+    expect(await api.renameDevice('u1', 'Ταμείο μπαρ')).toEqual({ ok: true, data: undefined });
+    expect(calls).toEqual([
+      ['from', 'devices'],
+      ['update', { label: 'Ταμείο μπαρ' }],
+      ['eq', 'user_id', 'u1'],
+      ['select', 'user_id'],
+    ]);
+  });
+
+  it('reads the store key and its replacement, refusing a payload that is not a key', async () => {
+    const good = fake({ data: 'ABCDEFGHJKLMNPQR', error: null });
+    expect(await good.api.joinKey('s1')).toEqual({ ok: true, data: 'ABCDEFGHJKLMNPQR' });
+    expect(good.calls).toEqual([['rpc', 'owner_get_join_key', { p_shop_id: 's1' }]]);
+    const rotated = fake({ data: 'STUVWXYZ23456789', error: null });
+    expect(await rotated.api.rotateJoinKey('s1')).toEqual({ ok: true, data: 'STUVWXYZ23456789' });
+    expect(rotated.calls).toEqual([['rpc', 'owner_rotate_join_key', { p_shop_id: 's1' }]]);
+    const bad = { ok: false, error: { code: 'unknown', detail: 'bad_response' } };
+    expect(await fake({ data: 'nope', error: null }).api.joinKey('s1')).toEqual(bad);
+    expect(await fake({ data: null, error: null }).api.joinKey('s1')).toEqual(bad);
+    expect(await fake({ data: 42, error: null }).api.rotateJoinKey('s1')).toEqual(bad);
+  });
+
+  it('maps a not_owner raise from the key and device functions', async () => {
+    const notOwner = { data: null, error: { message: 'not_owner', code: '42501' } };
+    expect(await fake(notOwner).api.joinKey('s1')).toEqual({ ok: false, error: { code: 'not_owner' } });
+    expect(await fake(notOwner).api.rotateJoinKey('s1')).toEqual({ ok: false, error: { code: 'not_owner' } });
+    expect(await fake(notOwner).api.listDevices('s1')).toEqual({ ok: false, error: { code: 'not_owner' } });
+    expect(await fake(notOwner).api.removeDevice('u1')).toEqual({ ok: false, error: { code: 'not_owner' } });
+  });
+
+  it('removes a device through owner_remove_device', async () => {
+    const { api, calls } = fake({ data: null, error: null });
+    expect(await api.removeDevice('u1')).toEqual({ ok: true, data: undefined });
+    expect(calls).toEqual([['rpc', 'owner_remove_device', { p_device_user_id: 'u1' }]]);
+  });
+
+  it('maps owner_list_devices rows and reads a null payload as no devices', async () => {
+    const row = { user_id: 'u1', label: 'Ταμείο 1', created_at: '2026-09-20T08:00:00Z', last_seen_at: '2026-11-10T18:00:00Z', last_staff_name: 'ΜΑΡΙΑ' };
+    const { api, calls } = fake({ data: [row, { ...row, user_id: 'u2', label: '', last_seen_at: null, last_staff_name: null }], error: null });
+    expect(await api.listDevices('s1')).toEqual({
+      ok: true,
+      data: [
+        { userId: 'u1', label: 'Ταμείο 1', createdAt: '2026-09-20T08:00:00Z', lastSeenAt: '2026-11-10T18:00:00Z', lastStaffName: 'ΜΑΡΙΑ' },
+        { userId: 'u2', label: '', createdAt: '2026-09-20T08:00:00Z', lastSeenAt: null, lastStaffName: null },
+      ],
+    });
+    expect(calls).toEqual([['rpc', 'owner_list_devices', { p_shop_id: 's1' }]]);
+    expect(await fake({ data: null, error: null }).api.listDevices('s1')).toEqual({ ok: true, data: [] });
+    expect(await fake({ data: 'x', error: null }).api.listDevices('s1')).toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
   });
 
   it('lists staff without ever selecting pin_hash', async () => {

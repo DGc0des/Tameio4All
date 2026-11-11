@@ -35,7 +35,9 @@ export interface DeviceRow {
   userId: string;
   label: string;
   createdAt: string;
-  revokedAt: string | null;
+  lastSeenAt: string | null;
+  /** The cashier of the device's most recent staff session, if any. */
+  lastStaffName: string | null;
 }
 
 export interface DayChange {
@@ -68,9 +70,14 @@ export interface OwnerApi {
   setStaffPin(staffId: string, pin: string): Promise<Result<void>>;
   unlockStaff(staffId: string): Promise<Result<void>>;
   updateStaff(staffId: string, patch: { name?: string; active?: boolean }): Promise<Result<void>>;
-  createPairingCode(shopId: string): Promise<Result<string>>;
+  /** The shop's permanent store key (16 characters, created on first use). */
+  joinKey(shopId: string): Promise<Result<string>>;
+  /** Replaces the store key; the old link stops working and every device leaves the shop. */
+  rotateJoinKey(shopId: string): Promise<Result<string>>;
   listDevices(shopId: string): Promise<Result<DeviceRow[]>>;
-  updateDevice(userId: string, patch: { label?: string; revoke?: true }): Promise<Result<void>>;
+  renameDevice(userId: string, label: string): Promise<Result<void>>;
+  /** Deletes the device row; whoever is signed in on it is signed out. */
+  removeDevice(userId: string): Promise<Result<void>>;
   /** Today's shared open closing for the shop. */
   todayClosing(shopId: string): Promise<Result<Snapshot>>;
   /**

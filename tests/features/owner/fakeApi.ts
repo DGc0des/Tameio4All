@@ -30,9 +30,11 @@ export function fakeApi(overrides: Partial<OwnerApi> = {}): OwnerApi {
     setStaffPin: vi.fn(() => ok(undefined)),
     unlockStaff: vi.fn(() => ok(undefined)),
     updateStaff: vi.fn(() => ok(undefined)),
-    createPairingCode: vi.fn(() => ok('ABCDEFGH')),
+    joinKey: vi.fn(() => ok('ABCDEFGHJKLMNPQR')),
+    rotateJoinKey: vi.fn(() => ok('STUVWXYZ23456789')),
     listDevices: vi.fn(() => ok([])),
-    updateDevice: vi.fn(() => ok(undefined)),
+    renameDevice: vi.fn(() => ok(undefined)),
+    removeDevice: vi.fn(() => ok(undefined)),
     todayClosing: vi.fn(() =>
       ok({ id: 'oc-1', businessDate: '2026-11-07', configId: 'config-1', config: {}, revision: 0, lastSubmit: null, fields: {} }),
     ),

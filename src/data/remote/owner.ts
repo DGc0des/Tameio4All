@@ -1,4 +1,5 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
+import { parseJoinKey } from '../../app/joinKey';
 import { mapError, type OwnerError } from './errors';
 import { parseDayDetail, parseHistoryList } from './history';
 import { openShopChannel, parseFieldAck, parseSnapshot, parseStaleCurrent } from './live';
@@ -26,6 +27,13 @@ const BAD_RESPONSE = { code: 'unknown', detail: 'bad_response' } as const;
 /** An `{ok:false,error}` payload from an owner function → OwnerError (unknown codes stay `unknown`). */
 const payloadError = (j: Record<string, unknown> | null): OwnerError =>
   j && j.ok === false && typeof j.error === 'string' ? mapError({ message: j.error }) : BAD_RESPONSE;
+
+/** A store-key payload: anything parseJoinKey refuses is a bad response, never shown as a key. */
+const keyResult = (r: Result<unknown>): Result<string> => {
+  if (!r.ok) return r;
+  const key = typeof r.data === 'string' ? parseJoinKey(r.data) : null;
+  return key === null ? { ok: false, error: BAD_RESPONSE } : { ok: true, data: key };
+};
 
 const done = (r: Result<unknown>): Result<void> => (r.ok ? { ok: true, data: undefined } : r);
 
@@ -109,24 +117,35 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
     setStaffPin: async (staffId, pin) => done(await run(client.rpc('set_staff_pin', { p_staff_id: staffId, p_pin: pin }))),
     unlockStaff: async (staffId) => done(await run(client.rpc('unlock_staff', { p_staff_id: staffId }))),
     updateStaff: async (staffId, patch) => oneRow(await run(client.from('staff').update(patch).eq('id', staffId).select('id'))),
-    createPairingCode: (shopId) => run(client.rpc('create_pairing_code', { p_shop_id: shopId })),
+    joinKey: async (shopId) => keyResult(await run(client.rpc('owner_get_join_key', { p_shop_id: shopId }))),
+    rotateJoinKey: async (shopId) => keyResult(await run(client.rpc('owner_rotate_join_key', { p_shop_id: shopId }))),
     async listDevices(shopId) {
-      const r = await run(
-        client.from('devices').select('user_id, label, created_at, revoked_at').eq('shop_id', shopId).order('created_at', { ascending: false }),
-      );
+      const r = await run(client.rpc('owner_list_devices', { p_shop_id: shopId }));
       if (!r.ok) return r;
-      const rows = (r.data ?? []) as { user_id: string; label: string; created_at: string; revoked_at: string | null }[];
+      if (r.data !== null && !Array.isArray(r.data)) return { ok: false, error: BAD_RESPONSE };
+      const rows = (r.data ?? []) as {
+        user_id: string;
+        label: string;
+        created_at: string;
+        last_seen_at: string | null;
+        last_staff_name: string | null;
+      }[];
       return {
         ok: true,
-        data: rows.map((d): DeviceRow => ({ userId: d.user_id, label: d.label, createdAt: d.created_at, revokedAt: d.revoked_at })),
+        data: rows.map(
+          (d): DeviceRow => ({
+            userId: d.user_id,
+            label: d.label,
+            createdAt: d.created_at,
+            lastSeenAt: d.last_seen_at,
+            lastStaffName: d.last_staff_name,
+          }),
+        ),
       };
     },
-    async updateDevice(userId, patch) {
-      const values: { label?: string; revoked_at?: string } = {};
-      if (patch.label !== undefined) values.label = patch.label;
-      if (patch.revoke) values.revoked_at = new Date().toISOString();
-      return oneRow(await run(client.from('devices').update(values).eq('user_id', userId).select('user_id')));
-    },
+    renameDevice: async (userId, label) =>
+      oneRow(await run(client.from('devices').update({ label }).eq('user_id', userId).select('user_id'))),
+    removeDevice: async (userId) => done(await run(client.rpc('owner_remove_device', { p_device_user_id: userId }))),
     async todayClosing(shopId) {
       const r = await run(client.rpc('owner_get_open_closing', { p_shop_id: shopId }));
       if (!r.ok) return r;
