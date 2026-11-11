@@ -7,10 +7,12 @@ import type { OwnerNavigate } from '../OwnerUi';
 import { summarizeInputs, summarizeOpen, weekCells, type Summary, type WeekCell } from './model';
 import type { HistoryList } from './types';
 
+type Shown = { list: HistoryList; monday: string };
 type Load =
-  | { status: 'loading' }
+  /** `previous`: the week on screen while the next one loads (null on the first load or after an error). */
+  | { status: 'loading'; previous: Shown | null }
   | { status: 'error'; message: string; retryable: boolean }
-  | { status: 'ready'; list: HistoryList; monday: string };
+  | ({ status: 'ready' } & Shown);
 
 /** The week shown, as the Monday and Sunday that were fetched. */
 export interface HistoryRange {
@@ -37,7 +39,7 @@ export function HistoryScreen({ api, shopId, navigate, initialRange = null, onRa
   const [shown, setShown] = useState<string | null>(initial.current === null ? null : weekStartIso(initial.current.from));
   /** The shop's today from the last successful answer; every «this week» / «yesterday» comes from it. */
   const [today, setToday] = useState<string | null>(null);
-  const [load, setLoad] = useState<Load>({ status: 'loading' });
+  const [load, setLoad] = useState<Load>({ status: 'loading', previous: null });
   /** The newest request; an older response is dropped. */
   const latest = useRef(0);
   /** What «Ξανά» repeats: a Monday, or null for the server default. */
@@ -48,7 +50,7 @@ export function HistoryScreen({ api, shopId, navigate, initialRange = null, onRa
       const request = ++latest.current;
       last.current = monday;
       if (monday !== null) setShown(monday);
-      setLoad({ status: 'loading' });
+      setLoad((l) => ({ status: 'loading', previous: l.status === 'ready' ? { list: l.list, monday: l.monday } : l.status === 'loading' ? l.previous : null }));
       void api.listClosings(shopId, monday, monday === null ? null : addDaysIso(monday, 6)).then((r) => {
         if (request !== latest.current) return; // superseded: the newer request settles the state
         if (!r.ok) {
@@ -108,13 +110,20 @@ export function HistoryScreen({ api, shopId, navigate, initialRange = null, onRa
           )}
         </>
       )}
-      {load.status === 'ready' && (
-        <div className="week-grid">
-          {weekCells(load.list, load.monday).map((cell) => (
-            <DayCard key={cell.date} cell={cell} list={load.list} today={load.list.today} navigate={navigate} shopId={shopId} />
-          ))}
-        </div>
+      {(load.status === 'ready' || (load.status === 'loading' && load.previous !== null)) && (
+        <WeekGrid shown={load.status === 'ready' ? load : load.previous!} dimmed={load.status === 'loading'} navigate={navigate} shopId={shopId} />
       )}
+    </div>
+  );
+}
+
+/** While the next week loads the previous cards stay (dimmed) so the page does not jump. */
+function WeekGrid({ shown, dimmed, navigate, shopId }: { shown: Shown; dimmed: boolean; navigate: OwnerNavigate; shopId: string }) {
+  return (
+    <div className={dimmed ? 'week-grid is-loading' : 'week-grid'} aria-busy={dimmed}>
+      {weekCells(shown.list, shown.monday).map((cell) => (
+        <DayCard key={cell.date} cell={cell} list={shown.list} today={shown.list.today} navigate={navigate} shopId={shopId} />
+      ))}
     </div>
   );
 }
@@ -150,7 +159,7 @@ function DayCard({ cell, list, today, navigate, shopId }: { cell: WeekCell; list
   const open = () => navigate({ name: 'shop', shopId, tab: 'history', date: cell.date });
   if (cell.kind === 'in_progress') {
     return (
-      <button type="button" className="week-card is-progress" onClick={() => navigate({ name: 'shop', shopId, tab: 'today' })}>
+      <button type="button" className="week-card" onClick={() => navigate({ name: 'shop', shopId, tab: 'today' })}>
         {head}
         <span className="week-note">Σε εξέλιξη</span>
       </button>

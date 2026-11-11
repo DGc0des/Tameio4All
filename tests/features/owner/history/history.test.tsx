@@ -349,6 +349,46 @@ describe('HistoryScreen errors and ordering', () => {
     expect(screen.queryByText('Φόρτωση…')).toBeNull();
   });
 
+  it('keeps the previous week\'s cards, dimmed, while the next week loads, then replaces them; the first load shows only «Φόρτωση…»', async () => {
+    const { pending, api } = pendingApi();
+    render(<HistoryScreen api={api} shopId={SHOP} navigate={vi.fn()} />);
+    expect(screen.getByText('Φόρτωση…')).toBeTruthy();
+    expect(cards()).toHaveLength(0);
+    await act(async () => {
+      pending[0]!({ ok: true, data: list([submitted('2026-11-10', version('v1'))]) });
+    });
+    await screen.findByText(RANGE);
+    fireEvent.click(screen.getByRole('button', { name: 'Προηγούμενη εβδομάδα' }));
+    expect(screen.getByText('Φόρτωση…')).toBeTruthy();
+    expect(screen.getByText('2 – 8 Νοεμβρίου 2026')).toBeTruthy();
+    expect(cards()).toHaveLength(7);
+    expect(screen.getByRole('button', { name: cardName('2026-11-10') })).toBeTruthy();
+    expect(document.querySelector('.week-grid')!.className).toContain('is-loading');
+    await act(async () => {
+      pending[1]!({ ok: true, data: list([submitted('2026-11-03', version('v2'))], { from: '2026-11-02', to: '2026-11-08' }) });
+    });
+    expect(screen.queryByText('Φόρτωση…')).toBeNull();
+    expect(cards()).toHaveLength(7);
+    expect(screen.getByRole('button', { name: cardName('2026-11-03') })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: cardName('2026-11-10') })).toBeNull();
+    expect(document.querySelector('.week-grid')!.className).not.toContain('is-loading');
+  });
+
+  it('a failed week change replaces the previous cards with the error', async () => {
+    const { pending, api } = pendingApi();
+    render(<HistoryScreen api={api} shopId={SHOP} navigate={vi.fn()} />);
+    await act(async () => {
+      pending[0]!({ ok: true, data: list([]) });
+    });
+    await screen.findByText(RANGE);
+    fireEvent.click(screen.getByRole('button', { name: 'Προηγούμενη εβδομάδα' }));
+    await act(async () => {
+      pending[1]!({ ok: false, error: { code: 'network' } });
+    });
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(cards()).toHaveLength(0);
+  });
+
   it('a superseded failure does not replace the newer cards', async () => {
     const { pending, api } = pendingApi();
     render(<HistoryScreen api={api} shopId={SHOP} navigate={vi.fn()} />);
