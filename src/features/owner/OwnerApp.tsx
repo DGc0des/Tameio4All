@@ -153,6 +153,7 @@ function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redir
           api={api}
           shopId={route.shopId}
           tab={route.tab}
+          date={route.date}
           navigate={navigate}
           store={store}
           now={now}

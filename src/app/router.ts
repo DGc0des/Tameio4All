@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { isIsoDate } from './dates';
 
 export type Route = 'register';
 
@@ -11,7 +12,7 @@ export function routeHash(_route: Route): string {
   return '#/';
 }
 
-export type ShopTab = 'today' | 'settings' | 'staff' | 'devices';
+export type ShopTab = 'today' | 'history' | 'settings' | 'staff' | 'devices';
 
 export type OwnerRoute =
   | { name: 'login' }
@@ -20,26 +21,30 @@ export type OwnerRoute =
   | { name: 'reset' }
   | { name: 'shops' }
   | { name: 'new' }
-  | { name: 'shop'; shopId: string; tab: ShopTab };
+  | { name: 'shop'; shopId: string; tab: ShopTab; /** A day of the history tab (only with `tab: 'history'`). */ date?: string };
 
 export type AppRoute = { area: 'register'; route: Route } | { area: 'owner'; route: OwnerRoute };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const SHOP_TABS: readonly ShopTab[] = ['today', 'settings', 'staff', 'devices'];
+const SHOP_TABS: readonly ShopTab[] = ['today', 'history', 'settings', 'staff', 'devices'];
 const OWNER_PREFIX = '#/owner';
 
 /** `rest` is what follows `#/owner`. Anything malformed lands on the shops list. */
 export function parseOwnerRoute(rest: string): OwnerRoute {
   const parts = rest.split('/').filter((p) => p !== '');
-  const [first, id, tab] = parts;
+  const [first, id, tab, day] = parts;
   if (parts.length === 1 && (first === 'login' || first === 'signup' || first === 'forgot' || first === 'reset' || first === 'new')) {
     return { name: first };
   }
-  if (first === 'shop' && id !== undefined && parts.length <= 3) {
+  if (first === 'shop' && id !== undefined && parts.length <= 4) {
     const shopId = id.toLowerCase();
     const shopTab = tab ?? 'settings';
     if (UUID_RE.test(shopId) && (SHOP_TABS as readonly string[]).includes(shopTab)) {
-      return { name: 'shop', shopId, tab: shopTab as ShopTab };
+      if (day === undefined) return { name: 'shop', shopId, tab: shopTab as ShopTab };
+      // A day segment belongs to the history tab only; a malformed one is dropped, not an error.
+      if (shopTab === 'history') {
+        return isIsoDate(day) ? { name: 'shop', shopId, tab: 'history', date: day } : { name: 'shop', shopId, tab: 'history' };
+      }
     }
   }
   return { name: 'shops' };
@@ -54,7 +59,10 @@ export function parseAppRoute(hash: string): AppRoute {
 
 export function ownerHash(route: OwnerRoute): string {
   if (route.name === 'shops') return OWNER_PREFIX;
-  if (route.name === 'shop') return `${OWNER_PREFIX}/shop/${route.shopId}/${route.tab}`;
+  if (route.name === 'shop') {
+    const base = `${OWNER_PREFIX}/shop/${route.shopId}/${route.tab}`;
+    return route.tab === 'history' && route.date !== undefined ? `${base}/${route.date}` : base;
+  }
   return `${OWNER_PREFIX}/${route.name}`;
 }
 

@@ -18,6 +18,29 @@ describe('owner routes', () => {
     expect(parseOwnerRoute(`/shop/${ID.toUpperCase()}/devices`)).toEqual({ name: 'shop', shopId: ID, tab: 'devices' });
   });
 
+  it('parses the history tab and its optional day', () => {
+    expect(parseOwnerRoute(`/shop/${ID}/history`)).toEqual({ name: 'shop', shopId: ID, tab: 'history' });
+    expect('date' in parseOwnerRoute(`/shop/${ID}/history`)).toBe(false);
+    const day: OwnerRoute = { name: 'shop', shopId: ID, tab: 'history', date: '2026-11-09' };
+    expect(parseOwnerRoute(`/shop/${ID}/history/2026-11-09`)).toEqual(day);
+    expect(parseAppRoute(ownerHash(day))).toEqual({ area: 'owner', route: day });
+    for (const bad of ['2026-02-30', 'abc']) {
+      const r = parseOwnerRoute(`/shop/${ID}/history/${bad}`);
+      expect(r).toEqual({ name: 'shop', shopId: ID, tab: 'history' });
+      expect('date' in r).toBe(false);
+    }
+  });
+
+  it('refuses a day segment on other tabs and extra segments', () => {
+    expect(parseOwnerRoute(`/shop/${ID}/settings/2026-11-09`)).toEqual({ name: 'shops' });
+    expect(parseOwnerRoute(`/shop/${ID}/history/2026-11-09/extra`)).toEqual({ name: 'shops' });
+  });
+
+  it('writes a day segment only for the history tab', () => {
+    expect(ownerHash({ name: 'shop', shopId: ID, tab: 'settings', date: '2026-11-09' })).toBe(`#/owner/shop/${ID}/settings`);
+    expect(ownerHash({ name: 'shop', shopId: ID, tab: 'history' })).toBe(`#/owner/shop/${ID}/history`);
+  });
+
   it('falls back to the shops list for malformed owner paths', () => {
     expect(parseOwnerRoute('/shop/not-a-uuid/settings')).toEqual({ name: 'shops' });
     expect(parseOwnerRoute(`/shop/${ID}/nope`)).toEqual({ name: 'shops' });

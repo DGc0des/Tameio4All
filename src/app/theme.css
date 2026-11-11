@@ -201,9 +201,17 @@ fieldset.card { min-width: 0; }
 .form-ok { margin: 8px 0 0; font-size: 14px; color: var(--accent-text); }
 .check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; }
 .check input { width: 22px; height: 22px; accent-color: var(--accent); }
-.tabs { display: flex; gap: 4px; margin: 0 12px; border-radius: 14px; padding: 4px; }
-.tabs button { flex: 1; border: 0; background: transparent; min-height: 44px; border-radius: 10px; font-size: 14px; color: var(--muted); }
+.tabs { display: flex; gap: 4px; margin: 0 12px; border-radius: 14px; padding: 4px; overflow-x: auto; }
+.tabs button { flex: 1; border: 0; background: transparent; min-height: 44px; border-radius: 10px; white-space: nowrap; padding: 0 10px; font-size: 13px; color: var(--muted); }
 .tabs button[aria-current='page'] { background: var(--seg-on); color: var(--ink); font-weight: 600; }
+.history-range { display: flex; gap: 10px; }
+.history-range .date-label { flex: 1; margin-top: 0; }
+.history-row { display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: 44px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; color: var(--ink); font-size: 14px; }
+.history-row:last-child { border-bottom: 0; }
+.history-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.history-meta { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.history-line { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); }
+.badge { padding: 1px 8px; border-radius: 999px; background: var(--hl-soft); color: var(--hl-ink); font-size: 11px; font-weight: 600; }
 .pair-code { margin: 8px 0; font-size: 34px; font-weight: 700; letter-spacing: 0.08em; text-align: center; font-variant-numeric: tabular-nums; color: var(--hl); }
 .term { display: flex; align-items: center; gap: 6px; min-height: 44px; }
 .term .sign { min-width: 44px; min-height: 44px; border: 1px solid var(--field-line); border-radius: 11px; background: var(--field); font-size: 18px; font-weight: 700; color: var(--ink); }

@@ -8,6 +8,7 @@ import { nameProblemMessage, ownerErrorMessage } from './model/messages';
 import { DevicesScreen } from './DevicesScreen';
 import { ErrorText, OwnerHeader, type OwnerNavigate } from './OwnerUi';
 import { OwnerStaffScreen } from './OwnerStaffScreen';
+import { HistoryScreen } from './history/HistoryScreen';
 import { TodayScreen } from './TodayScreen';
 import { SettingsScreen } from './settings/SettingsScreen';
 import { useAction } from './useAction';
@@ -16,6 +17,8 @@ export interface ShopLayoutProps {
   api: OwnerApi;
   shopId: string;
   tab: ShopTab;
+  /** A day of the history tab (`#/owner/shop/<id>/history/<date>`). */
+  date?: string;
   navigate: OwnerNavigate;
   store: KeyValueStore;
   now: () => Date;
@@ -27,6 +30,7 @@ export interface ShopLayoutProps {
 
 const TABS: { tab: ShopTab; label: string }[] = [
   { tab: 'today', label: 'Σήμερα' },
+  { tab: 'history', label: 'Ιστορικό' },
   { tab: 'settings', label: 'Ρυθμίσεις' },
   { tab: 'staff', label: 'Προσωπικό' },
   { tab: 'devices', label: 'Συσκευές' },
@@ -34,7 +38,7 @@ const TABS: { tab: ShopTab; label: string }[] = [
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'missing' } | { status: 'ready'; name: string };
 
-export function ShopLayout({ api, shopId, tab, navigate, store, now, email, onSignOut, onExit }: ShopLayoutProps) {
+export function ShopLayout({ api, shopId, tab, date, navigate, store, now, email, onSignOut, onExit }: ShopLayoutProps) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -133,7 +137,7 @@ export function ShopLayout({ api, shopId, tab, navigate, store, now, email, onSi
         ))}
       </nav>
       <main className="page">
-        <TabBody tab={tab} api={api} shopId={shopId} store={store} now={now} />
+        <TabBody tab={tab} date={date} api={api} shopId={shopId} navigate={navigate} store={store} now={now} />
       </main>
       <footer className="notice-soft" style={{ padding: '0 12px 16px' }}>
         <button type="button" className="link" onClick={onExit}>
@@ -148,8 +152,20 @@ export function ShopLayout({ api, shopId, tab, navigate, store, now, email, onSi
   );
 }
 
-function TabBody({ tab, api, shopId, store, now }: { tab: ShopTab; api: OwnerApi; shopId: string; store: KeyValueStore; now: () => Date }) {
+interface TabBodyProps {
+  tab: ShopTab;
+  date?: string;
+  api: OwnerApi;
+  shopId: string;
+  navigate: OwnerNavigate;
+  store: KeyValueStore;
+  now: () => Date;
+}
+
+function TabBody({ tab, date: _date, api, shopId, navigate, store, now }: TabBodyProps) {
   if (tab === 'today') return <TodayScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
+  // The day branch (`_date`) gets its own screen in the next task; until then it shows the list.
+  if (tab === 'history') return <HistoryScreen key={shopId} api={api} shopId={shopId} navigate={navigate} />;
   if (tab === 'settings') return <SettingsScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
   if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} />;
   return <DevicesScreen api={api} shopId={shopId} now={now} />;
