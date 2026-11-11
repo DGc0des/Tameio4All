@@ -120,6 +120,8 @@ end $$;
 reset role;
 
 -- T4 retry with the same key is a repeat; same key, other inputs is a conflict
+-- (The concurrent case -- two same-key calls in flight -- is covered by the idempotency re-check made under the
+-- locks in 20261111000002b; single-transaction tests cannot interleave it.)
 set local role authenticated;
 select set_config('t.r4a', public.owner_save_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date,
   current_setting('t.cfg_a')::uuid, current_setting('t.fix')::jsonb, current_setting('t.c1')::uuid, 'k1')::text, true);
