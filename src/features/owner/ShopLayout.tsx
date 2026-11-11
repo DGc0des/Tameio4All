@@ -8,6 +8,7 @@ import { nameProblemMessage, ownerErrorMessage } from './model/messages';
 import { DevicesScreen } from './DevicesScreen';
 import { ErrorText, OwnerHeader, type OwnerNavigate } from './OwnerUi';
 import { OwnerStaffScreen } from './OwnerStaffScreen';
+import { DayScreen } from './history/DayScreen';
 import { HistoryScreen } from './history/HistoryScreen';
 import { TodayScreen } from './TodayScreen';
 import { SettingsScreen } from './settings/SettingsScreen';
@@ -162,10 +163,15 @@ interface TabBodyProps {
   now: () => Date;
 }
 
-function TabBody({ tab, date: _date, api, shopId, navigate, store, now }: TabBodyProps) {
+function TabBody({ tab, date, api, shopId, navigate, store, now }: TabBodyProps) {
   if (tab === 'today') return <TodayScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
-  // The day branch (`_date`) gets its own screen in the next task; until then it shows the list.
-  if (tab === 'history') return <HistoryScreen key={shopId} api={api} shopId={shopId} navigate={navigate} />;
+  if (tab === 'history') {
+    return date ? (
+      <DayScreen key={shopId + date} api={api} shopId={shopId} date={date} navigate={navigate} now={now} />
+    ) : (
+      <HistoryScreen key={shopId} api={api} shopId={shopId} navigate={navigate} />
+    );
+  }
   if (tab === 'settings') return <SettingsScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
   if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} />;
   return <DevicesScreen api={api} shopId={shopId} now={now} />;
