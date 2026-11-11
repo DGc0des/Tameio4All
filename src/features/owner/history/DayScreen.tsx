@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateEl, formatStampEl, formatTimeEl } from '../../../app/dates';
+import { randomId } from '../../../app/ids';
 import { denomLabel } from '../../../core/denominations';
 import { formatEuro } from '../../../core/money';
 import type { OwnerApi } from '../../../data/remote/ownerApi';
 import { Card } from '../../../ui/Card';
 import { EnvelopeSheet } from '../../register/EnvelopeSheet';
+import type { Snapshot } from '../../register/live/fields';
 import { ownerErrorMessage } from '../model/messages';
 import type { OwnerNavigate } from '../OwnerUi';
-import { breakdown, openInputs, type Breakdown } from './model';
+import { CorrectionEditor } from './CorrectionEditor';
+import { breakdown, openInputs, snapshotFromInputs, type Breakdown } from './model';
 import type { ClosingVersion, DayDetail } from './types';
 
 type Load =
@@ -15,8 +18,13 @@ type Load =
   | { status: 'error'; message: string }
   | { status: 'ready'; day: DayDetail };
 
-/** What the correction editor (next task) is doing; null while the owner is only reading. */
-type Editing = null | { kind: 'correct' } | { kind: 'file' };
+/** What the correction editor starts from: the current version, or the open closing of an unsubmitted day. */
+interface EditBase {
+  base: Snapshot;
+  expectedCurrentId: string | null;
+  /** Remounts the editor when the current version changes («Φόρτωση νέας»). */
+  key: string;
+}
 
 export interface DayScreenProps {
   api: OwnerApi;
@@ -32,23 +40,27 @@ const stampOf = (v: ClosingVersion): string =>
     ? `Υποβλήθηκε ${formatTimeEl(v.createdAt)} · ${v.authorName}`
     : `${v.correctsId !== null ? 'Διορθώθηκε' : 'Καταχωρήθηκε'} από ιδιοκτήτη · ${formatStampEl(v.createdAt)}`;
 
-// `now` and `newId` are part of the interface but not destructured yet: the business date comes from the
-// response, never from the clock, and `newId` is for the correction editor (next task).
-export function DayScreen({ api, shopId, date, navigate }: DayScreenProps) {
+const configOf = (day: DayDetail, id: string): unknown => (Object.hasOwn(day.configs, id) ? day.configs[id] : undefined);
+
+export function DayScreen({ api, shopId, date, navigate, now, newId = randomId }: DayScreenProps) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [reload, setReload] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [envelopeOpen, setEnvelopeOpen] = useState(false);
-  const [editing, setEditing] = useState<Editing>(null);
+  /** Kept across a refetch, so «Φόρτωση νέας» reopens the editor on the new current version. */
+  const [editing, setEditing] = useState(false);
   /** The newest request; an older response is dropped. */
   const latest = useRef(0);
+
+  useEffect(() => {
+    setEditing(false);
+  }, [shopId, date]);
 
   useEffect(() => {
     const request = ++latest.current;
     setLoad({ status: 'loading' });
     setSelectedId(null);
     setEnvelopeOpen(false);
-    setEditing(null);
     void api.closingDay(shopId, date).then((r) => {
       if (request !== latest.current) return; // superseded: the newer request settles the state
       setLoad(r.ok ? { status: 'ready', day: r.data } : { status: 'error', message: ownerErrorMessage(r.error) });
@@ -68,10 +80,30 @@ export function DayScreen({ api, shopId, date, navigate }: DayScreenProps) {
   /** What the screen shows: the selected version, or the open closing of an unsubmitted day. */
   const shown = useMemo((): Breakdown | null => {
     if (day === null) return null;
-    if (selected !== null) return breakdown(day.configs[selected.configId], selected.inputs, day.staffNames);
+    if (selected !== null) return breakdown(configOf(day, selected.configId), selected.inputs, day.staffNames);
     const o = day.open === null ? null : openInputs(day.open);
     return o === null ? null : breakdown(o.config, o.inputs, day.staffNames);
   }, [day, selected]);
+
+  /** Editing always starts from the current version (or the open closing), never from a selected older one. */
+  const editBase = useMemo((): EditBase | null => {
+    if (day === null) return null;
+    const current = day.versions[0];
+    if (current !== undefined) {
+      const b = breakdown(configOf(day, current.configId), current.inputs, day.staffNames);
+      if (b === null) return null;
+      const base = snapshotFromInputs({ config: b.config, configId: current.configId, businessDate: day.businessDate, inputs: b.inputs, newId });
+      return { base, expectedCurrentId: current.id, key: current.id };
+    }
+    if (day.open === null || openInputs(day.open) === null) return null;
+    return { base: day.open, expectedCurrentId: null, key: 'file' };
+  }, [day, newId]);
+
+  const showEditor = editing && editBase !== null;
+  const saved = useCallback(() => {
+    setEditing(false);
+    setReload((n) => n + 1);
+  }, []);
 
   return (
     <>
@@ -91,7 +123,24 @@ export function DayScreen({ api, shopId, date, navigate }: DayScreenProps) {
         </>
       )}
       {day !== null && selected === null && day.open === null && <p className="notice-soft">Δεν υπάρχει κλείσιμο για αυτή τη μέρα.</p>}
-      {day !== null && (selected !== null || day.open !== null) && (
+      {day !== null && showEditor && (
+        <>
+          <p className="sub">{editBase.expectedCurrentId !== null ? 'Διόρθωση' : 'Αποθήκευση ως κλείσιμο'}</p>
+          <CorrectionEditor
+            key={editBase.key}
+            api={api}
+            shopId={shopId}
+            base={editBase.base}
+            expectedCurrentId={editBase.expectedCurrentId}
+            onSaved={saved}
+            onReload={retry}
+            onCancel={() => setEditing(false)}
+            now={now}
+            newId={newId}
+          />
+        </>
+      )}
+      {day !== null && !showEditor && (selected !== null || day.open !== null) && (
         <>
           <p className="sub">{selected !== null ? stampOf(selected) : 'Δεν υποβλήθηκε'}</p>
           {selected !== null && !isCurrent && <p className="notice-soft">Βλέπεις παλαιότερη έκδοση</p>}
@@ -100,22 +149,18 @@ export function DayScreen({ api, shopId, date, navigate }: DayScreenProps) {
           ) : (
             <Numbers shown={shown} onEnvelope={() => setEnvelopeOpen(true)} />
           )}
-          {editing !== null ? (
-            <p data-testid="day-editing">{editing.kind}</p>
-          ) : (
-            shown !== null &&
+          {shown !== null &&
             (selected === null ? (
-              <button type="button" className="btn btn-primary" onClick={() => setEditing({ kind: 'file' })}>
+              <button type="button" className="btn btn-primary" onClick={() => setEditing(true)}>
                 Αποθήκευση ως κλείσιμο
               </button>
             ) : (
               isCurrent && (
-                <button type="button" className="btn btn-primary" onClick={() => setEditing({ kind: 'correct' })}>
+                <button type="button" className="btn btn-primary" onClick={() => setEditing(true)}>
                   Διόρθωση
                 </button>
               )
-            ))
-          )}
+            ))}
           {day.versions.length > 1 && (
             <Card title={`${day.versions.length} υποβολές`}>
               {day.versions.map((v) => (

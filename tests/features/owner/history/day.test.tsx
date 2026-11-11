@@ -226,14 +226,17 @@ describe('DayScreen', () => {
     await loaded();
     fireEvent.click(screen.getByRole('button', { name: 'Διόρθωση' }));
     expect(screen.queryByRole('button', { name: 'Διόρθωση' })).toBeNull();
-    expect(screen.getByTestId('day-editing').textContent).toBe('correct');
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('14');
+    expect(screen.getByRole('button', { name: 'Αποθήκευση' })).toBeTruthy();
   });
 
-  it('«Αποθήκευση ως κλείσιμο» switches to the editing placeholder', async () => {
+  it('«Αποθήκευση ως κλείσιμο» opens the editor on the open closing', async () => {
     setup(day({ versions: [], open: openSnap }));
     await loaded();
     fireEvent.click(screen.getByRole('button', { name: 'Αποθήκευση ως κλείσιμο' }));
-    expect(screen.getByTestId('day-editing').textContent).toBe('file');
+    expect(screen.queryByRole('button', { name: 'Αποθήκευση ως κλείσιμο' })).toBeNull();
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('2');
+    expect(screen.getByRole('button', { name: 'Αποθήκευση' })).toBeTruthy();
   });
 
   it('ignores a response that belongs to a request that was superseded', async () => {
