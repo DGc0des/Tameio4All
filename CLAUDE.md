@@ -244,22 +244,23 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
   `deriveClosing` → `planEnvelope` result. No submit from the owner.
 
 ### Closing history (stage 3)
-- **`closings` is an append-only version log.** A correction inserts a new row; no existing row is ever updated
-  or deleted. Columns (migration `20261111000001_closing_versions`): `seq` (identity, unique, back-filled in
+- **`closings` is an append-only version log.** A correction inserts a new row and never updates or deletes
+  one. The only owner-writable column is `voided_at` (column grant + `closings_owner_update` policy from Plan 3); no
+  UI sets it, and voided rows are invisible everywhere. Columns (migration `20261111000001_closing_versions`): `seq` (identity, unique, back-filled in
   `created_at, id` order), `kind` (`'staff'` | `'owner_correction'`), `corrected_by`, `corrects_closing_id`
   (the version it replaced). `closings_kind_shape`: a `staff` row has `staff_id` and `device_user_id` and no
   `corrected_by`/`corrects_closing_id`; an `owner_correction` row has `corrected_by` and neither `staff_id` nor
   `device_user_id` (both are nullable now).
 - **Current version of a day = the non-voided row with the highest `seq`** for (shop, business date) —
-  `private.current_closing(shop, date)`, the only definition. The list, the day detail, the save guard and
-  `expense_suggestion_data` all use it. Never order versions by `created_at` (100 T1 backdates one to prove it).
+  `private.current_closing(shop, date)` is the helper. The list, the day detail and the save guard use it;
+  `expense_suggestion_data` and `owner_get_closing_day` repeat the same `seq desc` rule inline — change all together. Never order versions by `created_at` (100 T1 backdates one to prove it).
 - **Totals are never stored or computed in SQL**: every number in history comes from `evaluateTotals`/
   `deriveClosing`/`planEnvelope` with the config of that version (`config_id`; the day detail carries every
   version's config, the list only the current versions'). Stored `config`/`inputs` are untrusted: they go
   through `isShopConfig`/`validateClosingInputs`; a version that fails shows «Δεν διαβάζεται» and never hides
   the other rows.
-- **Read path.** `owner_list_closings(shop, from, to)` (default: last 30 days up to the shop's today; a range
-  longer than 366 days or `from > to` → `bad_range`) and `owner_get_closing_day(shop, date)`; both
+- **Read path.** `owner_list_closings(shop, from, to)` (default: last 30 days up to the shop's today; `to − from`
+  over 366 days or `from > to` → `bad_range`) and `owner_get_closing_day(shop, date)`; both
   `private.require_owner` first. The owner's browser never computes the business date: `today`, `from` and `to`
   come from the response.
 - **Unsubmitted day**: an `open_closings` row of the shop with `business_date` before the shop's business date,
@@ -277,7 +278,7 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
   null) and the day must be an unsubmitted day (`no_closing_day`) with `config_id` = the open closing's pinned
   one (`config_mismatch`) → insert `owner_correction` (`corrects_closing_id` = the replaced current, null for a first
   filing) `on conflict (shop_id, idempotency_key) do nothing` and answer a lost same-key race like the lookup.
-  Never add another write path for closings.
+  Never add another owner write path for closings (`submit_closing` is the staff one).
 - **Owner saves are isolated from the live closing**: they do not touch `open_closings` (`revision`,
   `last_submit`), write no `open_closing_fields` and broadcast nothing; the phone register and «Υποβλήθηκε …»
   stay as they were. Staff still submit only for the shop's business date; the owner has no Υποβολή.
@@ -308,7 +309,8 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
   one side → a migration + the parser in the same commit.
 - **Cross-file invariant: the author check.** `owner_save_closing` accepts a staff `addedBy` only if that staff row
   belongs to the shop; `validateClosingInputs` (schema-2 expense rules) and `private.inputs_shape_ok` check the
-  rest. The owner may attribute a *new* line to any staff of the shop (trusted role).
+  rest. The server accepts any staff author of the shop on any line (including changing an existing
+  line's author); «editing keeps the author» is enforced by the client (`snapshotFromInputs`). Trusted role.
 - **Six error strings** added in stage 3, each with a `mapError` case (`errors.ts`) and a Greek `ownerErrorMessage`:
   `closing_changed`, `bad_inputs`, `config_mismatch`, `no_closing_day`, `idempotency_conflict`, `bad_range`.
   `mapError` alone gives `closing_changed` a null `currentId`; `saveClosing` in `owner.ts` builds it from the
