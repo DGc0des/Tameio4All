@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatTimeEl } from '../../app/dates';
+import { formatDayEl, formatTimeEl } from '../../app/dates';
 import { randomId } from '../../app/ids';
 import { isShopConfig } from '../../core/config';
 import type { EntryMode } from '../../core/denominations';
@@ -35,10 +35,25 @@ const NO_HISTORY: SupplierHistory = {};
 
 /** The shop's open closing, live: same boxes, totals and Φάκελος as the register, edited as «Ιδιοκτήτης». No submit here. */
 export function TodayScreen({ api, shopId, store, now, newId = randomId }: TodayScreenProps) {
-  const writer = useMemo(() => createTodayWriter(api, shopId), [api, shopId]);
+  // The owner's browser never computes the business date: "the current day" is the date of the last snapshot a load returned.
+  const [loadedDate, setLoadedDate] = useState<string | null>(null);
+  const writer = useMemo(() => {
+    const inner = createTodayWriter(api, shopId);
+    return {
+      ...inner,
+      load: async () => {
+        const r = await inner.load();
+        if (r.ok) setLoadedDate(r.data.businessDate);
+        return r;
+      },
+    };
+  }, [api, shopId]);
   const [fatal, setFatal] = useState<DeviceError | null>(null);
-  const { state, draft, edit, flush, focus, resync, clearNotice, restart } = useLiveClosing(writer, store, shopId, OWNER, now, { onFatal: setFatal });
-  const snapshot = state.snapshot;
+  const { state, draft: liveDraft, edit, flush, focus, resync, clearNotice, restart } = useLiveClosing(writer, store, shopId, OWNER, now, { onFatal: setFatal });
+  // A cached snapshot of another day (startup, before the first load answered) is not shown: wait for the load, like the register.
+  const staleDay = state.snapshot !== null && state.snapshot.businessDate !== loadedDate;
+  const snapshot = staleDay ? null : state.snapshot;
+  const draft = staleDay ? null : liveDraft;
   const config = snapshot !== null && isShopConfig(snapshot.config) ? snapshot.config : null;
   const derived = useMemo(() => (config !== null && draft !== null ? deriveClosing(config, draft) : null), [config, draft]);
 
@@ -137,6 +152,7 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
   return (
     <>
       {banner}
+      <p className="sub">{formatDayEl(snapshot.businessDate)}</p>
       <p className="sub">
         {lastSubmit ? `Υποβλήθηκε ${formatTimeEl(lastSubmit.at)} · ${lastSubmit.staffName}` : 'Δεν έχει υποβληθεί ακόμα'}
       </p>

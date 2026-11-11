@@ -7,7 +7,7 @@ import { deriveClosing } from '../../../src/features/register/derive';
 import { draftFromFields } from '../../../src/features/register/live/merge';
 import { WRONG_DAY_NOTICE } from '../../../src/features/register/live/syncEngine';
 import { CHANGED_SINCE_SUBMIT } from '../../../src/features/register/messages';
-import { loadEntryMode } from '../../../src/data/local/openClosing';
+import { loadEntryMode, saveSnapshot } from '../../../src/data/local/openClosing';
 import { memoryStore } from '../../../src/data/local/storage';
 import type { LiveHandlers } from '../../../src/data/remote/live';
 import type { Snapshot } from '../../../src/features/register/live/fields';
@@ -24,7 +24,7 @@ const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   id: 'oc-1', businessDate: '2026-11-07', configId: 'c1', config: joinJuicePreset, revision: 0, lastSubmit: null, fields: {}, ...over,
 });
 
-function setup(over: Parameters<typeof fakeApi>[0] = {}) {
+function setup(over: Parameters<typeof fakeApi>[0] = {}, store = memoryStore()) {
   const channels: FakeLive[] = [];
   const api = fakeApi({
     todayClosing: vi.fn(() => ok(snap())),
@@ -35,7 +35,6 @@ function setup(over: Parameters<typeof fakeApi>[0] = {}) {
     }),
     ...over,
   });
-  const store = memoryStore();
   const view = render(<TodayScreen api={api} shopId={SHOP} store={store} now={() => new Date(2026, 10, 7, 22, 0)} newId={() => 'id-1'} />);
   return { api, store, channels, ...view };
 }
@@ -119,6 +118,52 @@ describe('TodayScreen', () => {
     await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(3));
     await waitFor(() => expect(box('100€').value).toBe(''));
     expect(screen.queryByRole('alert')).toBeNull(); // not fatal
+  });
+
+  describe('L87: the screen is dated and never shows another day\'s cached closing', () => {
+    const cachedOtherDay = () => {
+      const store = memoryStore();
+      const fields = { 'c:wolt': { key: 'c:wolt', value: { text: '55' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '' } };
+      saveSnapshot(store, SHOP, snap({ businessDate: '2026-11-06', fields }));
+      return store;
+    };
+
+    it('shows the business date of the closing', async () => {
+      setup();
+      expect(await screen.findByText('Σαβ 07/11')).toBeTruthy();
+    });
+
+    it("another day's cached closing is not shown before today's load", async () => {
+      let release: () => void = () => {};
+      const pending = new Promise<Awaited<ReturnType<typeof ok<Snapshot>>>>((res) => { release = () => res({ ok: true, data: snap() }); });
+      setup({ todayClosing: vi.fn(() => pending) }, cachedOtherDay());
+      expect(await screen.findByText('Φόρτωση…')).toBeTruthy();
+      expect(screen.queryByDisplayValue('55')).toBeNull();
+      expect(screen.queryByText('Παρ 06/11')).toBeNull();
+      await act(async () => { release(); });
+      expect(await screen.findByText('Σαβ 07/11')).toBeTruthy();
+      expect(screen.queryByDisplayValue('55')).toBeNull();
+    });
+
+    it('offline with only a cached closing shows the offline text, no boxes', async () => {
+      setup({ todayClosing: vi.fn(() => fail<Snapshot>({ code: 'network' })) }, cachedOtherDay());
+      expect(await screen.findByText('Το ταμείο θα φορτώσει μόλις υπάρξει σύνδεση.')).toBeTruthy();
+      expect(screen.queryByDisplayValue('55')).toBeNull();
+    });
+
+    it('after wrong_day the reloaded day is shown with its date', async () => {
+      const todayClosing = vi.fn()
+        .mockImplementationOnce(() => ok(snap()))
+        .mockImplementationOnce(() => ok(snap()))
+        .mockImplementation(() => ok(snap({ id: 'oc-2', businessDate: '2026-11-08' })));
+      const { api, channels } = setup({ todayClosing, setTodayField: vi.fn(() => fail<{ version: number; revision: number }>({ code: 'wrong_day' })) });
+      await loaded();
+      act(() => channels[0]!.emitStatus('live'));
+      await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(2));
+      await act(async () => { await Promise.resolve(); });
+      type('500');
+      expect(await screen.findByText('Κυρ 08/11')).toBeTruthy();
+    });
   });
 
   it('M5: the owner can open the Φάκελος breakdown, computed by planEnvelope like the register', async () => {
