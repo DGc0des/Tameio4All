@@ -225,6 +225,36 @@ describe('TodayScreen', () => {
       expect(await screen.findByText('Οι αλλαγές καταχωρήθηκαν')).toBeTruthy();
     });
 
+    it('after closing_changed the next save is guarded on the remembered version (no newer submit)', async () => {
+      const saveClosing = vi.fn((_shop: string, _save: unknown) => fail<{ closingId: string; repeat: boolean }>({ code: 'closing_changed', currentId: 'v2b' }));
+      const { api, channels } = setup({ todayClosing: vi.fn(() => ok(submitted(4, 3))), saveClosing });
+      await loaded();
+      await goLive(channels, api);
+      fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση αλλαγών' }));
+      await waitFor(() => expect(saveClosing).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(3));
+      await act(async () => { await Promise.resolve(); });
+      fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση αλλαγών' }));
+      await waitFor(() => expect(saveClosing).toHaveBeenCalledTimes(2));
+      expect(saveClosing.mock.calls[1]![1]).toEqual(expect.objectContaining({ expectedCurrentId: 'v2b' }));
+    });
+
+    it('L89: after closing_changed, a newer submit replaces the remembered version', async () => {
+      const saveClosing = vi.fn((_shop: string, _save: unknown) => fail<{ closingId: string; repeat: boolean }>({ code: 'closing_changed', currentId: 'v2b' }));
+      const { api, channels } = setup({ todayClosing: vi.fn(() => ok(submitted(4, 3))), saveClosing });
+      await loaded();
+      await goLive(channels, api);
+      fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση αλλαγών' }));
+      await waitFor(() => expect(saveClosing).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(3));
+      // A newer submit arrives on the channel (revision 1 < snapshot revision 4, so the card stays).
+      act(() => channels[0]!.emitSubmitted({ closingId: 'v3', staffName: 'ΜΑΡΙΑ', at: '2026-11-07T20:40:00Z', revision: 1 } as Parameters<FakeLive['emitSubmitted']>[0]));
+      await act(async () => { await Promise.resolve(); });
+      fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση αλλαγών' }));
+      await waitFor(() => expect(saveClosing).toHaveBeenCalledTimes(2));
+      expect(saveClosing.mock.calls[1]![1]).toEqual(expect.objectContaining({ expectedCurrentId: 'v3' }));
+    });
+
     it('draft_changed shows its message and resyncs', async () => {
       const saveClosing = vi.fn(() => fail<{ closingId: string; repeat: boolean }>({ code: 'draft_changed' }));
       const { api, channels } = setup({ todayClosing: vi.fn(() => ok(submitted(4, 3))), saveClosing });
