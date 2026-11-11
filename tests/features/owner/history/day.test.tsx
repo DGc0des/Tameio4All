@@ -148,7 +148,7 @@ describe('DayScreen', () => {
     setup(day({ versions: [corrected, v2, v1] }));
     await loaded();
     const rows = within(region('3 υποβολές')).getAllByRole('button');
-    expect(rows.map((r) => r.textContent)).toEqual(['Τρι 10/11 14:32 · Ιδιοκτήτης', '21:42 · ΜΑΡΙΑ', '19:05 · ΓΙΑΝΝΗΣ']);
+    expect(rows.map((r) => r.textContent)).toEqual(['Τρι 10/11 14:32 · Ιδιοκτήτηςδιόρθωση', '21:42 · ΜΑΡΙΑ', '19:05 · ΓΙΑΝΝΗΣ']);
   });
 
   it('omits the versions list when there is a single version', async () => {
@@ -167,6 +167,89 @@ describe('DayScreen', () => {
     const entered = version('v3', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', createdAt: stamp, correctsId: null });
     setup(day({ versions: [entered] }));
     expect(await screen.findByText('Καταχωρήθηκε από ιδιοκτήτη · Δευ 09/11 14:32')).toBeTruthy();
+  });
+
+  describe('owner corrections against the cashier original', () => {
+    const correctedInputs: ClosingInputs = {
+      ...currentInputs,
+      counts: { '10000': 15, '5000': 3 },
+      expenses: [
+        { id: 'x1', description: 'Γάλα', cents: 900, addedBy: { kind: 'staff', id: STAFF } },
+        { id: 'x3', description: 'Πάγος', cents: 500, addedBy: { kind: 'owner' } },
+      ],
+    };
+    const v3 = version('v3', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', createdAt: '2026-11-10T08:00:00Z', correctsId: 'v2', inputs: correctedInputs });
+
+    it('names the original submitter and marks every changed, added and removed line with the original value', async () => {
+      setup(day({ versions: [v3, v2, v1] }));
+      expect(await screen.findByText(/^Αρχική υποβολή: ΜΑΡΙΑ · 21:42/)).toBeTruthy();
+      const count = within(region('Καταμέτρηση')).getByText(/100€ × 15/).closest('li')!;
+      expect(within(count).getByText('Αλλαγή')).toBeTruthy();
+      expect(within(count).getByLabelText(`αρχικά ${formatEuro(140000)}`)).toBeTruthy();
+      expect(within(region('Καταμέτρηση')).getByText(/50€ × 3/).closest('li')!.textContent).not.toContain('Αλλαγή');
+
+      const expenses = region('Έξοδα');
+      const milk = within(expenses).getByText(/Γάλα/).closest('li')!;
+      expect(within(milk).getByLabelText(`αρχικά ${formatEuro(850)}`)).toBeTruthy();
+      expect(within(within(expenses).getByText(/Πάγος/).closest('li')!).getByText('Νέο')).toBeTruthy();
+      expect(within(within(expenses).getByText('Λεμόνια').closest('li')!).getByText('Αφαιρέθηκε')).toBeTruthy();
+      expect(within(region('Σύνολα')).getAllByText('Αλλαγή').length).toBeGreaterThan(0);
+    });
+
+    it('«Προβολή» opens the original, which has no change marks', async () => {
+      setup(day({ versions: [v3, v2, v1] }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Προβολή' }));
+      expect(screen.getByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
+      expect(screen.queryByText('Αλλαγή')).toBeNull();
+      expect(screen.queryByText(/^Αρχική υποβολή/)).toBeNull();
+    });
+
+    it('a staff version and an owner-only filing show no original', async () => {
+      setup(day({ versions: [v2, v1] }));
+      await loaded();
+      expect(screen.queryByText(/^Αρχική υποβολή/)).toBeNull();
+      cleanup();
+      setup(day({ versions: [version('v9', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης' })] }));
+      await loaded();
+      expect(screen.queryByText(/^Αρχική υποβολή/)).toBeNull();
+    });
+
+    it('«Επαναφορά» saves the older version again as the newest, guarded on the current one', async () => {
+      const days = [day({ versions: [v3, v2, v1] }), day({ versions: [version('v4', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', correctsId: 'v3' }), v3, v2, v1] })];
+      let n = 0;
+      const closingDay = vi.fn(() => ok(days[Math.min(n++, 1)]!));
+      const saveClosing = vi.fn(() => ok({ closingId: 'v4', repeat: false }));
+      render(<DayScreen api={fakeApi({ closingDay, saveClosing })} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} newId={() => 'k1'} />);
+      await loaded();
+      expect(screen.queryByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' })).toBeNull();
+      fireEvent.click(await screen.findByRole('button', { name: 'Προβολή' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' }));
+      await waitFor(() => expect(saveClosing).toHaveBeenCalledWith(SHOP, {
+        businessDate: DATE, configId: 'cfg1', inputs: currentInputs, expectedCurrentId: 'v3', key: 'k1',
+      }));
+      await waitFor(() => expect(closingDay).toHaveBeenCalledTimes(2));
+      expect(await screen.findByText(/4 υποβολές/)).toBeTruthy();
+    });
+
+    it('offers no «Επαναφορά» for an older version equal to the current one', async () => {
+      const again = version('v4', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', correctsId: 'v3', inputs: currentInputs });
+      setup(day({ versions: [again, v3, v2] }));
+      await loaded();
+      fireEvent.click(within(region('3 υποβολές')).getAllByRole('button')[2]!);
+      expect(screen.queryByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' })).toBeNull();
+    });
+
+    it('a refused «Επαναφορά» shows the reason with «Φόρτωση νέας»', async () => {
+      const saveClosing = vi.fn(() => fail<{ closingId: string; repeat: boolean }>({ code: 'closing_changed', currentId: 'v9' }));
+      const closingDay = vi.fn(() => ok(day({ versions: [v3, v2, v1] })));
+      render(<DayScreen api={fakeApi({ closingDay, saveClosing })} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Προβολή' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' }));
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain(ownerErrorMessage({ code: 'closing_changed', currentId: 'v9' }));
+      fireEvent.click(within(alert).getByRole('button', { name: 'Φόρτωση νέας' }));
+      await waitFor(() => expect(closingDay).toHaveBeenCalledTimes(2));
+    });
   });
 
   it('an unreadable current version says «Δεν διαβάζεται», offers no «Διόρθωση», and older versions stay reachable', async () => {
@@ -229,13 +312,22 @@ describe('DayScreen', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('«Διόρθωση» is offered for a readable current version, also when the day is today', async () => {
-    setup(day({ today: DATE }));
+  it('«Διόρθωση» is offered for a readable current version of a past day', async () => {
+    setup(day());
     await loaded();
     fireEvent.click(screen.getByRole('button', { name: 'Διόρθωση' }));
     expect(screen.queryByRole('button', { name: 'Διόρθωση' })).toBeNull();
     expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('14');
     expect(screen.getByRole('button', { name: 'Αποθήκευση' })).toBeTruthy();
+  });
+
+  it('today offers neither «Διόρθωση» nor «Επαναφορά» (today is changed in «Σήμερα»)', async () => {
+    setup(day({ today: DATE }));
+    await loaded();
+    expect(screen.queryByRole('button', { name: 'Διόρθωση' })).toBeNull();
+    expect(screen.getByText('Οι σημερινές αλλαγές γίνονται από «Σήμερα».')).toBeTruthy();
+    fireEvent.click(within(region('2 υποβολές')).getAllByRole('button')[1]!);
+    expect(screen.queryByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' })).toBeNull();
   });
 
   it('«Αποθήκευση ως κλείσιμο» opens the editor on the open closing', async () => {

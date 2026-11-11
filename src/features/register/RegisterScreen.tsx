@@ -11,15 +11,16 @@ import type { DeviceApi, DeviceContext, DeviceError, StaffSession } from '../../
 import { Card } from '../../ui/Card';
 import { deviceErrorMessage } from '../phone/model/messages';
 import { BottomBar } from './BottomBar';
-import { CoinCalcSheet } from './CoinCalcSheet';
 import { deriveClosing, envelopeBlockReason, submitBlockReason } from './derive';
 import { EnvelopeSheet } from './EnvelopeSheet';
 import { CashierSheet, HeaderMenu } from './HeaderMenu';
-import { amountValue, channelKey } from './live/fields';
 import { useLiveClosing } from './live/useLiveClosing';
 import { SIGN_OUT_DRAIN_MS, type Writer } from './live/syncEngine';
 import { LiveClosingView } from './LiveClosingView';
-import { INVALID_CONFIG_MESSAGE } from './messages';
+import { changedSinceSubmit } from './live/fields';
+import {
+  CHANGED_SINCE_SUBMIT, CONNECTING_SUBMIT_REASON, HALTED_SUBMIT_REASON, INVALID_CONFIG_MESSAGE, OFFLINE_SUBMIT_REASON, PENDING_SUBMIT_REASON,
+} from './messages';
 import type { ShareFn } from './share';
 import { SubmitSheet } from './SubmitSheet';
 
@@ -46,12 +47,6 @@ export interface RegisterProps {
 }
 
 type SheetName = 'envelope' | 'submit' | 'cashier';
-
-export const OFFLINE_SUBMIT_REASON = 'Χρειάζεται σύνδεση για υποβολή';
-export const PENDING_SUBMIT_REASON = 'Περιμένει αποθήκευση…';
-export const CONNECTING_SUBMIT_REASON = 'Σύνδεση…';
-/** The engine stopped after a failure the gate did not take over: nothing is saved until «Δοκίμασε ξανά». */
-export const HALTED_SUBMIT_REASON = 'Δεν αποθηκεύεται — δοκίμασε ξανά';
 
 export function RegisterScreen(props: RegisterProps) {
   const { ctx, session, api, store, now, newId, share, themePref, active, offline, onTheme, onOwner, onSignOut, onServerError } = props;
@@ -95,7 +90,6 @@ export function RegisterScreen(props: RegisterProps) {
   // Bumped after each successful submit so the just-submitted expense lines start suggesting.
   const [historyRound, setHistoryRound] = useState(0);
   const [sheet, setSheet] = useState<SheetName | null>(null);
-  const [calcFor, setCalcFor] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   // Idempotency key of the submit sheet, with the inputs it was minted for. Until the server acknowledges
   // a submit, reopening the sheet for an unchanged closing keeps the key (a lost answer is then answered
@@ -132,7 +126,6 @@ export function RegisterScreen(props: RegisterProps) {
   useEffect(() => {
     if (!active) {
       setSheet(null);
-      setCalcFor(null);
     }
   }, [active]);
 
@@ -153,6 +146,11 @@ export function RegisterScreen(props: RegisterProps) {
         </button>
         {snapshot?.lastSubmit && (
           <p className="sub">{`Υποβλήθηκε ${formatTimeEl(snapshot.lastSubmit.at)} · ${snapshot.lastSubmit.staffName}`}</p>
+        )}
+        {snapshot && changedSinceSubmit(snapshot) && (
+          <p className="sub">
+            <span className="badge">{CHANGED_SINCE_SUBMIT}</span> Κάνε ξανά Υποβολή.
+          </p>
         )}
       </div>
       {active && <HeaderMenu themePref={themePref} onTheme={onTheme} onOwner={onOwner} />}
@@ -207,7 +205,6 @@ export function RegisterScreen(props: RegisterProps) {
   }
 
   const envelopeDef = config.totals.find((t) => t.id === config.envelopeTotalId);
-  const calcChannel = config.channels.find((c) => c.id === calcFor);
   const unsaved = state.pending.some((p) => p.businessDate === snapshot.businessDate);
   const submitBlocked =
     submitBlockReason(derived, draft) ??
@@ -262,7 +259,7 @@ export function RegisterScreen(props: RegisterProps) {
           newId={newId}
           now={now}
           history={history}
-          onCalculator={setCalcFor}
+          active={active}
         />
       </main>
       <BottomBar
@@ -289,17 +286,6 @@ export function RegisterScreen(props: RegisterProps) {
         />
       )}
       {cashierSheet}
-      {active && calcChannel !== undefined && (
-        <CoinCalcSheet
-          label={calcChannel.label}
-          onApply={(text) => {
-            edit(channelKey(calcChannel.id), amountValue(text));
-            flush(channelKey(calcChannel.id));
-            setCalcFor(null);
-          }}
-          onClose={() => setCalcFor(null)}
-        />
-      )}
       {toast !== null && (
         <div className="toast" role="status">
           {toast}

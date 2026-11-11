@@ -240,8 +240,12 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
 - Expense suggestions come from `DeviceApi.suggestionData` (refetched after each successful submit); the owner
   Today view has no suggestion history.
 - **Owner «Σήμερα»** shows the same boxes, totals and Φάκελος as the register: it reuses `LiveClosingView`, the
-  register's `BottomBar` (without `onSubmit` there is no Υποβολή button) and `EnvelopeSheet` over the same
-  `deriveClosing` → `planEnvelope` result. No submit from the owner.
+ register's `BottomBar` (without `onSubmit` there is no Υποβολή button) and `EnvelopeSheet` over the same
+ `deriveClosing` → `planEnvelope` result. No Υποβολή from the owner; once a cashier has submitted, the owner can
+ record later changes with «Καταχώρηση αλλαγών» (see «Today's versions» below).
+- **`last_submit.revision`** (migration `…0003_today_save_and_submit_revision`): the open closing's revision at that
+ submit. `changedSinceSubmit(snapshot)` (`fields.ts`) = `revision > lastSubmit.revision` → «Άλλαξε μετά την υποβολή»
+ on the phone header and «Σήμερα». Absent on older rows (`SubmitInfo.revision` optional) → no notice.
 
 ### Closing history (stage 3)
 - **`closings` is an append-only version log.** A correction inserts a new row and never updates or deletes
@@ -266,8 +270,8 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
 - **Unsubmitted day**: an `open_closings` row of the shop with `business_date` before the shop's business date,
   at least one `open_closing_fields` row, and no non-voided `closings` row for that date. The list shows it as
   `status:'unsubmitted'`; `day.open` is set only when `versions` is empty and the date is such a day.
-- **One owner write path: `owner_save_closing(shop, date, config_id, inputs, expected_current_id, key)`**
-  (latest body: `…0002b_owner_save_closing_relock`). Check order: `require_owner` → `bad_inputs` (key 1–100
+- **One owner write path: `owner_save_closing(shop, date, config_id, inputs, expected_current_id, key, revision default null)`**
+ (latest body: `…0003_today_save_and_submit_revision`; the 6-argument form was dropped). Check order: `require_owner` → `bad_inputs` (key 1–100
   chars, `private.inputs_shape_ok`, `schema` exactly 2, every `{kind:'staff'}` expense author is a staff row of
   *this* shop, active or not; owner lines are fine) → idempotency lookup (same key + owner row + same inputs/
   config/date → `repeat:true`; else `idempotency_conflict`) → advisory lock on the day, then `open_closings … for
@@ -276,12 +280,21 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
   `expected_current_id` must equal it (`closing_changed` + `current_id` otherwise) and `config_id` must be its
   `config_id` (`config_mismatch`); when none exists `expected_current_id` must be null (`closing_changed`, `current_id`
   null) and the day must be an unsubmitted day (`no_closing_day`) with `config_id` = the open closing's pinned
-  one (`config_mismatch`) → insert `owner_correction` (`corrects_closing_id` = the replaced current, null for a first
-  filing) `on conflict (shop_id, idempotency_key) do nothing` and answer a lost same-key race like the lookup.
-  Never add another owner write path for closings (`submit_closing` is the staff one).
-- **Owner saves are isolated from the live closing**: they do not touch `open_closings` (`revision`,
-  `last_submit`), write no `open_closing_fields` and broadcast nothing; the phone register and «Υποβλήθηκε …»
-  stay as they were. Staff still submit only for the shop's business date; the owner has no Υποβολή.
+ one (`config_mismatch`) → insert `owner_correction` (`corrects_closing_id` = the replaced current, null for a first
+ filing) `on conflict (shop_id, idempotency_key) do nothing` and answer a lost same-key race like the lookup.
+ A date after the shop's business date → `no_closing_day`. Never add another owner write path for closings
+ (`submit_closing` is the staff one).
+- **Today's versions come only from the live closing.** For the shop's business date a current version must exist
+ (`no_closing_day`; the owner never files today first), `revision` must equal the open closing's (`draft_changed`
+ + revision, nothing stored), a line that exists as `e:<id>` must carry its stored author (`bad_inputs`), and a
+ successful save sets `last_submit` (`staff_name` «Ιδιοκτήτης», with `revision`) and broadcasts `submitted`. So a
+ later cashier resubmit is built from the same live fields and cannot silently drop the owner's change. The UI:
+ «Καταχώρηση αλλαγών» in «Σήμερα» (shown while `changedSinceSubmit`; guarded on `lastSubmit.closingId`, idempotency
+ key kept while the inputs are unchanged); `DayScreen` offers no «Διόρθωση»/«Επαναφορά» when `businessDate ===
+ today` (from the server). Edits made after a submit and never re-saved are still not in history (only flagged).
+- **Past-day owner saves are isolated from the live closing**: they do not touch `open_closings` (`revision`,
+ `last_submit`), write no `open_closing_fields` and broadcast nothing. Staff still submit only for the shop's
+ business date.
 - **`closing_changed` is never retried automatically.** `CorrectionEditor` shows a sheet: «Φόρτωση νέας» (refetch
   the day; the editor remounts on the new current version, the owner's local edits are dropped) or, when the
   error carries a `currentId`, «Αποθήκευση πάνω της» (resend the same inputs guarded on that newer version). The
@@ -294,6 +307,11 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
   per edit. Existing expense lines keep their `id` and `addedBy`; lines the owner adds are `{kind:'owner'}`;
   new closings are `ClosingInputs` schema 2. Editing always starts from the **current** version, never a
   selected older one.
+- **Change marks and «Επαναφορά» (DayScreen).** An owner correction is shown against its original: the newest
+ `staff` version older than it (`originalOf`); `diffBreakdown` marks changed/added/removed lines with the original
+ value, and the header names the original submitter. «Επαναφορά» on an older version re-saves its inputs through
+ `OwnerApi.saveClosing` (guarded on the current id; offered only for a past day, the current `config_id`, schema 2
+ and inputs that differ from the current) — a new `owner_correction` row, nothing is deleted.
 - **Cross-file invariant: history payload shapes.** `private.closing_version_json` and the `owner_list_closings`/
   `owner_get_closing_day`/`owner_save_closing` results are parsed by `history.ts` (`parseHistoryList`,
   `parseDayDetail`) and `owner.ts` (`saveClosing`):
@@ -303,16 +321,17 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
     version_count, current:version} | {business_date, status:'unsubmitted', open:<closing_snapshot>}]}`, newest day first;
   - `day` = `{ok, today, business_date, versions:[version…] (seq desc, [0] current), configs, staff_names (every staff
     of the shop, active or not), open: <closing_snapshot>|null}`;
-  - `save` = `{ok:true, closing_id, repeat}` | `{ok:false, error:'closing_changed', current_id}` |
-    `{ok:false, error:'bad_inputs'|'config_mismatch'|'no_closing_day'|'idempotency_conflict'}`.
+ - `save` = `{ok:true, closing_id, repeat}` | `{ok:false, error:'closing_changed', current_id}` |
+ `{ok:false, error:'draft_changed', revision}` (today only) |
+ `{ok:false, error:'bad_inputs'|'config_mismatch'|'no_closing_day'|'idempotency_conflict'}`.
   The parsers drop a bad day/version individually (a bad top level → `null` → `unknown`/`bad_response`); change a shape on
   one side → a migration + the parser in the same commit.
 - **Cross-file invariant: the author check.** `owner_save_closing` accepts a staff `addedBy` only if that staff row
   belongs to the shop; `validateClosingInputs` (schema-2 expense rules) and `private.inputs_shape_ok` check the
   rest. The server accepts any staff author of the shop on any line (including changing an existing
   line's author); «editing keeps the author» is enforced by the client (`snapshotFromInputs`). Trusted role.
-- **Six error strings** added in stage 3, each with a `mapError` case (`errors.ts`) and a Greek `ownerErrorMessage`:
-  `closing_changed`, `bad_inputs`, `config_mismatch`, `no_closing_day`, `idempotency_conflict`, `bad_range`.
+- **Seven owner error strings** added in stage 3, each with a `mapError` case (`errors.ts`) and a Greek `ownerErrorMessage`:
+ `closing_changed`, `bad_inputs`, `config_mismatch`, `no_closing_day`, `idempotency_conflict`, `bad_range`, `draft_changed`.
   `mapError` alone gives `closing_changed` a null `currentId`; `saveClosing` in `owner.ts` builds it from the
   payload's `current_id` (the editor offers «Αποθήκευση πάνω της» only with an id).
 - `private.current_closing` and `private.closing_version_json` are `private.*` helpers: no client execute.

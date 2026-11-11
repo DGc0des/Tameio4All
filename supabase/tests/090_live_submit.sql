@@ -69,7 +69,8 @@ begin
   if r #>> '{closing,last_submit,closing_id}' is distinct from current_setting('t.closing')
      or r #>> '{closing,last_submit,staff_name}' is distinct from 'ΜΑΡΙΑ'
      or r #>> '{closing,last_submit,at}' is null
-     or (select count(*) from jsonb_object_keys(r #> '{closing,last_submit}')) <> 3 then
+     or r #>> '{closing,last_submit,revision}' is distinct from '1'
+     or (select count(*) from jsonb_object_keys(r #> '{closing,last_submit}')) <> 4 then
     raise exception 'T1 last_submit wrong: %', r #> '{closing,last_submit}';
   end if;
   if (r #>> '{closing,revision}')::bigint is distinct from 1::bigint then raise exception 'T1 revision changed by submit: %', r #>> '{closing,revision}'; end if;
@@ -185,7 +186,8 @@ begin
   if n <> 2 then raise exception 'T8 expected 2 submitted messages for shop A, got %', n; end if;
   select * into m from realtime.messages where topic = 'shop:' || current_setting('t.shop_a') and event = 'submitted'
     and payload ->> 'closing_id' = current_setting('t.closing');
-  if m.id is null or m.private is not true or m.payload ->> 'staff_name' is distinct from 'ΜΑΡΙΑ' or m.payload ->> 'at' is null then
+  if m.id is null or m.private is not true or m.payload ->> 'staff_name' is distinct from 'ΜΑΡΙΑ' or m.payload ->> 'at' is null
+     or m.payload ->> 'revision' is distinct from '1' then
     raise exception 'T8 bad submitted payload: %', m.payload;
   end if;
 end $$;

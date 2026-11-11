@@ -36,6 +36,8 @@ export function ownerErrorMessage(e: OwnerError): string {
       return 'Η αποθήκευση συγκρούστηκε με προηγούμενη — δοκίμασε ξανά.';
     case 'bad_range':
       return 'Το διάστημα δεν είναι έγκυρο (έως 366 ημέρες, «Από» πριν το «Έως»).';
+    case 'draft_changed':
+      return 'Οι αριθμοί άλλαξαν μόλις τώρα — έλεγξέ τους και πάτα ξανά.';
     case 'bad_name':
       return 'Το όνομα είναι κενό ή πολύ μεγάλο.';
     case 'invalid_credentials':

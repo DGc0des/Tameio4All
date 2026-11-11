@@ -33,5 +33,9 @@ after their migrations (together with 040, 070 and 090 after the first, 090 afte
 relock fix). On 2026-11-11 the whole 010–110 series was run in the dashboard SQL editor against dev after all
 three stage-3 migrations, every file passing. `110` cannot test concurrency: a file is one transaction, so the
 same-key race and the owner-vs-staff-submit locking in `owner_save_closing` are written but never interleaved.
-`100`/`110` do not touch `realtime.messages` (owner saves broadcast nothing).
+`100`/`110` do not touch `realtime.messages` (past-day owner saves broadcast nothing).
+
+`20261111000003_today_save_and_submit_revision`: `last_submit` carries `revision` (090 T1/T8 updated); a save of
+today needs the live revision and records `last_submit` (110 T1/T3/T9 updated, T13–T16 added). **Not yet run on
+dev** — apply the migration, then run 090 and 110 (and 100, which reads the same rows).
 

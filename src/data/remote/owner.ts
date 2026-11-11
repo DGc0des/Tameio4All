@@ -173,7 +173,7 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
       const r = await run(
         client.rpc('owner_save_closing', {
           p_shop_id: shopId, p_business_date: args.businessDate, p_config_id: args.configId, p_inputs: args.inputs,
-          p_expected_current_id: args.expectedCurrentId, p_idempotency_key: args.key,
+          p_expected_current_id: args.expectedCurrentId, p_idempotency_key: args.key, p_revision: args.revision ?? null,
         }),
       );
       if (!r.ok) return r;

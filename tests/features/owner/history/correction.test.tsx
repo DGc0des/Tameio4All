@@ -84,6 +84,18 @@ describe('CorrectionEditor', () => {
     noLiveWrites(api);
   });
 
+  it('fills ΚΕΡΜΑΤΑ from the calculator, locally (no live write)', async () => {
+    const { api } = setup();
+    await startCorrection();
+    fireEvent.click(screen.getByRole('button', { name: 'Άθροισμα για ΚΕΡΜΑΤΑ' }));
+    type('Ποσό 1', '20');
+    type('Ποσό 2', '5,50');
+    fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση' }));
+    expect(box('ΚΕΡΜΑΤΑ').value).toBe(centsToPlain(2550));
+    expect(saveButton().disabled).toBe(false);
+    noLiveWrites(api);
+  });
+
   it('«Αποθήκευση» is disabled with «Δεν άλλαξε κάτι» until a box changes', async () => {
     setup();
     await startCorrection();

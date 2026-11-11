@@ -1,11 +1,11 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
-import { parseKey, type FieldAck, type FieldKey, type ServerField, type Snapshot } from '../../features/register/live/fields';
+import { parseKey, type FieldAck, type FieldKey, type ServerField, type Snapshot, type SubmitInfo } from '../../features/register/live/fields';
 
 export type LiveStatus = 'connecting' | 'live' | 'offline';
 export type LiveFieldEvent = ServerField & { revision: number; businessDate: string };
 export interface LiveHandlers {
   onField(f: LiveFieldEvent): void;
-  onSubmitted(s: { closingId: string; staffName: string; at: string }): void;
+  onSubmitted(s: SubmitInfo): void;
   onPresence(p: { name: string; focus: FieldKey | null }[]): void;
   onStatus(s: LiveStatus): void;
 }
@@ -19,9 +19,11 @@ const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !
 const isStr = (x: unknown): x is string => typeof x === 'string';
 const isInt = (x: unknown): x is number => typeof x === 'number' && Number.isSafeInteger(x);
 
-function parseSubmitInfo(x: unknown): { closingId: string; staffName: string; at: string } | null {
+function parseSubmitInfo(x: unknown): SubmitInfo | null {
   if (!isObj(x) || !isStr(x.closing_id) || !isStr(x.staff_name) || !isStr(x.at)) return null;
-  return { closingId: x.closing_id, staffName: x.staff_name, at: x.at };
+  const info: SubmitInfo = { closingId: x.closing_id, staffName: x.staff_name, at: x.at };
+  if (isInt(x.revision)) info.revision = x.revision;
+  return info;
 }
 
 /** One server field row; null when malformed (including a key the client's parseKey rejects, e.g. `d:0100`). */

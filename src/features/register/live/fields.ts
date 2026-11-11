@@ -92,15 +92,28 @@ export function isFieldValue(key: FieldKey, value: unknown): boolean {
 
 export type ServerField = { key: FieldKey; value: unknown; version: number; updatedByName: string; updatedAt: string };
 
+/** The latest Υποβολή of the open closing (a cashier's, or the owner's save of today). */
+export interface SubmitInfo {
+  closingId: string;
+  staffName: string;
+  at: string;
+  /** The open closing's revision at that submit; absent on rows from before 20261111000003. */
+  revision?: number;
+}
+
 export interface Snapshot {
   id: string;
   businessDate: string;
   configId: string;
   config: unknown;
   revision: number;
-  lastSubmit: { closingId: string; staffName: string; at: string } | null;
+  lastSubmit: SubmitInfo | null;
   fields: Record<FieldKey, ServerField>;
 }
+
+/** Someone changed the live closing after its last Υποβολή (unknown for an old submit without a revision). */
+export const changedSinceSubmit = (s: Snapshot): boolean =>
+  s.lastSubmit !== null && s.lastSubmit.revision !== undefined && s.revision > s.lastSubmit.revision;
 
 /**
  * The server's answer to a successful write. `value` is what the server STORED (since 20261108000003):

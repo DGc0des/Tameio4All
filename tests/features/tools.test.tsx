@@ -27,6 +27,29 @@ describe('CoinCalcSheet', () => {
     expect(onApply).toHaveBeenCalledWith('150');
   });
 
+  it('removes a row (the others keep their amounts) and adds an empty one', () => {
+    const onApply = vi.fn();
+    render(<CoinCalcSheet label="ΚΕΡΜΑΤΑ" onApply={onApply} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Ποσό 1'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Ποσό 2'), { target: { value: '20' } });
+    fireEvent.change(screen.getByLabelText('Ποσό 3'), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Αφαίρεση ποσού 2' }));
+    expect((screen.getByLabelText('Ποσό 1') as HTMLInputElement).value).toBe('10');
+    expect((screen.getByLabelText('Ποσό 2') as HTMLInputElement).value).toBe('30');
+    expect(screen.getByText('40,00€')).toBeTruthy();
+    const before = screen.getAllByLabelText(/^Ποσό \d+$/).length;
+    fireEvent.click(screen.getByRole('button', { name: '+ Προσθήκη' }));
+    expect(screen.getAllByLabelText(/^Ποσό \d+$/)).toHaveLength(before + 1);
+    fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση' }));
+    expect(onApply).toHaveBeenCalledWith('40');
+  });
+
+  it('keeps at least three rows after removing', () => {
+    render(<CoinCalcSheet label="ΚΕΡΜΑΤΑ" onApply={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Αφαίρεση ποσού 1' }));
+    expect(screen.getAllByLabelText(/^Ποσό \d+$/)).toHaveLength(3);
+  });
+
   it('blocks applying while a row is invalid', () => {
     render(<CoinCalcSheet label="ΚΕΡΜΑΤΑ" onApply={vi.fn()} onClose={vi.fn()} />);
     fireEvent.change(screen.getByLabelText('Ποσό 1'), { target: { value: '1.234' } });

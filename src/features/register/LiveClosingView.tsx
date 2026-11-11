@@ -1,14 +1,15 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ShopConfig } from '../../core/config';
 import { isBill, type EntryMode } from '../../core/denominations';
 import type { ExpenseAuthor } from '../../core/formula';
 import type { SupplierHistory } from '../../core/suggestions';
 import { ChannelsCard } from './ChannelsCard';
+import { CoinCalcSheet } from './CoinCalcSheet';
 import { CountCard } from './CountCard';
 import type { Derived } from './derive';
 import type { Draft } from './draft';
-import type { FieldBinding } from './FieldBinding';
-import type { FieldKey } from './live/fields';
+import { editNow, type FieldBinding } from './FieldBinding';
+import { amountValue, channelKey, type FieldKey } from './live/fields';
 import { presenceTags } from './live/merge';
 import type { Presence } from './live/syncEngine';
 import { ModeSwitch } from './ModeSwitch';
@@ -32,17 +33,22 @@ export interface LiveClosingViewProps {
   newId: () => string;
   now: () => Date;
   history: SupplierHistory;
-  /** Opens the coin calculator for a cash_extra channel (phone only). */
-  onCalculator?: (channelId: string) => void;
+  /** False while the screen is mounted but hidden: the calculator sheet (portaled to <body>) closes. Default true. */
+  active?: boolean;
 }
 
 /** The register's cards bound to the live closing, without a header or bottom bar (phone and owner). */
 export function LiveClosingView(props: LiveClosingViewProps) {
-  const { config, draft, derived, viewMode, onViewMode, presence, edit, flush, focus, author, newId, now, history, onCalculator } = props;
+  const { config, draft, derived, viewMode, onViewMode, presence, edit, flush, focus, author, newId, now, history, active = true } = props;
   const editing = useMemo(() => presenceTags(presence), [presence]);
   const binding = useMemo<FieldBinding>(() => ({ edit, flush, focus, editing }), [edit, flush, focus, editing]);
   const bills = config.denominations.filter(isBill);
   const coins = config.denominations.filter((d) => !isBill(d));
+  const [calcFor, setCalcFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!active) setCalcFor(null);
+  }, [active]);
+  const calcChannel = config.channels.find((c) => c.id === calcFor);
   return (
     <>
       <ModeSwitch mode={viewMode} onChange={onViewMode} />
@@ -58,8 +64,18 @@ export function LiveClosingView(props: LiveClosingViewProps) {
         newId={newId}
         nowMs={() => now().getTime()}
       />
-      <ChannelsCard channels={config.channels} draft={draft} derived={derived} binding={binding} onCalculator={onCalculator} />
+      <ChannelsCard channels={config.channels} draft={draft} derived={derived} binding={binding} onCalculator={setCalcFor} />
       <SummaryCard config={config} totals={derived.totals} />
+      {active && calcChannel !== undefined && (
+        <CoinCalcSheet
+          label={calcChannel.label}
+          onApply={(text) => {
+            editNow(binding, channelKey(calcChannel.id), amountValue(text));
+            setCalcFor(null);
+          }}
+          onClose={() => setCalcFor(null)}
+        />
+      )}
     </>
   );
 }

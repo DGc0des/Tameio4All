@@ -160,17 +160,6 @@ describe('SettingsScreen', () => {
     expect(screen.queryByRole('dialog', { name: 'Οι ρυθμίσεις άλλαξαν' })).toBeNull();
   });
 
-  it('clearing the expenses-per-closing field then typing a digit does not snap back and dispatches the new value', async () => {
-    const store = start(fakeApi({ latestConfig: serverAt(3) }));
-    await screen.findByText(/Έκδοση 3/);
-    const field = screen.getByLabelText('Έξοδα ανά κλείσιμο') as HTMLInputElement;
-    fireEvent.change(field, { target: { value: '' } });
-    expect(field.value).toBe('');
-    fireEvent.change(field, { target: { value: '5' } });
-    expect(field.value).toBe('5');
-    expect(loadOwnerDraft(store, SHOP)?.config.maxExpenses).toBe(5);
-  });
-
   it('clearing a tare weight field then typing a digit does not snap back and dispatches the new value', async () => {
     const store = start(fakeApi({ latestConfig: serverAt(3) }));
     await screen.findByText(/Έκδοση 3/);

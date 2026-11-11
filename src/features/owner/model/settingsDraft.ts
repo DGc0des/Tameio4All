@@ -5,7 +5,6 @@ import type { Cents } from '../../../core/money';
 export type SettingsAction =
   | { type: 'setFloat'; cents: Cents }
   | { type: 'toggleDenomination'; cents: Cents }
-  | { type: 'setMaxExpenses'; value: number }
   | { type: 'setEnvelopeTotal'; id: string }
   | { type: 'addChannel'; label: string; channelType: ChannelType }
   | { type: 'renameChannel'; id: string; label: string }
@@ -61,8 +60,6 @@ export function applySettings(config: ShopConfig, action: SettingsAction): Apply
         : EUR_DENOMINATIONS.filter((d) => d === action.cents || config.denominations.includes(d));
       return ok({ ...config, denominations });
     }
-    case 'setMaxExpenses':
-      return ok({ ...config, maxExpenses: action.value });
     case 'setEnvelopeTotal':
       return ok({ ...config, envelopeTotalId: action.id });
     case 'addChannel': {

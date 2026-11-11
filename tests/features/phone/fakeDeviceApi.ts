@@ -115,7 +115,7 @@ export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'conf
     submit(token, _configId, businessDate, _inputs, revision) {
       if (businessDate !== server.businessDate) return fail({ code: 'wrong_day' });
       if (revision !== server.revision) return fail({ code: 'draft_changed', revision: server.revision });
-      const info = { closingId: `closing-${server.revision}`, staffName: server.names[token] ?? '?', at: server.at };
+      const info = { closingId: `closing-${server.revision}`, staffName: server.names[token] ?? '?', at: server.at, revision: server.revision };
       server.lastSubmit = info;
       later(() => {
         for (const c of conns) c.live.emitSubmitted(info);

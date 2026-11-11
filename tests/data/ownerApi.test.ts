@@ -157,8 +157,14 @@ describe('createOwnerApi', () => {
       expect(await api.saveClosing('s1', args)).toEqual({ ok: true, data: { closingId: 'c', repeat: true } });
       expect(calls).toEqual([[
         'rpc', 'owner_save_closing',
-        { p_shop_id: 's1', p_business_date: '2026-11-10', p_config_id: 'c1', p_inputs: { schema: 2 }, p_expected_current_id: 'v1', p_idempotency_key: 'k1' },
+        { p_shop_id: 's1', p_business_date: '2026-11-10', p_config_id: 'c1', p_inputs: { schema: 2 }, p_expected_current_id: 'v1', p_idempotency_key: 'k1', p_revision: null },
       ]]);
+    });
+
+    it('saveClosing sends the live revision for today and maps draft_changed', async () => {
+      const { api, calls } = fake({ data: { ok: false, error: 'draft_changed', revision: 8 }, error: null });
+      expect(await api.saveClosing('s1', { ...args, revision: 7 })).toEqual({ ok: false, error: { code: 'draft_changed' } });
+      expect((calls[0]![2] as Record<string, unknown>).p_revision).toBe(7);
     });
 
     it('saveClosing maps closing_changed with the current id, and other payload errors', async () => {

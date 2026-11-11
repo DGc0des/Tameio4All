@@ -59,7 +59,7 @@ function isServerField(key: string, x: unknown): x is ServerField {
 function isSnapshot(x: unknown): x is Snapshot {
   if (!isObj(x) || !isStr(x.id) || !isStr(x.businessDate) || !isStr(x.configId) || !('config' in x) || !isNum(x.revision)) return false;
   const ls = x.lastSubmit;
-  if (ls !== null && !(isObj(ls) && isStr(ls.closingId) && isStr(ls.staffName) && isStr(ls.at))) return false;
+  if (ls !== null && !(isObj(ls) && isStr(ls.closingId) && isStr(ls.staffName) && isStr(ls.at) && (ls.revision === undefined || isNum(ls.revision)))) return false;
   if (!isObj(x.fields)) return false;
   return Object.entries(x.fields).every(([k, f]) => isFieldKey(k) && isServerField(k, f));
 }

@@ -10,9 +10,8 @@ const apply = (c: ShopConfig, ...actions: SettingsAction[]) =>
 
 describe('applySettings', () => {
   it('edits general settings and keeps denominations in EUR order', () => {
-    let c = apply(newShopConfig(), { type: 'setFloat', cents: 50000 }, { type: 'setMaxExpenses', value: 12 });
+    let c = apply(newShopConfig(), { type: 'setFloat', cents: 50000 });
     expect(c.floatCents).toBe(50000);
-    expect(c.maxExpenses).toBe(12);
     c = apply(c, { type: 'toggleDenomination', cents: 20000 });
     expect(c.denominations[0]).toBe(20000);
     c = apply(c, { type: 'toggleDenomination', cents: 20000 });

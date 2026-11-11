@@ -10,7 +10,7 @@ import {
   KEY_RE, amountValue, channelKey, denomKey, denomValue, expenseAmountKey, expenseDescKey, expenseKey, expenseMetaValue,
   isFieldValue, parseKey, textValue, type FieldKey, type ServerField, type Snapshot,
 } from '../../register/live/fields';
-import type { HistoryDay, HistoryList } from './types';
+import type { ClosingVersion, HistoryDay, HistoryList } from './types';
 
 export const OWNER_NAME = 'Ιδιοκτήτης';
 export const UNKNOWN_AUTHOR = '—';
@@ -96,6 +96,64 @@ export function breakdown(config: unknown, inputs: unknown, staffNames: Record<s
     expensesCents: sumExpenses(inp),
     envelope: planEnvelope(totals[cfg.envelopeTotalId] ?? 0, inp.counts, cfg.denominations),
   };
+}
+
+/**
+ * The staff submission an owner correction is measured against: the newest `staff` version older than
+ * `index` (versions are newest first). null for a staff version itself, or a day the owner filed alone.
+ */
+export function originalOf(versions: readonly ClosingVersion[], index: number): ClosingVersion | null {
+  if (versions[index]?.kind !== 'owner_correction') return null;
+  return versions.slice(index + 1).find((v) => v.kind === 'staff') ?? null;
+}
+
+/** What changed from the original to the shown version; each map holds the original value of a changed line. */
+export interface BreakdownDiff {
+  denominations: Map<Cents, Cents>;
+  channels: Map<string, Cents>;
+  expenses: Map<string, { description: string; cents: Cents }>;
+  addedExpenses: Set<string>;
+  totals: Map<string, Cents>;
+  /** Lines of the original that the shown version no longer has. */
+  removedDenominations: Breakdown['denominations'];
+  removedChannels: Breakdown['channels'];
+  removedExpenses: Breakdown['expenses'];
+}
+
+export function diffBreakdown(shown: Breakdown, original: Breakdown): BreakdownDiff {
+  const byKey = <T, K>(xs: readonly T[], k: (x: T) => K) => new Map(xs.map((x) => [k(x), x] as const));
+  const oDen = byKey(original.denominations, (d) => d.denom);
+  const oCh = byKey(original.channels, (c) => c.id);
+  const oEx = byKey(original.expenses, (e) => e.key);
+  const oTot = byKey(original.totals, (t) => t.id);
+  const sDen = new Set(shown.denominations.map((d) => d.denom));
+  const sCh = new Set(shown.channels.map((c) => c.id));
+  const sEx = new Set(shown.expenses.map((e) => e.key));
+
+  const diff: BreakdownDiff = {
+    denominations: new Map(), channels: new Map(), expenses: new Map(), addedExpenses: new Set(), totals: new Map(),
+    removedDenominations: original.denominations.filter((d) => !sDen.has(d.denom)),
+    removedChannels: original.channels.filter((c) => !sCh.has(c.id)),
+    removedExpenses: original.expenses.filter((e) => !sEx.has(e.key)),
+  };
+  for (const d of shown.denominations) {
+    const o = oDen.get(d.denom)?.cents ?? 0;
+    if (o !== d.cents) diff.denominations.set(d.denom, o);
+  }
+  for (const c of shown.channels) {
+    const o = oCh.get(c.id)?.cents ?? 0;
+    if (o !== c.cents) diff.channels.set(c.id, o);
+  }
+  for (const e of shown.expenses) {
+    const o = oEx.get(e.key);
+    if (o === undefined) diff.addedExpenses.add(e.key);
+    else if (o.cents !== e.cents || o.description !== e.description) diff.expenses.set(e.key, { description: o.description, cents: o.cents });
+  }
+  for (const t of shown.totals) {
+    const o = oTot.get(t.id);
+    if (o !== undefined && o.cents !== t.cents) diff.totals.set(t.id, o.cents);
+  }
+  return diff;
 }
 
 /** A local, editable copy of stored inputs (never sent to the server as fields). */

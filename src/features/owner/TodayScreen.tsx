@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatTimeEl } from '../../app/dates';
 import { randomId } from '../../app/ids';
 import { isShopConfig } from '../../core/config';
@@ -13,10 +13,11 @@ import { deviceErrorMessage } from '../phone/model/messages';
 import { BottomBar } from '../register/BottomBar';
 import { deriveClosing, envelopeBlockReason } from '../register/derive';
 import { EnvelopeSheet } from '../register/EnvelopeSheet';
-import { OWNER_QUEUE_AUTHOR } from '../register/live/fields';
+import { OWNER_QUEUE_AUTHOR, changedSinceSubmit } from '../register/live/fields';
 import { useLiveClosing } from '../register/live/useLiveClosing';
 import { LiveClosingView } from '../register/LiveClosingView';
-import { INVALID_CONFIG_MESSAGE } from '../register/messages';
+import { CHANGED_SINCE_SUBMIT, CONNECTING_SUBMIT_REASON, INVALID_CONFIG_MESSAGE, PENDING_SUBMIT_REASON } from '../register/messages';
+import { ownerErrorMessage } from './model/messages';
 import { OWNER_PRESENCE_NAME, createTodayWriter } from './todayWriter';
 
 export interface TodayScreenProps {
@@ -36,7 +37,7 @@ const NO_HISTORY: SupplierHistory = {};
 export function TodayScreen({ api, shopId, store, now, newId = randomId }: TodayScreenProps) {
   const writer = useMemo(() => createTodayWriter(api, shopId), [api, shopId]);
   const [fatal, setFatal] = useState<DeviceError | null>(null);
-  const { state, draft, edit, flush, focus, clearNotice, restart } = useLiveClosing(writer, store, shopId, OWNER, now, { onFatal: setFatal });
+  const { state, draft, edit, flush, focus, resync, clearNotice, restart } = useLiveClosing(writer, store, shopId, OWNER, now, { onFatal: setFatal });
   const snapshot = state.snapshot;
   const config = snapshot !== null && isShopConfig(snapshot.config) ? snapshot.config : null;
   const derived = useMemo(() => (config !== null && draft !== null ? deriveClosing(config, draft) : null), [config, draft]);
@@ -49,6 +50,12 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
 
   const [toast, setToast] = useState<string | null>(null);
   const [envelopeOpen, setEnvelopeOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Idempotency key of «Καταχώρηση αλλαγών», kept while the inputs are unchanged and not yet acknowledged (like the phone's submit).
+  const saveKey = useRef<{ key: string; inputs: string } | null>(null);
+  // The current version the next save is guarded on, when the server named a newer one than last_submit.
+  const [expectedOverride, setExpectedOverride] = useState<string | null>(null);
   useEffect(() => {
     if (state.notice === null) return;
     setToast(state.notice);
@@ -95,12 +102,61 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
     );
   }
 
+  const lastSubmit = snapshot.lastSubmit;
+  const changed = changedSinceSubmit(snapshot);
+  const saveBlocked =
+    envelopeBlockReason(derived) ??
+    (state.status !== 'live' ? CONNECTING_SUBMIT_REASON : null) ??
+    (state.pending.some((p) => p.businessDate === snapshot.businessDate) ? PENDING_SUBMIT_REASON : null);
+
+  /** Records today's live numbers as a new version (the server checks they are the latest: `revision`). */
+  const saveLive = async () => {
+    if (lastSubmit === null || saving || saveBlocked !== null) return;
+    const inputs = derived.inputs;
+    const json = JSON.stringify(inputs);
+    if (saveKey.current?.inputs !== json) saveKey.current = { key: newId(), inputs: json };
+    setSaving(true);
+    setSaveError(null);
+    const r = await api.saveClosing(shopId, {
+      businessDate: snapshot.businessDate, configId: snapshot.configId, inputs,
+      expectedCurrentId: expectedOverride ?? lastSubmit.closingId, key: saveKey.current.key, revision: snapshot.revision,
+    });
+    setSaving(false);
+    if (r.ok) {
+      saveKey.current = null;
+      setExpectedOverride(null);
+      setToast('Οι αλλαγές καταχωρήθηκαν');
+    } else {
+      if (r.error.code === 'draft_changed') saveKey.current = null;
+      if (r.error.code === 'closing_changed' && r.error.currentId !== null) setExpectedOverride(r.error.currentId);
+      setSaveError(ownerErrorMessage(r.error));
+    }
+    void resync();
+  };
+
   return (
     <>
       {banner}
       <p className="sub">
-        {snapshot.lastSubmit ? `Υποβλήθηκε ${formatTimeEl(snapshot.lastSubmit.at)} · ${snapshot.lastSubmit.staffName}` : 'Δεν έχει υποβληθεί ακόμα'}
+        {lastSubmit ? `Υποβλήθηκε ${formatTimeEl(lastSubmit.at)} · ${lastSubmit.staffName}` : 'Δεν έχει υποβληθεί ακόμα'}
       </p>
+      {changed && (
+        <Card>
+          <p>
+            <span className="badge">{CHANGED_SINCE_SUBMIT}</span>
+          </p>
+          <p className="notice-soft">Οι αριθμοί άλλαξαν μετά την τελευταία υποβολή. Καταχώρησέ τους ως νέα έκδοση στο Ιστορικό.</p>
+          {saveBlocked !== null && <p className="notice-soft">{saveBlocked}</p>}
+          {saveError !== null && (
+            <p className="form-error" role="alert">
+              {saveError}
+            </p>
+          )}
+          <button type="button" className="btn btn-primary" disabled={saving || saveBlocked !== null} onClick={() => void saveLive()}>
+            Καταχώρηση αλλαγών
+          </button>
+        </Card>
+      )}
       <LiveClosingView
         config={config}
         draft={draft}

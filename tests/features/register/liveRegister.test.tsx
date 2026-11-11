@@ -7,6 +7,7 @@ import { memoryStore, type KeyValueStore } from '../../../src/data/local/storage
 import type { DResult, DeviceApi, DeviceContext, StaffSession } from '../../../src/data/remote/deviceApi';
 import type { FieldAck, Snapshot } from '../../../src/features/register/live/fields';
 import { PhoneApp } from '../../../src/features/phone/PhoneApp';
+import { CHANGED_SINCE_SUBMIT } from '../../../src/features/register/messages';
 import { RegisterScreen } from '../../../src/features/register/RegisterScreen';
 import { FAKE_CONFIG_ID, FAKE_SHOP_ID, fail, fakeDeviceApi, fakeLive, fakeServer, ok, type FakeServer } from '../phone/fakeDeviceApi';
 
@@ -190,9 +191,30 @@ describe('phones on the shared live closing', () => {
     expect(a.q.getByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
     expect(b.q.getByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
     expect(vi.mocked(a.api.submit).mock.calls[0]![4]).toBe(1);
+    expect(a.q.queryByText(CHANGED_SINCE_SUBMIT)).toBeNull();
     typeAndLeave(b, '100€', '600');
     await settle();
     expect(field(b, '100€').value).toBe('600');
+  });
+
+  it('a change after the submit shows «Άλλαξε μετά την υποβολή» on both phones until the next submit', async () => {
+    const { a, b } = await twoPhones();
+    typeAndLeave(a, '100€', '500');
+    await settle();
+    fireEvent.click(barSubmit(a));
+    await tapSheetSubmit();
+    await settle();
+    fireEvent.click(within(dialog()).getAllByRole('button', { name: 'Κλείσιμο' })[0]!);
+    expect(a.q.queryByText(CHANGED_SINCE_SUBMIT)).toBeNull();
+    typeAndLeave(b, '100€', '600');
+    await settle();
+    expect(a.q.getByText(CHANGED_SINCE_SUBMIT)).toBeTruthy();
+    expect(b.q.getByText(CHANGED_SINCE_SUBMIT)).toBeTruthy();
+    fireEvent.click(barSubmit(b));
+    await tapSheetSubmit();
+    await settle();
+    expect(a.q.queryByText(CHANGED_SINCE_SUBMIT)).toBeNull();
+    expect(b.q.queryByText(CHANGED_SINCE_SUBMIT)).toBeNull();
   });
 
   it('an edit queued for a past business day is dropped with the day-change toast', async () => {

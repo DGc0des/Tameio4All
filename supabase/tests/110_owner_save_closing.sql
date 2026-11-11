@@ -1,5 +1,7 @@
 -- 110 — stage 3 owner corrections: owner_save_closing (a correction is a NEW closings row, guarded on the
--- current version; the original rows, open_closings.revision and last_submit are never touched).
+-- current version; the original rows and open_closings.revision are never touched). Since
+-- 20261111000003: a save of TODAY needs the live revision (draft_changed otherwise), checks live line authors,
+-- and records last_submit; a past-day save leaves open_closings alone (T13–T16).
 -- One transaction, ends in ROLLBACK.
 begin;
 insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created_at, updated_at) values
@@ -33,8 +35,8 @@ select set_config('t.bd', private.business_date(current_setting('t.shop_a')::uui
 
 -- T0 privileges (before anything else is exercised)
 do $$ begin
-  if not has_function_privilege('authenticated', 'public.owner_save_closing(uuid,date,uuid,jsonb,uuid,text)', 'execute')
-     or has_function_privilege('anon', 'public.owner_save_closing(uuid,date,uuid,jsonb,uuid,text)', 'execute') then
+  if not has_function_privilege('authenticated', 'public.owner_save_closing(uuid,date,uuid,jsonb,uuid,text,bigint)', 'execute')
+     or has_function_privilege('anon', 'public.owner_save_closing(uuid,date,uuid,jsonb,uuid,text,bigint)', 'execute') then
     raise exception 'T0 wrong execute privileges on owner_save_closing';
   end if;
 end $$;
@@ -76,15 +78,17 @@ select set_config('t.c1_before', (select to_jsonb(c)::text from public.closings 
 select set_config('t.oc_before', (select jsonb_build_object('revision', revision, 'last_submit', last_submit)::text
   from public.open_closings where shop_id = current_setting('t.shop_a')::uuid and business_date = current_setting('t.bd')::date), true);
 select set_config('t.n_before', (select count(*)::text from public.closings), true);
+select set_config('t.rev', (select revision::text from public.open_closings
+  where shop_id = current_setting('t.shop_a')::uuid and business_date = current_setting('t.bd')::date), true);
 
 -- T1 owner A corrects today
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.r1', public.owner_save_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date,
-  current_setting('t.cfg_a')::uuid, current_setting('t.fix')::jsonb, current_setting('t.c1')::uuid, 'k1')::text, true);
+  current_setting('t.cfg_a')::uuid, current_setting('t.fix')::jsonb, current_setting('t.c1')::uuid, 'k1', current_setting('t.rev')::bigint)::text, true);
 reset role;
 do $$
-declare r jsonb := current_setting('t.r1')::jsonb; c public.closings;
+declare r jsonb := current_setting('t.r1')::jsonb; c public.closings; oc public.open_closings;
 begin
   if r ->> 'ok' <> 'true' or r ->> 'repeat' <> 'false' then raise exception 'T1 not ok: %', r; end if;
   select * into c from public.closings where id = (r ->> 'closing_id')::uuid;
@@ -101,10 +105,12 @@ begin
     raise exception 'T2 original row changed';
   end if;
   if (select count(*) from public.closings) <> current_setting('t.n_before')::int + 1 then raise exception 'T1 row count'; end if;
-  -- T3 open closing untouched
-  if (select jsonb_build_object('revision', revision, 'last_submit', last_submit) from public.open_closings
-       where shop_id = current_setting('t.shop_a')::uuid and business_date = current_setting('t.bd')::date) <> current_setting('t.oc_before')::jsonb then
-    raise exception 'T3 open_closings changed by the save';
+  -- T3 today's save: revision untouched, last_submit points at the owner's version (made at that revision)
+  select * into oc from public.open_closings where shop_id = current_setting('t.shop_a')::uuid and business_date = current_setting('t.bd')::date;
+  if oc.revision <> (current_setting('t.oc_before')::jsonb ->> 'revision')::bigint then raise exception 'T3 revision changed by the save'; end if;
+  if oc.last_submit ->> 'closing_id' <> c.id::text or oc.last_submit ->> 'staff_name' <> 'Ιδιοκτήτης'
+     or oc.last_submit ->> 'revision' <> current_setting('t.rev') or oc.last_submit ->> 'at' is null then
+    raise exception 'T3 last_submit not the owner save: %', oc.last_submit;
   end if;
 end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
@@ -252,7 +258,7 @@ select set_config('t.fix9', jsonb_set(current_setting('t.fix')::jsonb, '{expense
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.r9', public.owner_save_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date,
-  current_setting('t.cfg_a')::uuid, current_setting('t.fix9')::jsonb, current_setting('t.c3')::uuid, 'k9')::text, true);
+  current_setting('t.cfg_a')::uuid, current_setting('t.fix9')::jsonb, current_setting('t.c3')::uuid, 'k9', current_setting('t.rev')::bigint)::text, true);
 reset role;
 do $$
 declare r jsonb := current_setting('t.r9')::jsonb;
@@ -332,5 +338,83 @@ end $$;
 reset role;
 do $$ begin
   if (select count(*) from public.closings) <> current_setting('t.n12')::int then raise exception 'T12 rows stored'; end if;
+end $$;
+
+-- T13 today needs the live revision: none, or an old one after a later write -> draft_changed, nothing stored
+update public.shop_configs set config = '{"schema":1,"maxExpenses":5}' where id = current_setting('t.cfg_a')::uuid;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$
+declare
+  shop uuid := current_setting('t.shop_a')::uuid; bd date := current_setting('t.bd')::date;
+  cfg uuid := current_setting('t.cfg_a')::uuid; cur uuid := current_setting('t.c9')::uuid;
+  fix jsonb := current_setting('t.fix')::jsonb; rev bigint := current_setting('t.rev')::bigint;
+  n int := (select count(*) from public.closings); r jsonb;
+begin
+  r := public.owner_save_closing(shop, bd, cfg, fix, cur, 'k13a');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'draft_changed', 'revision', rev) then raise exception 'T13 null revision: %', r; end if;
+  r := public.owner_set_closing_field(shop, bd, 'c:wolt', '{"text":"50"}', null);
+  if (r ->> 'revision')::bigint <> rev + 1 then raise exception 'T13 setup write: %', r; end if;
+  r := public.owner_save_closing(shop, bd, cfg, fix, cur, 'k13b', rev);
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'draft_changed', 'revision', rev + 1) then raise exception 'T13 old revision: %', r; end if;
+  if (select count(*) from public.closings) <> n then raise exception 'T13 rows stored'; end if;
+
+  -- T14 a line that exists live must carry its stored author: owner line o1 sent as ΜΑΡΙΑ -> bad_inputs; as owner -> ok
+  r := public.owner_set_closing_field(shop, bd, 'e:o1', '{"addedBy":{"kind":"owner"},"order":9,"removed":false}', null);
+  if (r ->> 'ok')::boolean is not true then raise exception 'T14 setup line: %', r; end if;
+  rev := (r ->> 'revision')::bigint;
+  r := public.owner_save_closing(shop, bd, cfg, jsonb_set(fix, '{expenses}', jsonb_build_array(jsonb_build_object('id', 'o1', 'description', 'Υδραυλικός',
+         'cents', 1200, 'addedBy', jsonb_build_object('kind', 'staff', 'id', current_setting('t.maria'))))), cur, 'k14a', rev);
+  if r is distinct from '{"ok":false,"error":"bad_inputs"}'::jsonb then raise exception 'T14 wrong author accepted: %', r; end if;
+  r := public.owner_save_closing(shop, bd, cfg, jsonb_set(fix, '{expenses}', jsonb_build_array(jsonb_build_object('id', 'o1', 'description', 'Υδραυλικός',
+         'cents', 1200, 'addedBy', jsonb_build_object('kind', 'owner')))), cur, 'k14b', rev);
+  if r ->> 'ok' <> 'true' then raise exception 'T14 owner save with the live revision refused: %', r; end if;
+  perform set_config('t.c14', r ->> 'closing_id', true);
+  perform set_config('t.rev14', rev::text, true);
+end $$;
+reset role;
+do $$
+declare oc public.open_closings;
+begin
+  select * into oc from public.open_closings where shop_id = current_setting('t.shop_a')::uuid and business_date = current_setting('t.bd')::date;
+  if oc.last_submit ->> 'closing_id' <> current_setting('t.c14') or oc.last_submit ->> 'revision' <> current_setting('t.rev14')
+     or oc.revision::text <> current_setting('t.rev14') then
+    raise exception 'T14 last_submit/revision wrong: % / %', oc.last_submit, oc.revision;
+  end if;
+end $$;
+
+-- T15 a cashier resubmit at the same revision becomes current (it is built from the same live fields)
+update public.staff set active = true where id = current_setting('t.maria')::uuid;  -- deactivated in T9
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
+set local role authenticated;
+select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+do $$
+declare r jsonb;
+begin
+  r := public.submit_closing(current_setting('t.token'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date,
+    jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb, 'expenses', jsonb_build_array(jsonb_build_object(
+      'id', 'o1', 'description', 'Υδραυλικός', 'cents', 1200, 'addedBy', jsonb_build_object('kind', 'owner')))),
+    current_setting('t.rev14')::bigint, 'h-15');
+  if r ->> 'ok' <> 'true' then raise exception 'T15 resubmit after the owner save refused: %', r; end if;
+  if (private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date)).id::text <> r ->> 'closing_id' then
+    raise exception 'T15 resubmit is not current';
+  end if;
+end $$;
+reset role;
+
+-- T16 a past-day correction (today - 1, filed in T11) leaves that day's open closing alone
+select set_config('t.f1_before', (select jsonb_build_object('revision', revision, 'last_submit', last_submit)::text
+  from public.open_closings where id = '00000000-0000-0000-0000-0000000000f1'), true);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+select set_config('t.r16', public.owner_save_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date - 1,
+  current_setting('t.cfg_a')::uuid, current_setting('t.in1')::jsonb, (current_setting('t.r11')::jsonb ->> 'closing_id')::uuid, 'k16')::text, true);
+reset role;
+do $$ begin
+  if current_setting('t.r16')::jsonb ->> 'ok' <> 'true' then raise exception 'T16 past-day save refused: %', current_setting('t.r16'); end if;
+  if (select jsonb_build_object('revision', revision, 'last_submit', last_submit) from public.open_closings
+       where id = '00000000-0000-0000-0000-0000000000f1') <> current_setting('t.f1_before')::jsonb then
+    raise exception 'T16 past day open closing changed';
+  end if;
 end $$;
 rollback;

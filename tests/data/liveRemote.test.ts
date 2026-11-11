@@ -45,6 +45,16 @@ describe('getOpenClosing / todayClosing', () => {
     expect(r.ok && r.data.lastSubmit).toBeNull();
   });
 
+  it('keeps the revision of last_submit when it is an integer, and ignores anything else there', async () => {
+    const at = '2026-11-07T09:00:00Z';
+    const read = async (revision: unknown) => {
+      const r = await createDeviceApi(rpcClient({ ok: true, closing: closing({ last_submit: { closing_id: 'cl1', staff_name: 'ΝΙΚΟΣ', at, revision } }) }).client).getOpenClosing('t');
+      return r.ok ? r.data.lastSubmit : null;
+    };
+    expect(await read(6)).toEqual({ closingId: 'cl1', staffName: 'ΝΙΚΟΣ', at, revision: 6 });
+    expect(await read('6')).toEqual({ closingId: 'cl1', staffName: 'ΝΙΚΟΣ', at });
+  });
+
   it('a malformed top-level part is an unexpected response', async () => {
     for (const bad of [{ revision: '7' }, { id: 5 }, { business_date: null }, { config_id: 1 }, { last_submit: { closing_id: 1 } }]) {
       const r = await createDeviceApi(rpcClient({ ok: true, closing: closing(bad) }).client).getOpenClosing('t');
