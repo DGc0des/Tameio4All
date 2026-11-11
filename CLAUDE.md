@@ -23,7 +23,8 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
 - `src/data/local/` — the only code that touches localStorage: theme, `phone.ts` (stored staff session +
   cached device context) and `openClosing.ts` (per shop: cached snapshot, pending edit queue, entry mode).
   Every call is failure-safe; `pickStore()` falls back to memory when storage is unavailable.
-- `src/data/remote/` — the only code importing supabase-js. `owner.ts` (`createOwnerApi`) is the
+- `src/data/remote/` — the only code importing supabase-js. `timeoutFetch.ts` is the client's fetch: every request
+  fails as `network` after `REQUEST_TIMEOUT_MS` = 15 s. `owner.ts` (`createOwnerApi`) is the
   one path for owner reads/writes; `errors.ts` maps every failure into the closed `OwnerError`
   union; `client.ts` builds the PKCE client. `supabase.ts` exports `getSupabase()`: the ONE shared
   client (owner and phone use the same instance). `deviceApi.ts` (the `DeviceApi` interface),
@@ -59,6 +60,9 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   one rolled-back transaction each (see its README).
 
 ## Invariants
+- Every Supabase request goes through `timeoutFetch` (set once in `client.ts`). A timeout rejects with the fixed
+  message `request_timeout`, which both `mapDeviceError` and `mapError` map to `network` (cross-file: the message in
+  `timeoutFetch.ts` and both `NETWORK_RE`). Never add a second client or a raw `fetch`.
 - Money is integer cents everywhere in core. Parse with `parseAmount`; display with `formatEuro`
   (UI) — `formatCents` is the plain form.
 - `ShopConfig` and `ClosingInputs` both carry a `schema: 1` field (day-zero identifier). Bump it
@@ -270,7 +274,9 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
 - **Owner «Σήμερα»** shows the same boxes, totals and Φάκελος as the register: it reuses `LiveClosingView`, the
  register's `BottomBar` (without `onSubmit` there is no Υποβολή button) and `EnvelopeSheet` over the same
  `deriveClosing` → `planEnvelope` result. No Υποβολή from the owner; once a cashier has submitted, the owner can
- record later changes with «Καταχώρηση αλλαγών» (see «Today's versions» below).
+ record later changes with «Καταχώρηση αλλαγών» (see «Today's versions» below). It shows the snapshot's business date
+ and renders a snapshot only when its `businessDate` equals the one of the last successful load in this mount (no
+ cached closing of another day, none while offline at startup).
 - **`last_submit.revision`** (migration `…0003_today_save_and_submit_revision`): the open closing's revision at that
  submit. `changedSinceSubmit(snapshot)` (`fields.ts`) = `revision > lastSubmit.revision` → «Άλλαξε μετά την υποβολή»
  on the phone header and «Σήμερα». Absent on older rows (`SubmitInfo.revision` optional) → no notice.
@@ -318,7 +324,8 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
  successful save sets `last_submit` (`staff_name` «Ιδιοκτήτης», with `revision`) and broadcasts `submitted`. So a
  later cashier resubmit is built from the same live fields and cannot silently drop the owner's change. The UI:
  «Καταχώρηση αλλαγών» in «Σήμερα» (shown while `changedSinceSubmit`; guarded on `lastSubmit.closingId`, idempotency
- key kept while the inputs are unchanged); `DayScreen` offers no «Διόρθωση»/«Επαναφορά» when `businessDate ===
+ key kept while the inputs are unchanged; the remembered newer version after `closing_changed`, `expectedOverride`
+ = `{forSubmit, id}`, is used only while `forSubmit` equals the current `lastSubmit.closingId`); `DayScreen` offers no «Διόρθωση»/«Επαναφορά» when `businessDate ===
  today` (from the server). Edits made after a submit and never re-saved are still not in history (only flagged).
 - **Past-day owner saves are isolated from the live closing**: they do not touch `open_closings` (`revision`,
  `last_submit`), write no `open_closing_fields` and broadcast nothing. Staff still submit only for the shop's

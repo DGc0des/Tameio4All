@@ -14,14 +14,14 @@ Requires Node 22.12+ (or 24+).
 ## Deploy (Vercel, one-time setup)
 1. vercel.com → Add New → Project → import the GitHub repo `DGc0des/Tameio4All`.
 2. Framework preset: Vite (auto-detected). Build command `npm run build`, output `dist`.
-3. No environment variables are needed yet (Supabase arrives in Plan 3; register
-   `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` in Vercel then).
+3. Register `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in Vercel before the first deploy
+   (the build ships with them `undefined` otherwise; see the dashboard section).
 4. Deploy. Every push to `main` redeploys.
 
 ## Database
 Supabase (dev project `fstfuhogvsdaiwpfdmep`). Migrations: `supabase/migrations/` (apply in order).
 Security tests: `supabase/tests/` — paste a file into the dashboard SQL editor and run; it cleans up
-after itself. Before the owner app works: Authentication → Sign In / Providers → allow anonymous sign-ins.
+after itself. Phones join a store as anonymous users, so anonymous sign-ins must be enabled (Authentication → Sign In / Providers) before a phone can enter a store.
 
 ## Supabase dashboard setup (owner app auth)
 The owner app (`#/owner`) signs in with email/password and PKCE; email links (confirm sign-up,

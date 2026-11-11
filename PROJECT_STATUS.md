@@ -8,7 +8,7 @@
 - [ ] Plan 4b / stage 1 — phone side (pair, server config + staff, PIN sign-in, server submit, business day, day-change setting; LOCAL_SHOP removed): code complete; pending the manual two-browser check (see Not verified)
 - [ ] Stage 2 — live shared closing (open closing per day, per-field LWW writes, offline replay, realtime broadcast + presence, revision-checked submit, owner «Σήμερα» tab): code complete; SQL 010–090 pass on dev; pending the real-device checks (see Not verified)
 - [ ] Stage 3 — owner closing history and corrections («Ιστορικό» tab: closings as an append-only version log, range list, day detail with versions + Φάκελος, owner corrections saved as new versions with conflict handling, filing an unsubmitted day): code complete, merged to `main`; «Ιστορικό» is a week view (Mon–Sun, three cards per row on wide screens); SQL 010–110 all pass on dev (run whole in the SQL editor on 2026-11-11, after the three stage-3 migrations); pending the manual browser check (see Not verified)
-- [ ] Stage 4 — store link entry (a permanent store link / QR / code replaces the single-use pairing code; name + PIN on the phone; silent re-join with the stored key; owner «Αφαίρεση» and «Νέος σύνδεσμος»): code complete on `stage-4-store-link-entry`; migrations `…0003_today_save_and_submit_revision` and `20261112000001_store_join_keys` applied to dev on 2026-11-11; SQL run: 010–120 all pass on dev (2026-11-11, after both migrations; 010 via the connector, 020–120 in the dashboard SQL editor, run by the user); pending the real-device check (see Not verified). **The deployed client must be the stage-4 build: the old pairing calls no longer exist on dev.**
+- [ ] Stage 4 — store link entry (a permanent store link / QR / code replaces the single-use pairing code; name + PIN on the phone; silent re-join with the stored key; owner «Αφαίρεση» and «Νέος σύνδεσμος»): code complete, merged to `main`; migrations `…0003_today_save_and_submit_revision` and `20261112000001_store_join_keys` applied to dev on 2026-11-11; SQL run: 010–120 all pass on dev (2026-11-11, after both migrations; 010 via the connector, 020–120 in the dashboard SQL editor, run by the user); pending the real-device check (see Not verified). **The deployed client must be the stage-4 build: the old pairing calls no longer exist on dev.**
 - [ ] Plan 5 — closings, suggestions, PWA, deploy (closing history landed in stage 3)
 
 ## Product decisions
@@ -242,6 +242,18 @@ Accepted by design (spec): «Αφαίρεση» is undone by the phone's silent 
 confirmation says so; «Νέος σύνδεσμος» is the way to keep a phone out); `owner_rotate_join_key` does not retry a key
 collision (80 bits); a `%23`-encoded pasted link is refused, not misread.
 
+## Review findings (2026-11-11 whole-project scan)
+Branch `fix/review-2026-11-11`. Continues the severity scheme above.
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| M38 | No Supabase request had a timeout: a stalled connection (weak Wi-Fi, not fully offline) hung for minutes, `loadGate` sat on «Φόρτωση…» with no retry, and the sync engine (one load and one write in flight) sent nothing and kept Υποβολή disabled | `src/data/remote/timeoutFetch.ts`, set once in `client.ts`: 15 s, rejects with `request_timeout`, mapped to `network` by both `NETWORK_RE`; a caller's own abort passes through unchanged | fixed — `bc5c5a9` |
+| L87 | Owner «Σήμερα» showed no date and had no stale-day guard: on a slow/offline start it showed another day's cached snapshot under «Σήμερα», and edits typed there were dropped as `wrong_day` | `TodayScreen` shows the date (`formatDayEl`) and renders a snapshot only when its `businessDate` equals `loadedDate` (last successful load in this mount; `staleDay` guard) | fixed — `cc8d0eb` |
+| L88 | `formatClock`/`formatDate` used the browser's time zone; every other timestamp uses Europe/Athens | `formatClock` via `formatTimeEl`, `formatDate` via an Athens `Intl.DateTimeFormat`; unparseable input is returned unchanged | fixed — `1786594` |
+| L89 | `TodayScreen` kept `expectedOverride` (set after `closing_changed`) until a save succeeded: if a cashier submitted in between, the next «Καταχώρηση αλλαγών» was guarded on the outdated id and failed once | `expectedOverride` is `{forSubmit, id}` and is used only while `forSubmit === lastSubmit.closingId` | fixed — `12a7256` |
+| L90 | A response whose body stalls after the headers is not covered by the request timeout (the timer is cleared when the fetch settles) | Deferred minor | open |
+| L91 | An owner opening «Σήμερα» offline sees no cached numbers (accepted trade-off of L87) | Accepted | open — accepted |
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped
@@ -251,8 +263,8 @@ targets, 20 000€ timing, NaN/negative/fractional counts, bounded search above 
 (ranking, learning from submissions: grouping, recency, 30-amount cap, malformed entries, new shop empty),
 tare, core purity (side-effect imports, `require()`, directory escape).
 UI (jsdom + Testing Library): primitives, counting cards, expenses + learned suggestions, Φάκελος, Υποβολή/share, staff/date/menu/theme, Αποβάρα, coin calculator, end-to-end register flows (V2 parity, mode switch, blocking, thousands separator, submit + learning, storage failure, no-storage notice, navigation, live closing across two phones, another day's cached closing hidden, per-cashier queue, sign-out drain), owner area wiring (menu entry, lazy load, email-link redirect to #/owner).
-Owner model — pure, no supabase-js loaded (`tests/app/ownerRouter.test.ts`, `tests/data/ownerApi.test.ts`, `tests/data/ownerLocal.test.ts`, `tests/data/remoteErrors.test.ts`, `tests/features/owner/{model,messages,preview,settingsDraft}.test.ts`): settings reducer, terms, preview, limits, pairing, messages, `mapError`, owner API parameter names, owner drafts, auth storage.
-Owner UI (`tests/features/owner/*.test.tsx`, jsdom + Testing Library against `fakeApi.ts`, never loads supabase-js): auth + link errors, shops, new shop, settings publish/conflict/draft, formula builder + preview, staff, devices + pairing countdown.
+Owner model — pure, no supabase-js loaded (`tests/app/ownerRouter.test.ts`, `tests/data/ownerApi.test.ts`, `tests/data/ownerLocal.test.ts`, `tests/data/remoteErrors.test.ts`, `tests/features/owner/{model,messages,preview,settingsDraft}.test.ts`): settings reducer, terms, preview, limits, messages, `mapError`, owner API parameter names, owner drafts, auth storage.
+Owner UI (`tests/features/owner/*.test.tsx`, jsdom + Testing Library against `fakeApi.ts`, never loads supabase-js): auth + link errors, shops, new shop, settings publish/conflict/draft, formula builder + preview, staff, devices.
 Database: supabase/tests 010–090 (RLS, owner functions, pairing/PIN lockout, submit/idempotency/suggestions, owner app, staff sessions + business date + day change, session submit + schema 2, open closing (per-field LWW/stale, strict shapes, expense authors + cap, owner variants, realtime topic authorization incl. revoked phone/deactivated cashier, no direct table access), live submit (revision check, pinned config, `last_submit`, owner-authored lines)) — all nine run whole against the dev project on 2026-11-10 after the stage-2 migrations, all passing; 080 and 090 re-run whole (as committed) on 2026-11-11 after `20261108000003_live_fixes` (ack carries the stored value, owner `wrong_day`), both passing with partitions present (5) (each ends in ROLLBACK). On that run `realtime.messages` had daily partitions, so the 080 T2/I2 and 090 T8 broadcast/policy blocks executed instead of skipping (they raise a NOTICE and skip when no partition exists). `list_migrations` shows all five stage-2 migrations applied on dev, plus `live_fixes` (2026-11-11).
 Stage 3 database: `100_history.sql` (version log `seq`, `owner_list_closings`, `owner_get_closing_day`, suggestions on the current version, a voided current version falling back to the previous one, `not_owner` for a foreign owner/unknown shop/phone, backdated `created_at` proving `seq` decides) and `110_owner_save_closing.sql` (`owner_save_closing`: new version rows with the original untouched, `open_closings` untouched, same-key repeat/conflict, `closing_changed` after a stale expectation or a staff resubmission (sequential), `not_owner`, `bad_inputs`, authorship of deactivated/never-signed-in staff, `config_mismatch`, filing an unsubmitted day). What was actually run on dev (`fstfuhogvsdaiwpfdmep`) during stage 3: Task 1 — 100 whole, then 040, 070 and 090 whole (all pass unchanged); Task 2 — 110 whole, then 100 and 090; after the relock fix (`owner_save_closing_relock`) — 110 and 100 whole; security advisors after each migration: only the usual «authenticated can execute SECURITY DEFINER» warning for the new public functions, no new finding category. The full 010–110 run was **not** repeated at the end (see Not verified).
 Stage 3 app (pure, no supabase-js): `tests/data/history.test.ts` (shape-checked parsers), `tests/data/ownerApi.test.ts` + `remoteErrors.test.ts` + `tests/features/owner/messages.test.ts` (RPC parameter names, `saveClosing` mapping, the six error strings), `tests/app/ownerRouter.test.ts` + `dates.test.ts` (history routes, `formatStampEl`), `tests/features/owner/history/model.test.ts` (summaries, breakdown, inputs → local snapshot, `applyLocalEdit`). UI against `fakeApi.ts`: `history.test.tsx` (range list, range kept across list → day → list, «Δεν υποβλήθηκε», «διορθωμένο», errors/retry), `day.test.tsx` (versions, older version, breakdown, Φάκελος, unreadable versions, unsubmitted day, superseded response), `correction.test.tsx` (prefill, edit + save with ids/authors kept, owner-authored lines, blocked states, one call per double click, retry key reuse, `closing_changed` conflict sheet with both choices, `config_mismatch`, filing an unsubmitted day).
@@ -265,11 +277,17 @@ Stage 3 final-review fixes (2026-11-11, `stage-3-history` after `4e4af52`): `npm
 
 Stage 4 (store link entry, `stage-4-store-link-entry` at `39c5652`): `npm test` 805/805 on 61 files (run with `--exclude '.claude/**'`: vitest otherwise also collects the agent worktrees), `npm run typecheck` clean, `npm run build` ok (OwnerEntry chunk 109 kB with qrcode-generator, PhoneEntry 4.6 kB). New: `tests/app/joinKey.test.ts` (link, dashes, lower case, Greek look-alikes, wrong length, excluded letters, trailing junk, the join route), phone load path (`loadGate`: one silent re-join, `invalid_code` forgets the key, nothing with an owner session, network keeps the key), `joinStore`, `JoinScreen`, the switch sheet, gate not-in-store notice, owner `StoreLinkCard`/`DevicesScreen` (copy, replace with confirmation, remove, print) against `fakeApi`. SQL: `120_join_keys.sql` (key format/stability, `not_owner` from every owner function, owner cannot join, wrong key, lower case + dashes, join twice = one row, `other_shop` + switch, `staff_sign_in` stamping, `owner_remove_device`, the prune incl. the back-filled case, rotation incl. the old token failing to write, grants for anon/authenticated); 010/020/030/050/060 rewritten for the store key. Dev run: 010–120 all pass on dev (2026-11-11, after both migrations; 010 via the connector, 020–120 in the dashboard SQL editor, run by the user).
 
+Review fixes (2026-11-11, `fix/review-2026-11-11`): `npm test` 821/821 on 62 files, `npm run typecheck` clean, `npm run build` ok. New test file `tests/data/timeoutFetch.test.ts` (timeout, caller abort passes through, no timer left after an in-time response) plus cases for both error mappers, `TodayScreen` (date, stale day, `expectedOverride`) and the Athens time formatters.
+
 CI (GitHub Actions: `npm ci` → typecheck → test on Node 22) ran green on GitHub for `b281da3` —
 https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
 CI now runs the production build (`npm run build`) as well, after test.
 
 ## Not verified
+- Review fixes 2026-11-11 (M38, L87–L89), NOT verified: the 15 s timeout has only run against fakes — not on a real
+  phone with a stalled network (devtools throttling "offline after connect", or a captive Wi-Fi), and not that
+  supabase-js surfaces the timeout to `mapDeviceError`/`mapError` as `Error: request_timeout` / `AuthRetryableFetchError`
+  against the real API.
 - Stage 4 (store link entry), NOT verified:
   - Real-device happy path (plan Task 7 Step 5), needs the user with the deployed stage-4 build: owner «Συσκευές» →
     scan the QR with the phone camera → name + PIN → register; clear site data → open the link again → name + PIN;
@@ -293,21 +311,21 @@ CI now runs the production build (`npm run build`) as well, after test.
 - Plan 4a's manual end-to-end check (Task 14 Step 5) has not been run: Supabase dashboard redirect
   setup (Site URL, redirect URL allow-list, Confirm email), sign-up/confirm/reset email links
   including the same-browser PKCE rule, building out the Join Juice shop (float, channels, ΜΕΤΡΗΤΑ/
-  ΕΣΟΔΑ totals, preview vs V2 numbers, publish, staff + PINs, pairing code), and the two-tab publish
+  ΕΣΟΔΑ totals, preview vs V2 numbers, publish, staff + PINs, store link), and the two-tab publish
   conflict dialog. Needs the human owner against the dev project (`fstfuhogvsdaiwpfdmep`).
 - Owner UI on a real phone.
 - The anonymous-session (paired phone) warning on owner sign-in, against a real paired phone — Plan 4b.
 - Supabase free-tier auth email rate limits under real use.
 - Stage 1 (phone sign-in + server submit) end-to-end in a real browser pair, NOT run. Needs the user:
   1. Supabase dashboard (project `fstfuhogvsdaiwpfdmep`) -> Authentication -> Providers (Sign In / Providers) -> enable **Anonymous sign-ins**. Not done by the agent; without it pairing fails.
-  2. `npm run dev`. Browser profile 1: sign in as owner at `#/owner`, create/open the shop, add staff ΜΑΡΙΑ with a PIN, create a pairing code.
-  3. Browser profile 2 (a clean profile, no owner session): open the app, enter the code, sign in as ΜΑΡΙΑ with the PIN, fill a closing, submit.
+  2. `npm run dev`. Browser profile 1: sign in as owner at `#/owner`, create/open the shop, add staff ΜΑΡΙΑ with a PIN, copy the store link.
+  3. Browser profile 2 (a clean profile, no owner session): open the store link on the entry screen, sign in as ΜΑΡΙΑ with the PIN, fill a closing, submit.
   4. In the SQL editor: `select inputs, business_date, staff_id from public.closings order by created_at desc limit 2;` -> inputs has `schema: 2` and each expense has `id` and `addedBy {kind:'staff', id}`.
   5. Submit again (reopen the submit sheet) -> a second row exists.
   6. Sign out on the phone -> only the sign-in screen is shown (no register fields). Also check a wrong PIN x5 locks the cashier.
   7. Owner settings: set the day-change time -> the screen shows «Ισχύει από» (the first day it applies); the phone's next load keeps today's date until then.
   8. Live PostgREST error codes (`invalid_code`, `not_a_device_session`, 42501 for a browser without an auth session) as mapped by `mapDeviceError` were never seen against the real API.
-  9. Shared browser: on the paired browser (profile 2), sign in as owner at `#/owner` (confirm the unpairing warning), then sign out; reload the app -> the pairing screen (not the old cashier's register, not «Εκτός σύνδεσης»).
+  9. Shared browser: on the paired browser (profile 2), sign in as owner at `#/owner` (confirm the unpairing warning), then sign out; reload the app -> the entry screen (not the old cashier's register, not «Εκτός σύνδεσης»).
   10. Offline return: with the register open, go offline (devtools) and reload -> «Εκτός σύνδεσης», Υποβολή disabled; go online -> the banner disappears without a manual reload and Υποβολή works.
   11. H13 against real auth-js: a paired phone left closed past its access-token expiry (~1 h), opened in airplane mode -> the cached register with «Εκτός σύνδεσης», not the pairing screen; back online -> live register. Only covered by fakes/stubs so far.
 - Stage 1 on real phones: iOS Safari / Android Chrome pairing and sign-in, offline cached context on a real device, the sign-in screen with the on-screen keyboard.
