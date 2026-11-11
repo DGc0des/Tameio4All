@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateEl, formatDayEl, formatDayMonth, isIsoDate, todayIso, formatTimeEl } from '../../src/app/dates';
+import { formatDateEl, formatDayEl, formatDayMonth, isIsoDate, todayIso, formatTimeEl, formatStampEl } from '../../src/app/dates';
 
 describe('dates', () => {
   it('todayIso uses the local calendar date', () => {
@@ -28,5 +28,14 @@ describe('dates', () => {
     expect(formatTimeEl('2026-07-07T06:05:00Z')).toBe('09:05'); // EEST, UTC+3
     expect(formatTimeEl('2026-11-07T22:30:00Z')).toBe('00:30');
     expect(formatTimeEl('nonsense')).toBe('nonsense');
+  });
+});
+
+describe('formatStampEl', () => {
+  it('formats weekday, day/month and time in Athens time', () => {
+    expect(formatStampEl('2026-11-09T12:32:00Z')).toBe('Δευ 09/11 14:32');
+  });
+  it('returns unknown input unchanged', () => {
+    expect(formatStampEl('x')).toBe('x');
   });
 });

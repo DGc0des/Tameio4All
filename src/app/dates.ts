@@ -46,3 +46,17 @@ export function formatTimeEl(iso: string): string {
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
   return `${get('hour')}:${get('minute')}`;
 }
+
+const STAMP_EL = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Athens', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+const WEEKDAY_EL: Record<string, string> = { Mon: 'Δευ', Tue: 'Τρι', Wed: 'Τετ', Thu: 'Πεμ', Fri: 'Παρ', Sat: 'Σαβ', Sun: 'Κυρ' };
+
+/** An ISO timestamp → "Δευ 09/11 14:32", shop time (Europe/Athens). Unknown input is returned unchanged. */
+export function formatStampEl(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  const parts = STAMP_EL.formatToParts(new Date(t));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${WEEKDAY_EL[get('weekday')] ?? get('weekday')} ${get('day')}/${get('month')} ${get('hour')}:${get('minute')}`;
+}
