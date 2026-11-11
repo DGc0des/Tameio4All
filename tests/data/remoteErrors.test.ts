@@ -13,6 +13,13 @@ describe('mapError', () => {
       .toEqual({ code: 'version_conflict', currentVersion: null });
   });
 
+  it('maps the stage 3 owner save and history errors', () => {
+    for (const code of ['bad_inputs', 'config_mismatch', 'no_closing_day', 'idempotency_conflict', 'bad_range'] as const) {
+      expect(mapError({ message: code })).toEqual({ code });
+    }
+    expect(mapError({ message: 'closing_changed' })).toEqual({ code: 'closing_changed', currentId: null });
+  });
+
   it('maps direct-update constraint errors', () => {
     expect(mapError({ message: 'duplicate key value violates unique constraint "staff_shop_name_uidx"', code: '23505' }))
       .toEqual({ code: 'staff_name_taken' });

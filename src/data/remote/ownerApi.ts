@@ -1,4 +1,5 @@
 import type { ShopConfig } from '../../core/config';
+import type { DayDetail, HistoryList, SaveClosingArgs } from '../../features/owner/history/types';
 import type { FieldAck, FieldKey, ServerField, Snapshot } from '../../features/register/live/fields';
 import type { OwnerError } from './errors';
 import type { LiveChannel, LiveHandlers } from './live';
@@ -78,6 +79,12 @@ export interface OwnerApi {
    * the field's current server state. The ack carries the value the server stored.
    */
   setTodayField(shopId: string, businessDate: string, key: FieldKey, value: unknown, baseVersion: number | null): Promise<Result<FieldAck | { stale: ServerField }>>;
+  /** Submitted and unsubmitted days in a range (null = the server's default: the last 30 days up to its today). */
+  listClosings(shopId: string, from: string | null, to: string | null): Promise<Result<HistoryList>>;
+  /** Every version of one day, with the configs and staff names needed to read them. */
+  closingDay(shopId: string, businessDate: string): Promise<Result<DayDetail>>;
+  /** Saves a correction as a new version; guarded on the version the owner saw (`closing_changed` otherwise). */
+  saveClosing(shopId: string, args: SaveClosingArgs): Promise<Result<{ closingId: string; repeat: boolean }>>;
   /** Realtime channel for the shop (broadcasts + presence). */
   live(shopId: string, me: { name: string }, h: LiveHandlers): LiveChannel;
 }

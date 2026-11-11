@@ -24,6 +24,18 @@ export function ownerErrorMessage(e: OwnerError): string {
       return 'Έφτασες το μέγιστο πλήθος εξόδων.';
     case 'wrong_day':
       return 'Η ημέρα άλλαξε — φόρτωσε ξανά το σημερινό ταμείο.';
+    case 'closing_changed':
+      return 'Το κλείσιμο αυτής της μέρας άλλαξε από αλλού.';
+    case 'bad_inputs':
+      return 'Ο διακομιστής απέρριψε το κλείσιμο.';
+    case 'config_mismatch':
+      return 'Το κλείσιμο ανήκει σε άλλες ρυθμίσεις — φόρτωσε τη νέα έκδοση.';
+    case 'no_closing_day':
+      return 'Δεν υπάρχει κλείσιμο για αυτή τη μέρα.';
+    case 'idempotency_conflict':
+      return 'Η αποθήκευση συγκρούστηκε με προηγούμενη — δοκίμασε ξανά.';
+    case 'bad_range':
+      return 'Το διάστημα δεν είναι έγκυρο (έως 366 ημέρες, «Από» πριν το «Έως»).';
     case 'bad_name':
       return 'Το όνομα είναι κενό ή πολύ μεγάλο.';
     case 'invalid_credentials':

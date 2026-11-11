@@ -12,6 +12,12 @@ export type OwnerError =
   | { code: 'bad_field' }
   | { code: 'too_many_expenses' }
   | { code: 'wrong_day' }
+  | { code: 'closing_changed'; currentId: string | null }
+  | { code: 'bad_inputs' }
+  | { code: 'config_mismatch' }
+  | { code: 'no_closing_day' }
+  | { code: 'idempotency_conflict' }
+  | { code: 'bad_range' }
   | { code: 'bad_name' }
   | { code: 'invalid_credentials' }
   | { code: 'email_not_confirmed' }
@@ -38,6 +44,10 @@ export function mapError(err: unknown): OwnerError {
   if (message === 'version_conflict') {
     const m = /current version is (\d+)/.exec(str(e.details));
     return { code: 'version_conflict', currentVersion: m?.[1] !== undefined ? Number(m[1]) : null };
+  }
+  if (message === 'closing_changed') return { code: 'closing_changed', currentId: null };
+  if (message === 'bad_inputs' || message === 'config_mismatch' || message === 'no_closing_day' || message === 'idempotency_conflict' || message === 'bad_range') {
+    return { code: message };
   }
   if (message === 'not_owner' || message === 'staff_name_taken' || message === 'bad_pin_format' || message === 'bad_config' || message === 'bad_field' || message === 'too_many_expenses' || message === 'wrong_day') {
     return { code: message };

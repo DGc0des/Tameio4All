@@ -16,6 +16,9 @@ const OWNER_ERRORS: Record<OwnerError['code'], OwnerError> = {
   bad_name: { code: 'bad_name' }, invalid_credentials: { code: 'invalid_credentials' }, email_not_confirmed: { code: 'email_not_confirmed' },
   email_taken: { code: 'email_taken' }, weak_password: { code: 'weak_password' }, rate_limited: { code: 'rate_limited' },
   link_invalid: { code: 'link_invalid' }, session_expired: { code: 'session_expired' }, network: { code: 'network' },
+  closing_changed: { code: 'closing_changed', currentId: null }, bad_inputs: { code: 'bad_inputs' },
+  config_mismatch: { code: 'config_mismatch' }, no_closing_day: { code: 'no_closing_day' },
+  idempotency_conflict: { code: 'idempotency_conflict' }, bad_range: { code: 'bad_range' },
   unknown: { code: 'unknown', detail: 'x' },
 };
 const greek = /[Ͱ-Ͽ]/;

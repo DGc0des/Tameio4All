@@ -1,5 +1,6 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { mapError, type OwnerError } from './errors';
+import { parseDayDetail, parseHistoryList } from './history';
 import { openShopChannel, parseFieldAck, parseSnapshot, parseStaleCurrent } from './live';
 import type { DeviceRow, OwnerApi, Result, SessionInfo, ShopRow, StaffRow } from './ownerApi';
 
@@ -151,6 +152,41 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
       }
       const ack = parseFieldAck(j);
       return ack ? { ok: true, data: ack } : { ok: false, error: BAD_RESPONSE };
+    },
+    async listClosings(shopId, from, to) {
+      const r = await run(client.rpc('owner_list_closings', { p_shop_id: shopId, p_from: from, p_to: to }));
+      if (!r.ok) return r;
+      const j = r.data as Record<string, unknown> | null;
+      if (j?.ok !== true) return { ok: false, error: payloadError(j) };
+      const list = parseHistoryList(j);
+      return list ? { ok: true, data: list } : { ok: false, error: BAD_RESPONSE };
+    },
+    async closingDay(shopId, businessDate) {
+      const r = await run(client.rpc('owner_get_closing_day', { p_shop_id: shopId, p_business_date: businessDate }));
+      if (!r.ok) return r;
+      const j = r.data as Record<string, unknown> | null;
+      if (j?.ok !== true) return { ok: false, error: payloadError(j) };
+      const day = parseDayDetail(j);
+      return day ? { ok: true, data: day } : { ok: false, error: BAD_RESPONSE };
+    },
+    async saveClosing(shopId, args) {
+      const r = await run(
+        client.rpc('owner_save_closing', {
+          p_shop_id: shopId, p_business_date: args.businessDate, p_config_id: args.configId, p_inputs: args.inputs,
+          p_expected_current_id: args.expectedCurrentId, p_idempotency_key: args.key,
+        }),
+      );
+      if (!r.ok) return r;
+      const j = r.data as Record<string, unknown> | null;
+      if (j?.ok !== true) {
+        if (j?.ok === false && j.error === 'closing_changed') {
+          const id = j.current_id;
+          return { ok: false, error: { code: 'closing_changed', currentId: typeof id === 'string' && id !== '' ? id : null } };
+        }
+        return { ok: false, error: payloadError(j) };
+      }
+      if (typeof j.closing_id !== 'string' || j.closing_id === '' || typeof j.repeat !== 'boolean') return { ok: false, error: BAD_RESPONSE };
+      return { ok: true, data: { closingId: j.closing_id, repeat: j.repeat } };
     },
     live: (shop, me, h) => openShopChannel(client, shop, me, h),
   };

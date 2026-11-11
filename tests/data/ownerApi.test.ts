@@ -116,4 +116,60 @@ describe('createOwnerApi', () => {
     expect(await api.setDayChange('s1', '06:00')).toEqual({ ok: true, data: '2026-11-08' });
     expect(calls).toEqual([['rpc', 'set_day_change_time', { p_shop_id: 's1', p_time: '06:00' }]]);
   });
+
+  describe('history', () => {
+    const version = { id: 'v1', kind: 'staff', author_name: 'Μ', created_at: 't', config_id: 'c1', inputs: {}, corrects_closing_id: null };
+
+    it('listClosings calls owner_list_closings and parses the payload', async () => {
+      const payload = {
+        ok: true, today: '2026-11-11', from: '2026-10-13', to: '2026-11-11', configs: {},
+        days: [{ business_date: '2026-11-10', status: 'submitted', version_count: 1, current: version }],
+      };
+      const { api, calls } = fake({ data: payload, error: null });
+      const r = await api.listClosings('s1', null, '2026-11-11');
+      expect(calls).toEqual([['rpc', 'owner_list_closings', { p_shop_id: 's1', p_from: null, p_to: '2026-11-11' }]]);
+      expect(r.ok && r.data.days).toHaveLength(1);
+    });
+
+    it('listClosings maps bad_range and a rejected payload', async () => {
+      expect(await fake({ data: { ok: false, error: 'bad_range' }, error: null }).api.listClosings('s1', null, null))
+        .toEqual({ ok: false, error: { code: 'bad_range' } });
+      expect(await fake({ data: { ok: true }, error: null }).api.listClosings('s1', null, null))
+        .toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
+    });
+
+    it('closingDay calls owner_get_closing_day and parses the payload', async () => {
+      const payload = { ok: true, today: '2026-11-11', business_date: '2026-11-10', versions: [version], configs: {}, staff_names: {}, open: null };
+      const { api, calls } = fake({ data: payload, error: null });
+      const r = await api.closingDay('s1', '2026-11-10');
+      expect(calls).toEqual([['rpc', 'owner_get_closing_day', { p_shop_id: 's1', p_business_date: '2026-11-10' }]]);
+      expect(r.ok && r.data.versions[0]?.id).toBe('v1');
+      expect(await fake({ data: { ok: true, versions: 1 }, error: null }).api.closingDay('s1', '2026-11-10'))
+        .toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
+    });
+
+    const args = {
+      businessDate: '2026-11-10', configId: 'c1', inputs: { schema: 2 } as never, expectedCurrentId: 'v1', key: 'k1',
+    };
+
+    it('saveClosing calls owner_save_closing with the server parameter names', async () => {
+      const { api, calls } = fake({ data: { ok: true, closing_id: 'c', repeat: true }, error: null });
+      expect(await api.saveClosing('s1', args)).toEqual({ ok: true, data: { closingId: 'c', repeat: true } });
+      expect(calls).toEqual([[
+        'rpc', 'owner_save_closing',
+        { p_shop_id: 's1', p_business_date: '2026-11-10', p_config_id: 'c1', p_inputs: { schema: 2 }, p_expected_current_id: 'v1', p_idempotency_key: 'k1' },
+      ]]);
+    });
+
+    it('saveClosing maps closing_changed with the current id, and other payload errors', async () => {
+      expect(await fake({ data: { ok: false, error: 'closing_changed', current_id: 'x' }, error: null }).api.saveClosing('s1', args))
+        .toEqual({ ok: false, error: { code: 'closing_changed', currentId: 'x' } });
+      expect(await fake({ data: { ok: false, error: 'closing_changed', current_id: null }, error: null }).api.saveClosing('s1', args))
+        .toEqual({ ok: false, error: { code: 'closing_changed', currentId: null } });
+      expect(await fake({ data: { ok: false, error: 'config_mismatch' }, error: null }).api.saveClosing('s1', args))
+        .toEqual({ ok: false, error: { code: 'config_mismatch' } });
+      expect(await fake({ data: { ok: true, closing_id: '', repeat: false }, error: null }).api.saveClosing('s1', args))
+        .toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
+    });
+  });
 });
