@@ -4,7 +4,8 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 `docs/superpowers/specs/2026-09-28-tameio4all-v1-design.md` (v1) and
 `docs/superpowers/specs/2026-11-07-live-closing-and-history-design.md` (stage 2 live closing; its «History
 dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superpowers/plans/` (stage 3:
-`2026-11-11-stage-3-history-and-corrections.md`).
+`2026-11-11-stage-3-history-and-corrections.md`; stage 4 store link entry: `2026-11-11-stage-4-store-link-entry.md`,
+spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
 
 ## Architecture
 - `src/core/` — pure TypeScript money logic. No packages, no DOM, no Supabase. Every UI and
@@ -26,17 +27,19 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
   one path for owner reads/writes; `errors.ts` maps every failure into the closed `OwnerError`
   union; `client.ts` builds the PKCE client. `supabase.ts` exports `getSupabase()`: the ONE shared
   client (owner and phone use the same instance). `deviceApi.ts` (the `DeviceApi` interface),
-  `device.ts` (`createDeviceApi`, the one path for phone reads/writes: context, staff list, pair,
+  `device.ts` (`createDeviceApi`, the one path for phone reads/writes: context, staff list, `join`,
   sign in/out, open closing, `setField`, submit, suggestions) and `deviceErrors.ts` (`mapDeviceError` →
   closed `DeviceError`). `live.ts` (`openShopChannel`) is the realtime channel wrapper (private channel
   `shop:<shopId>`: `field` and `submitted` broadcasts in, presence in/out) plus the shape-checked parsers
   (`parseSnapshot`, `parseServerField`, `parseStaleCurrent`). `history.ts` has the shape-checked parsers of the
   owner history payloads (`parseHistoryList`, `parseDayDetail`; they import `isIsoDate` from `src/app/dates.ts`).
 - `src/features/owner/` — owner area (lazy-loaded from `#/owner`): `model/` is pure (settings
-  reducer, terms, preview, limits, pairing, messages); screens get an injected `OwnerApi`. The shop tabs are
+  reducer, terms, preview, limits, messages); screens get an injected `OwnerApi`. The shop tabs are
   «Σήμερα» · «Ιστορικό» · «Ρυθμίσεις» · «Προσωπικό» · «Συσκευές». «Σήμερα» (`TodayScreen`, the first tab): the
   owner sees and edits today's live closing through `todayWriter.ts` (`createTodayWriter`, the owner `Writer`
-  adapter over `OwnerApi`). A bare shop route still lands on «Ρυθμίσεις».
+  adapter over `OwnerApi`). A bare shop route still lands on «Ρυθμίσεις». «Συσκευές» (`DevicesScreen`) shows the
+  store link card (`StoreLinkCard`: link, QR via `QrCode`/qrcode-generator, the code as XXXX-XXXX-XXXX-XXXX, copy,
+  print, «Νέος σύνδεσμος» with confirmation) and the device list (last use, last cashier, «Αφαίρεση»).
 - `src/features/owner/history/` — «Ιστορικό» (stage 3): `types.ts` (`HistoryList`/`HistoryDay`/`DayDetail`/
   `ClosingVersion`), pure `model.ts` (`summarizeInputs`/`summarizeOpen`, `weekCells`, `breakdown`, `snapshotFromInputs`,
   `applyLocalEdit`; every number goes through `evaluateTotals`/`planEnvelope`, never throws on unreadable
@@ -45,7 +48,10 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
   `#/owner/shop/<id>/history` and `…/history/<YYYY-MM-DD>` (`router.ts`; a malformed date segment is dropped).
 - `src/features/phone/` — phone shell (lazy `PhoneEntry` builds the real `DeviceApi`): `model/gate.ts` is the
   pure gate reducer (loading → unconfigured | offline_no_cache | load_error | unpaired → signed_out → ready); `PhoneApp`
-  renders only from it; `PairScreen`, `SignInScreen`. App tests pass `deviceApi={fakeDeviceApi()}`.
+  renders only from it; `JoinScreen` (name + PIN after a link, or typing the store code), `SignInScreen`.
+  `model/load.ts` (`loadGate`, the one load path), `model/join.ts` (`joinStore`, the one join path),
+  `model/platform.ts` (`platformLabel`, the default device label). `src/app/joinKey.ts`: `parseJoinKey`,
+  `formatJoinKey`, `joinLink`, `parseJoinRoute` (the `#/join/<key>` route). App tests pass `deviceApi={fakeDeviceApi()}`.
 - `src/ui/` primitives, `src/features/*` screens and sheets, `src/app/` composition (App, hash
   router, theme, error boundary).
 - `supabase/migrations/` — the database (source of truth; applied to the dev project
@@ -93,8 +99,30 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
 - Owner functions report "not yours" and "doesn't exist" the same way (`not_owner`), so ids can't be
   probed; there is no `staff_not_found` error from owner functions (only phone functions return
   `staff_not_found`).
-- A revoked phone stays revoked until an owner gives it a fresh pairing code; redeeming one re-pairs it
-  (possibly to another shop). That's intended.
+- **Store link entry (stage 4).** A phone enters a store only through `join_shop(key, label, switch)`. The store
+  key is the only thing that lets a browser list staff or try a PIN. The link is `<origin+pathname>#/join/<key>`
+  (the key sits in the hash, so it never reaches the hosting server).
+- The key lives in `shop_join_keys` (one per shop, no client table access), readable only through
+  `owner_get_join_key` (created on first use); replacing it (`owner_rotate_join_key`) removes every device and ends
+  every staff session of the shop.
+- «Αφαίρεση» (`owner_remove_device`) is cleanup, not a ban: there is no revoked state any more (revoked rows were
+  deleted by the migration and nothing sets `revoked_at`). A phone that still has the key can come back. The
+  pairing code (`pairing_codes`, `create_pairing_code`, `redeem_pairing_code`) is gone: no second way into a store.
+- `join_shop` raises `not_a_device_session` (42501, not an anonymous session), `invalid_code` (22023, unknown key)
+  and `other_shop` (22023): a phone already in another live store must pass `p_switch = true`, which the phone sends
+  only after «Αλλαγή καταστήματος;». Joining the same store again is one row; switching ends that phone's staff
+  sessions. Every join deletes the shop's *other* devices unused for 30 days (`coalesce(last_seen_at, created_at)`);
+  `staff_sign_in` stamps `last_seen_at`/`last_staff_id` after a correct PIN only.
+- Cross-file invariant: the key format `^[A-HJ-NP-Z2-9]{16}$` is produced in SQL (`private.new_join_key`, the
+  `shop_join_keys.key` CHECK) and checked by `parseJoinKey` (`src/app/joinKey.ts`). Every client input path (link
+  route, pasted link, typed code) goes through `parseJoinKey`; it maps Greek look-alike capitals to Latin.
+- `joinStore` (`model/join.ts`) is the only client code calling `DeviceApi.join`: it stores the key after a
+  successful join and forgets it when the server refuses that same key (`invalid_code`).
+- `loadGate` (`model/load.ts`) is the one load path. Automatic re-join happens only there, at most once per load,
+  with the stored key, and never while an owner session is present. Gate rule: a `server_error` `not_a_device` while
+  `ready`/`signed_out` goes to `loading` carrying the not-in-store notice (so the silent return runs); a load that
+  then finds no store shows that notice on the entry screen. `invalid_code` on load → the entry screen with «Ζήτα
+  τον νέο σύνδεσμο».
 - A non-UUID id sent to any function fails with a Postgres type error before the function runs (nothing
   is changed).
 - `verify_staff_pin` / `staff_sign_in` / `submit_closing` return `{ok:false,error}` for expected failures — never
@@ -127,14 +155,14 @@ dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superp
   client-sent staff or shop id. Phones cannot read `staff_sessions` or call `private.*`.
 - Phone: a stored `StaffSession` is used only when its `shopId` and `businessDate` match the device context;
   it is saved while the gate is `ready` and cleared on `signed_out`/`unpaired`. The gate entering `loading` is the
-  one reload path (PhoneApp re-runs `context()`): after pairing, after a sign-in that was offline or doesn't match
+  one reload path (PhoneApp runs `loadGate`): after joining, after a sign-in that was offline or doesn't match
   the context, on `session_invalid`/`wrong_day` (which also clear the stored session), and on the gate's `retry`
   (while offline: the `online` event, the page becoming visible, «Δοκίμασε ξανά»; also from `load_error`). Load
   order: `session()` first — only a lookup that succeeded with no session means unpaired (stored session + cached
   context cleared); a failed lookup is "couldn't tell" (auth-js returns `{session:null, error}` when an expired
-  access token can't be refreshed offline) and falls through to `context()`. `pair` refuses on a failed lookup. Only a `network` failure falls back to the cached context (offline); `device_revoked`/
-  `not_a_device` (incl. Postgres 42501) unpair; any other failure is `load_error` (message + retry, never a cached
-  register). A paired phone with nobody signed in renders only the sign-in screen (no register fields, no amounts).
+  access token can't be refreshed offline) and falls through to `context()`. `join` refuses on a failed lookup. Only a `network` failure falls back to the cached context (offline); `device_revoked`/
+  `not_a_device` (incl. Postgres 42501) go to the entry screen (after the one silent re-join attempt); any other failure is `load_error` (message + retry, never a cached
+  register). A phone in a store with nobody signed in renders only the sign-in screen (no register fields, no amounts).
 
 ### Live shared closing (stage 2)
 - **Open closing.** One row per shop per business day in `open_closings` (+ `open_closing_fields`), created by

@@ -8,6 +8,7 @@
 - [ ] Plan 4b / stage 1 — phone side (pair, server config + staff, PIN sign-in, server submit, business day, day-change setting; LOCAL_SHOP removed): code complete; pending the manual two-browser check (see Not verified)
 - [ ] Stage 2 — live shared closing (open closing per day, per-field LWW writes, offline replay, realtime broadcast + presence, revision-checked submit, owner «Σήμερα» tab): code complete; SQL 010–090 pass on dev; pending the real-device checks (see Not verified)
 - [ ] Stage 3 — owner closing history and corrections («Ιστορικό» tab: closings as an append-only version log, range list, day detail with versions + Φάκελος, owner corrections saved as new versions with conflict handling, filing an unsubmitted day): code complete, merged to `main`; «Ιστορικό» is a week view (Mon–Sun, three cards per row on wide screens); SQL 010–110 all pass on dev (run whole in the SQL editor on 2026-11-11, after the three stage-3 migrations); pending the manual browser check (see Not verified)
+- [ ] Stage 4 — store link entry (a permanent store link / QR / code replaces the single-use pairing code; name + PIN on the phone; silent re-join with the stored key; owner «Αφαίρεση» and «Νέος σύνδεσμος»): code complete on `stage-4-store-link-entry`; migrations `…0003_today_save_and_submit_revision` and `20261112000001_store_join_keys` applied to dev on 2026-11-11; SQL run: 010–120 all pass on dev (2026-11-11, after both migrations; 010 via the connector, 020–120 in the dashboard SQL editor, run by the user); pending the real-device check (see Not verified). **The deployed client must be the stage-4 build: the old pairing calls no longer exist on dev.**
 - [ ] Plan 5 — closings, suggestions, PWA, deploy (closing history landed in stage 3)
 
 ## Product decisions
@@ -105,7 +106,7 @@ Whole-stage review round by round (Tasks 1-8). Continues the severity scheme abo
 | L31 | `set_day_change_time(null)` raises a raw not-null error instead of a named one | Add a named error + map it | open |
 | L32 | No SQL test that phones cannot call `private.staff_session` | Add to 060 | open |
 | L33 | Day-change time inside a DST gap/overlap resolves by Postgres default | Decide a rule if a shop picks 03:xx | open |
-| L34 | Re-pairing a phone to another shop leaves old-shop sessions unrevoked (unusable, untested) | Revoke on re-pair + test | open |
+| L34 | Re-pairing a phone to another shop leaves old-shop sessions unrevoked (unusable, untested) | Revoke on re-pair + test | fixed — stage 4: `join_shop` revokes the phone's staff sessions when it switches store (120 T6) |
 | L35 | Owner-kind author with a non-uuid id relies on OR short-circuit before the uuid cast | Make the guard explicit | open |
 | L36 | Schema-2 cents only checked as a number in SQL (not integer / non-negative) | Tighten SQL and keep the TS validator in step | open |
 | L37 | No SQL tests for a deactivated-staff author or an owner author with an id | Add to 070 | open |
@@ -217,6 +218,30 @@ Known open items (by design or deferred, not review findings):
 - No device label in history: `closings.device_user_id` has no FK to `devices` (open since Plan 3), and owner rows have none.
 - On dev, the `seq` back-fill followed `created_at, id` order; from then on `seq` (insertion order) is the only ordering of versions.
 
+## Stage 4 findings (store link entry)
+Whole-branch review after Tasks 1–6 (one fix pass, commit `39c5652`). Continues the severity scheme above.
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| M30 | The 30-day prune in `join_shop` would have deleted every phone paired before stage 4 that is in use today: `last_seen_at` is new, so those rows fell back to their pairing date (often > 30 days) | The migration back-fills `last_seen_at`/`last_staff_id` from the phone's latest staff session / submitted closing in its current shop before anything can prune (fixed inside `20261112000001`, which was not yet applied); 120 T10 keeps an old-but-recently-used phone. On dev all 3 devices got a date | fixed |
+| M31 | 060 T7 updated `devices.revoked_at` as `authenticated`, which the migration revokes | Done as the migration owner | fixed |
+| M32 | 120 T11's anon checks were vacuous, and several 120 comparisons passed on null | `has_*_privilege` asserts; `is distinct from`/`coalesce` | fixed |
+| M33 | No test that the old staff token fails to write after «Νέος σύνδεσμος» | 120 T9: `set_closing_field` with the old token before and after a re-join | fixed |
+| M34 | The store code overflowed a phone-width owner screen (sideways scroll) | `.pair-code` `clamp(18px, 6vw, 30px)` + `overflow-wrap: anywhere` (CSS only; jsdom cannot test layout) | fixed — check on a real phone |
+| M35 | A phone that lost its store (`not_a_device` mid-use) and could not return silently landed on the entry screen with no explanation | Gate: `loading` carries the notice, the entry screen shows it | fixed |
+| M36 | A malformed join link opened on a phone already in a store was dropped silently | «Ο σύνδεσμος δεν είναι σωστός.» | fixed |
+| M37 | Anyone with the link (no PIN) can read the shop name, settings and staff names and trigger PIN lockouts | Accepted by design: the link is the store's door. Remedy: «Νέος σύνδεσμος» | open — accepted |
+| L81 | Anonymous `auth.users` rows of removed / pruned / rotated-out devices are never deleted | Needs a server-side janitor (service role) | open |
+| L82 | A removed phone already joined to the realtime channel keeps receiving broadcasts until it rejoins or its token refreshes (the existing realtime known limit; writes stop at once) | Known limit | open |
+| L83 | Offline join of *another* store's link on a phone already in a store loses that key (the hash is already cleared); the cashier opens the link again | Deferred minor | open |
+| L84 | A reload loop is possible only if the server is inconsistent (a phone function keeps raising 42501 while `device_context` succeeds) | Deferred minor | open |
+| L85 | At startup with a stale stored key and a new link, the «Ζήτα τον νέο σύνδεσμο» notice shows briefly while the new link is tried | Deferred minor | open |
+| L86 | A phoneApp test labelled «Review Focus 4» tests a revoked phone, not missing storage | Relabel / add the storage case | open |
+
+Accepted by design (spec): «Αφαίρεση» is undone by the phone's silent re-join while it still holds the key (the
+confirmation says so; «Νέος σύνδεσμος» is the way to keep a phone out); `owner_rotate_join_key` does not retry a key
+collision (80 bits); a `%23`-encoded pasted link is refused, not misread.
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped
@@ -238,11 +263,26 @@ Stage 3 verification (2026-11-11, `stage-3-history` at `45c7de4`): `npm test` 67
 
 Stage 3 final-review fixes (2026-11-11, `stage-3-history` after `4e4af52`): `npm test` 683/683 on 58 files (4.06 s; +6: history range ×4, owner stamp ×1, `Object.hasOwn` ×1), `npm run typecheck` clean, `npm run build` ok (OwnerEntry chunk 76.97 kB, 20.31 kB gzip).
 
+Stage 4 (store link entry, `stage-4-store-link-entry` at `39c5652`): `npm test` 805/805 on 61 files (run with `--exclude '.claude/**'`: vitest otherwise also collects the agent worktrees), `npm run typecheck` clean, `npm run build` ok (OwnerEntry chunk 109 kB with qrcode-generator, PhoneEntry 4.6 kB). New: `tests/app/joinKey.test.ts` (link, dashes, lower case, Greek look-alikes, wrong length, excluded letters, trailing junk, the join route), phone load path (`loadGate`: one silent re-join, `invalid_code` forgets the key, nothing with an owner session, network keeps the key), `joinStore`, `JoinScreen`, the switch sheet, gate not-in-store notice, owner `StoreLinkCard`/`DevicesScreen` (copy, replace with confirmation, remove, print) against `fakeApi`. SQL: `120_join_keys.sql` (key format/stability, `not_owner` from every owner function, owner cannot join, wrong key, lower case + dashes, join twice = one row, `other_shop` + switch, `staff_sign_in` stamping, `owner_remove_device`, the prune incl. the back-filled case, rotation incl. the old token failing to write, grants for anon/authenticated); 010/020/030/050/060 rewritten for the store key. Dev run: 010–120 all pass on dev (2026-11-11, after both migrations; 010 via the connector, 020–120 in the dashboard SQL editor, run by the user).
+
 CI (GitHub Actions: `npm ci` → typecheck → test on Node 22) ran green on GitHub for `b281da3` —
 https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
 CI now runs the production build (`npm run build`) as well, after test.
 
 ## Not verified
+- Stage 4 (store link entry), NOT verified:
+  - Real-device happy path (plan Task 7 Step 5), needs the user with the deployed stage-4 build: owner «Συσκευές» →
+    scan the QR with the phone camera → name + PIN → register; clear site data → open the link again → name + PIN;
+    home-screen app: type the code; «Νέος σύνδεσμος» → the phone lands on the entry screen with «Ζήτα τον νέο
+    σύνδεσμο»; «Αφαίρεση» on a signed-in phone → signed out, comes back by itself; print preview shows only the card;
+    the code card at 360 px width (M34).
+  - Supabase Auth settings: no session time-box and no inactivity timeout; anonymous sign-ins enabled. Not checked
+    by the agent (the connector cannot read them).
+  - Two phones joining at the same moment (single-transaction SQL tests cannot interleave).
+  - QR scan from a printed card; iOS 7-day storage eviction recovery in practice (needs the stored key to survive or
+    the link to be reopened).
+  - Live PostgREST error codes of `join_shop` (`invalid_code`, `other_shop`) as mapped by `mapDeviceError`, against
+    the real API.
 - Plan 2 on a real phone: layout, Web Share with files (iOS Safari / Android Chrome), camera/gallery
   picker for the Z photo, html-to-image output quality, dark mode, safe-area insets.
 - A full closing entered in both V2 and Tameio4All at the till, compared line by line.

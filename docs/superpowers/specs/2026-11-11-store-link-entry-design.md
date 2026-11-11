@@ -1,6 +1,7 @@
 # Store link entry — design (stage 4)
 
-Status: **draft, waiting for approval**. Nothing here is built yet.
+Status: **built** (plan `docs/superpowers/plans/2026-11-11-stage-4-store-link-entry.md`, branch `stage-4-store-link-entry`);
+migration applied to dev on 2026-11-11; real-device check pending.
 Date: 2026-11-11.
 
 ## Why

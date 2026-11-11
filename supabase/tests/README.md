@@ -14,9 +14,9 @@ A pass finishes without error. A failure raises an exception whose message start
 Test user ids: owner A `…a1`, owner B `…b1`, stranger `…51` (regular users); phones `…d1`, `…d2`
 (anonymous users). All use the `@test.local` domain.
 
-Files: `010` table access/RLS, `020` owner functions, `030` pairing and phone functions, `040` closings and
+Files: `010` table access/RLS, `020` owner functions, `030` store join and phone functions, `040` closings and
 suggestions, `050` owner app support, `060` staff sessions, business date and day-change time, `070` session
-submit and inputs schema 2, `080` open closing (per-field writes, realtime topic auth; needs `…d2`/`…d3` phones too), `090` live submit (revision check, pinned config, `last_submit`; uses `…d2` too), `100` history (closings version log `seq`, `owner_list_closings`, `owner_get_closing_day`, suggestions on the current version), `110` owner corrections (`owner_save_closing`: new version rows, guard on the current version, authorship, unsubmitted days). `060`/`070` also create a throwaway phone `…d1`; `060` uses `…d2` as an unpaired phone.
+submit and inputs schema 2, `080` open closing (per-field writes, realtime topic auth; needs `…d2`/`…d3` phones too), `090` live submit (revision check, pinned config, `last_submit`; uses `…d2` too), `100` history (closings version log `seq`, `owner_list_closings`, `owner_get_closing_day`, suggestions on the current version), `110` owner corrections (`owner_save_closing`: new version rows, guard on the current version, authorship, unsubmitted days), `120` store link entry (`shop_join_keys`, `owner_get_join_key`/`owner_rotate_join_key`, `join_shop` incl. `other_shop`/`p_switch` and the 30-day prune, `owner_remove_device`, `owner_list_devices`, `staff_sign_in` last-use stamp, the old token failing after rotation, grants; uses phones `…d1`–`…d5`). `060`/`070` also create a throwaway phone `…d1`; `060` uses `…d2` as an unpaired phone.
 
 `080` and `090` also assert the Realtime side: `realtime.send` swallows insert errors (it only logs a
 WARNING) and, on a project whose `realtime.messages` has no partitions (the Realtime service creates the daily
@@ -36,6 +36,12 @@ same-key race and the owner-vs-staff-submit locking in `owner_save_closing` are 
 `100`/`110` do not touch `realtime.messages` (past-day owner saves broadcast nothing).
 
 `20261111000003_today_save_and_submit_revision`: `last_submit` carries `revision` (090 T1/T8 updated); a save of
-today needs the live revision and records `last_submit` (110 T1/T3/T9 updated, T13–T16 added). **Not yet run on
-dev** — apply the migration, then run 090 and 110 (and 100, which reads the same rows).
+today needs the live revision and records `last_submit` (110 T1/T3/T9 updated, T13–T16 added). Applied to dev on
+2026-11-11 (just before stage 4); see the stage-4 run below.
+
+Stage 4 (`20261112000001_store_join_keys`): the pairing code is gone, so every file that paired a phone now does it
+with the store key — the owner fetches it with `owner_get_join_key`, the phone calls `join_shop` (010 T8 checks
+`shop_join_keys` instead of `pairing_codes`; 020's pairing tests were removed and T7 uses `owner_get_join_key`; 030 was
+rewritten for joining; 050 T9 was deleted; 060 T7 sets `revoked_at` as the migration owner, since `authenticated` no
+longer has that column grant). Run on dev on 2026-11-11 after both migrations: 010–120 all pass on dev (2026-11-11, after both migrations; 010 via the connector, 020–120 in the dashboard SQL editor, run by the user).
 
