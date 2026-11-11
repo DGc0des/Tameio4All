@@ -7,7 +7,7 @@
 - [ ] Plan 4a — owner app: auth, shop, settings + formula builder, staff/PIN, pairing codes, devices (code complete; pending the manual end-to-end check on the dev project)
 - [ ] Plan 4b / stage 1 — phone side (pair, server config + staff, PIN sign-in, server submit, business day, day-change setting; LOCAL_SHOP removed): code complete; pending the manual two-browser check (see Not verified)
 - [ ] Stage 2 — live shared closing (open closing per day, per-field LWW writes, offline replay, realtime broadcast + presence, revision-checked submit, owner «Σήμερα» tab): code complete; SQL 010–090 pass on dev; pending the real-device checks (see Not verified)
-- [ ] Stage 3 — owner closing history and corrections («Ιστορικό» tab: closings as an append-only version log, range list, day detail with versions + Φάκελος, owner corrections saved as new versions with conflict handling, filing an unsubmitted day): code complete on `stage-3-history`; SQL 040/070/090/100/110 pass on dev, the full 010–110 run is not recorded; pending the manual browser check (see Not verified)
+- [ ] Stage 3 — owner closing history and corrections («Ιστορικό» tab: closings as an append-only version log, range list, day detail with versions + Φάκελος, owner corrections saved as new versions with conflict handling, filing an unsubmitted day): code complete, merged to `main`; «Ιστορικό» is a week view (Mon–Sun, three cards per row on wide screens); SQL 010–110 all pass on dev (run whole in the SQL editor on 2026-11-11, after the three stage-3 migrations); pending the manual browser check (see Not verified)
 - [ ] Plan 5 — closings, suggestions, PWA, deploy (closing history landed in stage 3)
 
 ## Product decisions
@@ -282,7 +282,6 @@ CI now runs the production build (`npm run build`) as well, after test.
   7. Submit from two phones around the same time: the second gets `draft_changed`, reviews, resubmits; `last_submit` and the `submitted` broadcast show on the other devices.
   8. A new shop day while a phone is open: edits of the old day are dropped with the notice, the register reloads onto the new day.
 - Stage 3 (owner history and corrections), NOT verified:
-  - SQL tests 010–110 run whole together against dev after both stage-3 migrations, and `list_migrations` showing `closing_versions`, `owner_save_closing`, `owner_save_closing_relock` (the Supabase connector was not available for the final verification; only the per-task runs listed under Tests were done, so an older file among 010–080 could be affected by the `closings` column changes without anyone having seen it).
   - The same-key race and the owner-vs-staff-submit locking in `owner_save_closing` (advisory lock + `open_closings … for update`, the relock lookup) are written but exercised by no test: single-transaction SQL tests cannot interleave two sessions.
   - Manual checks, needs the user in a real browser against dev:
     1. Submit twice from a phone, open «Ιστορικό», check the list totals against the register's Σύνοψη, open the day, correct an amount, confirm the phone register and «Υποβλήθηκε …» are unchanged and the list shows «διορθωμένο».

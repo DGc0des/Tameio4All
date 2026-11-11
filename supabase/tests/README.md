@@ -30,8 +30,8 @@ stored value), partitions present, nothing skipped.
 
 Stage 3 (`closing_versions`, `owner_save_closing`, `owner_save_closing_relock`): `100` and `110` were run whole on dev
 after their migrations (together with 040, 070 and 090 after the first, 090 after the second, and 110 + 100 after the
-relock fix). The whole 010–110 series has **not** been run in one go after the stage-3 migrations — do that
-(and `list_migrations`) before relying on it. `110` cannot test concurrency: a file is one transaction, so the
+relock fix). On 2026-11-11 the whole 010–110 series was run in the dashboard SQL editor against dev after all
+three stage-3 migrations, every file passing. `110` cannot test concurrency: a file is one transaction, so the
 same-key race and the owner-vs-staff-submit locking in `owner_save_closing` are written but never interleaved.
 `100`/`110` do not touch `realtime.messages` (owner saves broadcast nothing).
 
