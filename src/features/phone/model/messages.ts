@@ -4,11 +4,13 @@ import type { DeviceError } from '../../../data/remote/deviceApi';
 export function deviceErrorMessage(e: DeviceError): string {
   switch (e.code) {
     case 'not_a_device':
-      return 'Αυτή η συσκευή δεν είναι συνδεδεμένη. Βάλε κωδικό σύζευξης.';
+      return 'Αυτή η συσκευή δεν είναι σε κατάστημα. Άνοιξε τον σύνδεσμο του καταστήματος.';
     case 'device_revoked':
       return 'Η συσκευή αποσυνδέθηκε από τον ιδιοκτήτη.';
     case 'invalid_code':
-      return 'Ο κωδικός δεν ισχύει ή έληξε.';
+      return 'Ο κωδικός καταστήματος δεν ισχύει. Ζήτα τον νέο σύνδεσμο.';
+    case 'other_shop':
+      return 'Η συσκευή είναι ήδη σε άλλο κατάστημα.';
     case 'owner_signed_in':
       return 'Σε αυτό το πρόγραμμα περιήγησης είσαι συνδεδεμένος ως ιδιοκτήτης.';
     case 'staff_not_found':

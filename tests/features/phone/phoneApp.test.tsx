@@ -55,7 +55,7 @@ describe('PhoneApp', () => {
     type('Όνομα συσκευής (προαιρετικό)', 'Ταμείο 1');
     fireEvent.click(await screen.findByRole('button', { name: 'Σύνδεση συσκευής' }));
     expect(await screen.findByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
-    expect(api.pair).toHaveBeenCalledWith('ABCDEFGH', 'Ταμείο 1');
+    expect(api.join).toHaveBeenCalledWith('ABCDEFGH', 'Ταμείο 1');
 
     await signIn('9999');
     expect(await screen.findByText('Λάθος PIN.')).toBeTruthy();
@@ -96,9 +96,9 @@ describe('PhoneApp', () => {
   });
 
   it('asks before signing an owner out, then pairs with force', async () => {
-    const pair = vi.fn<DeviceApi['pair']>((_c, _l, opts) => (opts?.force ? ok(undefined) : fail({ code: 'owner_signed_in' })));
+    const pair = vi.fn<DeviceApi['join']>((_c, _l, opts) => (opts?.force ? ok(undefined) : fail({ code: 'owner_signed_in' })));
     const context = vi.fn<DeviceApi['context']>().mockReturnValueOnce(ok(null)).mockReturnValue(ok(CTX));
-    const api = fakeDeviceApi({ pair, context });
+    const api = fakeDeviceApi({ join: pair, context });
     start(api);
     await screen.findByLabelText('Κωδικός σύζευξης');
     type('Κωδικός σύζευξης', 'ABCDEFGH');
@@ -112,12 +112,12 @@ describe('PhoneApp', () => {
   });
 
   it('shows a pairing error and stays on the pairing screen', async () => {
-    const api = fakeDeviceApi({ context: vi.fn(() => ok(null)), pair: vi.fn(() => fail<void>({ code: 'invalid_code' })) });
+    const api = fakeDeviceApi({ context: vi.fn(() => ok(null)), join: vi.fn(() => fail<void>({ code: 'invalid_code' })) });
     start(api);
     await screen.findByLabelText('Κωδικός σύζευξης');
     type('Κωδικός σύζευξης', 'ZZZZZZZZ');
     fireEvent.click(await screen.findByRole('button', { name: 'Σύνδεση συσκευής' }));
-    expect(await screen.findByText('Ο κωδικός δεν ισχύει ή έληξε.')).toBeTruthy();
+    expect(await screen.findByText('Ο κωδικός καταστήματος δεν ισχύει. Ζήτα τον νέο σύνδεσμο.')).toBeTruthy();
     expect(button('Σύνδεση συσκευής')).toBeTruthy();
   });
 

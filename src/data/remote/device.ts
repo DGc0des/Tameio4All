@@ -35,7 +35,7 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
 
   return {
     session,
-    async pair(code, label, opts) {
+    async join(key, label, opts) {
       const looked = await session();
       // Without knowing who is signed in here, an anonymous sign-in could replace an owner's session unasked.
       if (!looked.ok) return looked;
@@ -50,7 +50,7 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
       } catch (e) {
         return { ok: false, error: mapDeviceError(e) };
       }
-      const r = await run(client.rpc('redeem_pairing_code', { p_code: code, p_label: label }));
+      const r = await run(client.rpc('join_shop', { p_key: key, p_label: label, p_switch: opts?.switchShop === true }));
       return r.ok ? { ok: true, data: undefined } : r;
     },
     async context() {

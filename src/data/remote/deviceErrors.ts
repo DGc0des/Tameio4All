@@ -5,8 +5,8 @@ import { parseStaleCurrent } from './live';
 const NETWORK_RE = /failed to fetch|networkerror|load failed|fetch failed|network request failed/i;
 const str = (x: unknown): string => (typeof x === 'string' ? x : '');
 
-/** Server functions raise these as the error message (redeem_pairing_code). */
-const RAISED = new Set(['invalid_code', 'not_a_device_session']);
+/** Server functions raise these as the error message (join_shop). */
+const RAISED = new Set(['invalid_code', 'not_a_device_session', 'other_shop']);
 
 /** Codes a `{ok:false,error}` payload may carry. */
 const PLAIN = [
@@ -34,7 +34,11 @@ export function mapDeviceError(err: unknown): DeviceError {
   const code = str(e.code);
 
   if (name === 'AuthRetryableFetchError' || NETWORK_RE.test(message)) return { code: 'network' };
-  if (RAISED.has(message)) return message === 'invalid_code' ? { code: 'invalid_code' } : { code: 'not_a_device' };
+  if (RAISED.has(message)) {
+    if (message === 'invalid_code') return { code: 'invalid_code' };
+    if (message === 'other_shop') return { code: 'other_shop' };
+    return { code: 'not_a_device' };
+  }
   // 42501 = insufficient privilege: device functions are granted to `authenticated` only, so a browser with
   // no auth session (calling as anon) lands here. Such a browser is not a paired device.
   if (code === '42501' || code === 'PGRST301' || code === 'PGRST303' || code === 'session_not_found' || code === 'refresh_token_not_found') {

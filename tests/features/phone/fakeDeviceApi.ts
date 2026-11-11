@@ -153,7 +153,7 @@ export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'conf
 export function fakeDeviceApi(overrides: Partial<DeviceApi> = {}, server: FakeServer = fakeServer()): DeviceApi {
   const base: DeviceApi = {
     session: vi.fn(() => ok({ anonymous: true })),
-    pair: vi.fn(() => ok(undefined)),
+    join: vi.fn(() => ok(undefined)),
     context: vi.fn(() =>
       ok({
         shopId: FAKE_SHOP_ID,

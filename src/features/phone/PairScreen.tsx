@@ -25,7 +25,7 @@ export function PairScreen({ api, notice, onPaired, onOwner }: Props) {
   const pair = async (force: boolean) => {
     setBusy(true);
     setError(null);
-    const r = force ? await api.pair(clean, label.trim(), { force: true }) : await api.pair(clean, label.trim());
+    const r = force ? await api.join(clean, label.trim(), { force: true }) : await api.join(clean, label.trim());
     setBusy(false);
     if (r.ok) return onPaired();
     if (r.error.code === 'owner_signed_in' && !force) return setOwnerConfirm(true);

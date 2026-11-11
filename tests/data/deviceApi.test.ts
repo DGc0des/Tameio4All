@@ -22,6 +22,8 @@ function stub(
 const refreshFailed = () =>
   Promise.resolve({ data: { session: null }, error: { name: 'AuthRetryableFetchError', message: 'Failed to fetch' } });
 
+const K = 'ABCDEFGHJKLMNPQR';
+
 describe('createDeviceApi', () => {
   it('session: no session and no error is "definitely none"; a session reports anonymity', async () => {
     expect(await createDeviceApi(stub({ user: null }).client).session()).toEqual({ ok: true, data: null });
@@ -42,43 +44,54 @@ describe('createDeviceApi', () => {
     expect(r).toEqual({ ok: false, error: { code: 'network' } });
   });
 
-  it('pair does not sign in anonymously when the session lookup fails', async () => {
+  it('join does not sign in anonymously when the session lookup fails', async () => {
     const s = stub({ getSession: refreshFailed });
-    expect(await createDeviceApi(s.client).pair('A', 'L')).toEqual({ ok: false, error: { code: 'network' } });
+    expect(await createDeviceApi(s.client).join('A', 'L')).toEqual({ ok: false, error: { code: 'network' } });
     expect(s.auth.signInAnonymously).not.toHaveBeenCalled();
     expect(s.auth.signOut).not.toHaveBeenCalled();
     expect(s.rpc).not.toHaveBeenCalled();
   });
 
-  it('pair refuses an owner session without force, calling nothing', async () => {
+  it('join refuses an owner session without force, calling nothing', async () => {
     const s = stub({ user: { is_anonymous: false } });
-    const r = await createDeviceApi(s.client).pair('ABCD', 'Phone');
+    const r = await createDeviceApi(s.client).join('ABCD', 'Phone');
     expect(r).toEqual({ ok: false, error: { code: 'owner_signed_in' } });
     expect(s.rpc).not.toHaveBeenCalled();
     expect(s.auth.signOut).not.toHaveBeenCalled();
   });
 
-  it('pair with force signs the owner out, signs in anonymously, then redeems', async () => {
+  it('join with force signs the owner out, signs in anonymously, then joins', async () => {
     const s = stub({ user: { is_anonymous: false } });
-    const r = await createDeviceApi(s.client).pair('ABCD', 'Phone', { force: true });
+    const r = await createDeviceApi(s.client).join(K, 'iPhone', { force: true });
     expect(r.ok).toBe(true);
     expect(s.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
     expect(s.auth.signInAnonymously).toHaveBeenCalled();
-    expect(s.rpc).toHaveBeenCalledWith('redeem_pairing_code', { p_code: 'ABCD', p_label: 'Phone' });
+    expect(s.rpc).toHaveBeenCalledWith('join_shop', { p_key: K, p_label: 'iPhone', p_switch: false });
   });
 
-  it('pair signs in anonymously when there is no session; reuses an existing anonymous one', async () => {
+  it('join with switchShop asks the server to move the phone', async () => {
+    const s = stub();
+    await createDeviceApi(s.client).join(K, 'iPhone', { switchShop: true });
+    expect(s.rpc).toHaveBeenCalledWith('join_shop', { p_key: K, p_label: 'iPhone', p_switch: true });
+  });
+
+  it('join maps a raised other_shop', async () => {
+    const s = stub({ rpc: { join_shop: { data: null, error: { message: 'other_shop', code: '22023' } } } });
+    expect(await createDeviceApi(s.client).join(K, 'L')).toEqual({ ok: false, error: { code: 'other_shop' } });
+  });
+
+  it('join signs in anonymously when there is no session; reuses an existing anonymous one', async () => {
     const none = stub({ user: null });
-    await createDeviceApi(none.client).pair('A', 'L');
+    await createDeviceApi(none.client).join('A', 'L');
     expect(none.auth.signInAnonymously).toHaveBeenCalled();
     const anon = stub();
-    await createDeviceApi(anon.client).pair('A', 'L');
+    await createDeviceApi(anon.client).join('A', 'L');
     expect(anon.auth.signInAnonymously).not.toHaveBeenCalled();
   });
 
-  it('pair maps a raised invalid_code', async () => {
-    const s = stub({ rpc: { redeem_pairing_code: { data: null, error: { message: 'invalid_code', code: '22023' } } } });
-    expect(await createDeviceApi(s.client).pair('X', 'L')).toEqual({ ok: false, error: { code: 'invalid_code' } });
+  it('join maps a raised invalid_code', async () => {
+    const s = stub({ rpc: { join_shop: { data: null, error: { message: 'invalid_code', code: '22023' } } } });
+    expect(await createDeviceApi(s.client).join('X', 'L')).toEqual({ ok: false, error: { code: 'invalid_code' } });
   });
 
   it('context: no rows is not paired; rows map to DeviceContext', async () => {

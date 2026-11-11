@@ -8,6 +8,8 @@ export type DeviceError =
   | { code: 'not_a_device' }
   | { code: 'device_revoked' }
   | { code: 'invalid_code' }
+  /** join_shop: the phone is in another store; ask, then re-send with `switchShop`. */
+  | { code: 'other_shop' }
   | { code: 'owner_signed_in' }
   | { code: 'staff_not_found' }
   | { code: 'bad_pin' }
@@ -49,8 +51,12 @@ export interface DeviceApi {
    * A failure means "couldn't tell" (e.g. offline with an expired access token) — never treat it as no session.
    */
   session(): Promise<DResult<{ anonymous: boolean } | null>>;
-  /** Signs in anonymously if needed, then redeems. `force` signs an owner out first. */
-  pair(code: string, label: string, opts?: { force?: boolean }): Promise<DResult<void>>;
+  /**
+   * Enters the store of `key` (join_shop). Signs in anonymously if needed; `force` signs an owner out first;
+   * `switchShop` moves a phone that is in another store. Refuses on a failed session lookup.
+   * Call it only through features/phone/model/join.ts (`joinStore`), which keeps the stored key right.
+   */
+  join(key: string, label: string, opts?: { force?: boolean; switchShop?: boolean }): Promise<DResult<void>>;
   /** null data = signed in but not paired. */
   context(): Promise<DResult<DeviceContext | null>>;
   listStaff(): Promise<DResult<{ id: string; name: string }[]>>;

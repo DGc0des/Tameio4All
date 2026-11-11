@@ -11,6 +11,7 @@ describe('mapDeviceError', () => {
   it('maps raised postgres messages', () => {
     expect(mapDeviceError({ message: 'invalid_code', code: '22023' })).toEqual({ code: 'invalid_code' });
     expect(mapDeviceError({ message: 'not_a_device_session', code: '42501' })).toEqual({ code: 'not_a_device' });
+    expect(mapDeviceError({ message: 'other_shop', code: '22023' })).toEqual({ code: 'other_shop' });
   });
   it('maps a permission refusal (no auth session, or anon) and lost auth sessions to not_a_device', () => {
     expect(mapDeviceError({ message: 'permission denied for function device_context', code: '42501' })).toEqual({ code: 'not_a_device' });
@@ -53,7 +54,7 @@ describe('deviceErrorMessage', () => {
     { code: 'wrong_day' }, { code: 'config_mismatch' }, { code: 'bad_inputs' }, { code: 'idempotency_conflict' },
     { code: 'network' }, { code: 'unknown', detail: 'x' },
     { code: 'stale', current: { key: 'c:a', value: null, version: 0, updatedByName: '', updatedAt: '' } }, { code: 'bad_field' },
-    { code: 'too_many_expenses' }, { code: 'draft_changed', revision: 3 },
+    { code: 'too_many_expenses' }, { code: 'draft_changed', revision: 3 }, { code: 'other_shop' },
   ];
   it('has a non-empty message for every code', () => {
     for (const e of all) expect(deviceErrorMessage(e).length).toBeGreaterThan(0);
@@ -61,6 +62,8 @@ describe('deviceErrorMessage', () => {
   it('uses the agreed wording', () => {
     expect(deviceErrorMessage({ code: 'bad_pin' })).toBe('Λάθος PIN.');
     expect(deviceErrorMessage({ code: 'network' })).toBe('Δεν υπάρχει σύνδεση.');
-    expect(deviceErrorMessage({ code: 'invalid_code' })).toBe('Ο κωδικός δεν ισχύει ή έληξε.');
+    expect(deviceErrorMessage({ code: 'invalid_code' })).toBe('Ο κωδικός καταστήματος δεν ισχύει. Ζήτα τον νέο σύνδεσμο.');
+    expect(deviceErrorMessage({ code: 'not_a_device' })).toBe('Αυτή η συσκευή δεν είναι σε κατάστημα. Άνοιξε τον σύνδεσμο του καταστήματος.');
+    expect(deviceErrorMessage({ code: 'other_shop' })).toBe('Η συσκευή είναι ήδη σε άλλο κατάστημα.');
   });
 });

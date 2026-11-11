@@ -3,6 +3,9 @@ import { readJson, removeKey, writeJson, type KeyValueStore } from './storage';
 
 const SESSION_KEY = 'tameio4all:v1:phone:session';
 const CONTEXT_KEY = 'tameio4all:v1:phone:context';
+const JOIN_KEY = 'tameio4all:v1:phone:joinKey';
+/** Same format as parseJoinKey (src/app/joinKey.ts) and the shop_join_keys CHECK. */
+const JOIN_KEY_RE = /^[A-HJ-NP-Z2-9]{16}$/;
 
 type Obj = Record<string, unknown>;
 const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -43,4 +46,18 @@ export function saveCachedContext(store: KeyValueStore, c: DeviceContext): boole
 /** Forgets the cached context (the phone is no longer paired). */
 export function clearCachedContext(store: KeyValueStore): void {
   removeKey(store, CONTEXT_KEY);
+}
+
+/** The store key of the last successful join, for the silent return. null when absent or not a key. */
+export function loadJoinKey(store: KeyValueStore): string | null {
+  const k = readJson(store, JOIN_KEY);
+  return typeof k === 'string' && JOIN_KEY_RE.test(k) ? k : null;
+}
+
+export function saveJoinKey(store: KeyValueStore, key: string): boolean {
+  return writeJson(store, JOIN_KEY, key);
+}
+
+export function clearJoinKey(store: KeyValueStore): void {
+  removeKey(store, JOIN_KEY);
 }

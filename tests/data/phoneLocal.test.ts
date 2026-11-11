@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  clearStaffSession, loadCachedContext, loadStaffSession, saveCachedContext, saveStaffSession,
+  clearJoinKey, clearStaffSession, loadCachedContext, loadJoinKey, loadStaffSession, saveCachedContext, saveJoinKey, saveStaffSession,
 } from '../../src/data/local/phone';
 import { memoryStore, type KeyValueStore } from '../../src/data/local/storage';
 import type { DeviceContext, StaffSession } from '../../src/data/remote/deviceApi';
@@ -52,5 +52,23 @@ describe('phone local storage', () => {
     expect(loadStaffSession(throwing)).toBeNull();
     expect(loadCachedContext(throwing)).toBeNull();
     expect(() => clearStaffSession(throwing)).not.toThrow();
+  });
+
+  it('round-trips the join key; anything that is not a key loads as null', () => {
+    const s = memoryStore();
+    expect(loadJoinKey(s)).toBeNull();
+    expect(saveJoinKey(s, 'ABCDEFGHJKLMNPQR')).toBe(true);
+    expect(s.getItem('tameio4all:v1:phone:joinKey')).not.toBeNull();
+    expect(loadJoinKey(s)).toBe('ABCDEFGHJKLMNPQR');
+    clearJoinKey(s);
+    expect(loadJoinKey(s)).toBeNull();
+    s.setItem('tameio4all:v1:phone:joinKey', JSON.stringify('nope'));
+    expect(loadJoinKey(s)).toBeNull();
+  });
+
+  it('the join key never throws when storage refuses', () => {
+    expect(saveJoinKey(throwing, 'ABCDEFGHJKLMNPQR')).toBe(false);
+    expect(loadJoinKey(throwing)).toBeNull();
+    expect(() => clearJoinKey(throwing)).not.toThrow();
   });
 });
