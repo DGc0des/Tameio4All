@@ -3,7 +3,8 @@ import { deviceErrorMessage } from './messages';
 
 /** What the phone shows. Derived only by gateReducer; PhoneApp renders it and never decides on its own. */
 export type Gate =
-  | { s: 'loading' }
+  /** `notice`: why this reload happened, shown if it ends on the entry screen (set by a mid-use not_a_device). */
+  | { s: 'loading'; notice?: string }
   | { s: 'unconfigured' }
   | { s: 'offline_no_cache' }
   /** The context load failed for a reason other than the network: no cached register, only a retry. */
@@ -42,7 +43,8 @@ export function gateReducer(g: Gate, e: GateEvent): Gate {
     case 'no_client':
       return { s: 'unconfigured' };
     case 'loaded':
-      return e.ctx === null ? { s: 'unpaired', notice: null } : fromContext(e.ctx, e.stored, false);
+      if (e.ctx !== null) return fromContext(e.ctx, e.stored, false);
+      return { s: 'unpaired', notice: g.s === 'loading' ? (g.notice ?? null) : null };
     case 'load_failed':
       // invalid_code: the stored link was replaced (load.ts tried it once); the entry screen asks for the new one.
       if (e.error.code === 'device_revoked' || e.error.code === 'not_a_device' || e.error.code === 'invalid_code') {
@@ -69,7 +71,7 @@ export function gateReducer(g: Gate, e: GateEvent): Gate {
         case 'not_a_device':
           // Reload through the one load path: it re-joins once with a stored key (silent return), or lands on
           // the entry screen with this notice. A late one (another screen call failing after that) changes nothing.
-          return g.s === 'ready' || g.s === 'signed_out' ? RELOAD : g;
+          return g.s === 'ready' || g.s === 'signed_out' ? { s: 'loading', notice: deviceErrorMessage(e.error) } : g;
         case 'session_invalid':
         case 'wrong_day':
           // The day may have changed: the context is stale too.

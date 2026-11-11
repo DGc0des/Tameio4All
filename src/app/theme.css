@@ -230,7 +230,7 @@ fieldset.card { min-width: 0; }
   .app:has(.history-week) .week-grid { grid-template-columns: repeat(3, 1fr); }
 }
 .badge { padding: 1px 8px; border-radius: 999px; background: var(--hl-soft); color: var(--hl-ink); font-size: 11px; font-weight: 600; }
-.pair-code { margin: 8px 0; font-size: 34px; font-weight: 700; letter-spacing: 0.08em; text-align: center; font-variant-numeric: tabular-nums; color: var(--hl); }
+.pair-code { margin: 8px 0; font-size: clamp(18px, 6vw, 30px); font-weight: 700; letter-spacing: 0.04em; overflow-wrap: anywhere; text-align: center; font-variant-numeric: tabular-nums; color: var(--hl); }
 .term { display: flex; align-items: center; gap: 6px; min-height: 44px; }
 .term .sign { min-width: 44px; min-height: 44px; border: 1px solid var(--field-line); border-radius: 11px; background: var(--field); font-size: 18px; font-weight: 700; color: var(--ink); }
 .formula { margin: 2px 0 6px; font-size: 13px; color: var(--muted); }

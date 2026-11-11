@@ -15,6 +15,23 @@ alter table public.devices
   add column last_seen_at timestamptz,
   add column last_staff_id uuid references public.staff (id) on delete set null;
 
+-- Backfill from what already happened, so the 30-day prune never removes a phone that is in use today:
+-- its last staff session or its last submitted closing in its current shop. A phone with neither stays null
+-- (falls back to its pairing date: a long-unused copy is exactly what the prune is for).
+update public.devices d set
+  last_seen_at = (
+    select max(t.at) from (
+      select max(ss.created_at) as at from public.staff_sessions ss where ss.device_user_id = d.user_id and ss.shop_id = d.shop_id
+      union all
+      select max(c.created_at) from public.closings c where c.device_user_id = d.user_id and c.shop_id = d.shop_id
+    ) t
+  ),
+  last_staff_id = (
+    select ss.staff_id from public.staff_sessions ss
+     where ss.device_user_id = d.user_id and ss.shop_id = d.shop_id
+     order by ss.created_at desc limit 1
+  );
+
 -- 16 characters of the pairing alphabet (32 symbols: byte % 32 is unbiased). Cross-file invariant:
 -- the format ^[A-HJ-NP-Z2-9]{16}$ is checked by parseJoinKey (src/app/joinKey.ts).
 create function private.new_join_key() returns text
@@ -48,9 +65,10 @@ end $$;
 create function public.owner_rotate_join_key(p_shop_id uuid) returns text
 language plpgsql security definer set search_path = '' as $$
 declare
-  v_key text := private.new_join_key();
+  v_key text;
 begin
   perform private.require_owner(p_shop_id);
+  v_key := private.new_join_key();
   update public.staff_sessions set revoked_at = now() where shop_id = p_shop_id and revoked_at is null;
   delete from public.devices where shop_id = p_shop_id;
   insert into public.shop_join_keys (shop_id, key) values (p_shop_id, v_key)

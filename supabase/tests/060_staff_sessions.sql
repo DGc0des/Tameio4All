@@ -145,15 +145,13 @@ set local role authenticated;
 select public.unlock_staff(current_setting('t.maria')::uuid);
 reset role;
 
--- T7 owner revokes d1 → device_revoked; owner deactivates maria → session_invalid
+-- T7 a revoked d1 → device_revoked; owner deactivates maria → session_invalid
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 select set_config('t.token2', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
 reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
-set local role authenticated;
+-- Nothing in the app sets revoked_at any more (stage 4); set it as the migration owner to keep the check.
 update public.devices set revoked_at = now() where user_id = '00000000-0000-0000-0000-0000000000d1';
-reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 do $$ begin
   if current_setting('t.token2') !~ '^[0-9a-f]{64}$' then raise exception 'T7 setup sign-in failed'; end if;

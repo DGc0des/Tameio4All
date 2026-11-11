@@ -180,6 +180,16 @@ describe('PhoneApp', () => {
     expect(api.join).toHaveBeenCalledTimes(1);
   });
 
+  it('a malformed link on a signed-in phone is not dropped silently', async () => {
+    const store = memoryStore();
+    saveStaffSession(store, SESSION);
+    const api = fakeDeviceApi();
+    start(api, store, { link: { key: null } });
+    expect(await screen.findByText('Ο σύνδεσμος δεν είναι σωστός.')).toBeTruthy();
+    expect(screen.getByLabelText('100€')).toBeTruthy();
+    expect(api.join).not.toHaveBeenCalled();
+  });
+
   it('a refused link on a signed-in phone shows a dismissible notice', async () => {
     const store = memoryStore();
     saveStaffSession(store, SESSION);

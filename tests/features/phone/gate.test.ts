@@ -135,9 +135,20 @@ describe('gateReducer — transitions', () => {
     expect(gateReducer(signedOut, { t: 'server_error', error: { code: 'device_revoked' } }).s).toBe('unpaired');
   });
 
-  it('server_error not_a_device → loading (the one load path may return silently with the stored key)', () => {
-    expect(gateReducer(ready, { t: 'server_error', error: { code: 'not_a_device' } })).toEqual(loading);
-    expect(gateReducer(signedOut, { t: 'server_error', error: { code: 'not_a_device' } })).toEqual(loading);
+  const NOT_IN_STORE = 'Αυτή η συσκευή δεν είναι σε κατάστημα. Άνοιξε τον σύνδεσμο του καταστήματος.';
+
+  it('server_error not_a_device → loading that remembers why (the load path may return silently with the stored key)', () => {
+    expect(gateReducer(ready, { t: 'server_error', error: { code: 'not_a_device' } })).toEqual({ s: 'loading', notice: NOT_IN_STORE });
+    expect(gateReducer(signedOut, { t: 'server_error', error: { code: 'not_a_device' } })).toEqual({ s: 'loading', notice: NOT_IN_STORE });
+  });
+
+  it('a reload caused by not_a_device that finds no store explains it on the entry screen', () => {
+    const reloading = gateReducer(ready, { t: 'server_error', error: { code: 'not_a_device' } });
+    expect(gateReducer(reloading, { t: 'loaded', ctx: null, stored: null })).toEqual({ s: 'unpaired', notice: NOT_IN_STORE });
+    // A silent return that worked shows no notice.
+    expect(gateReducer(reloading, { t: 'loaded', ctx, stored: null })).toEqual({ s: 'signed_out', ctx, offline: false });
+    // A plain first load with no store has nothing to explain.
+    expect(gateReducer(loading, { t: 'loaded', ctx: null, stored: null })).toEqual({ s: 'unpaired', notice: null });
   });
 
   it('other server errors leave the gate as it is', () => {

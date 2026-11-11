@@ -18,6 +18,8 @@ import { SignInScreen } from './SignInScreen';
 /** A store link that was opened (`#/join/<key>`); `key: null` = the link was malformed. */
 export type JoinLink = { key: string | null };
 
+const MALFORMED_LINK = 'Ο σύνδεσμος δεν είναι σωστός.';
+
 export interface PhoneAppProps {
   /** null = the server connection is not configured. */
   api: DeviceApi | null;
@@ -146,7 +148,10 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
     if (link === null || !inStore || api === null || actedOn.current === link) return;
     actedOn.current = link;
     const key = link.key;
-    if (key === null) return setLink(null);
+    if (key === null) {
+      setLink(null);
+      return setLinkNotice(MALFORMED_LINK);
+    }
     void joinStore(api, store, key, label).then((r) => {
       if (!r.ok && r.error.code === 'other_shop') return setSwitchKey(key);
       setLink(null);
@@ -243,7 +248,7 @@ export function PhoneApp({ api, store, now, newId, share, themePref, active, onT
             api={api}
             store={store}
             label={label}
-            notice={link !== null && link.key === null ? 'Ο σύνδεσμος δεν είναι σωστός.' : gate.notice}
+            notice={link !== null && link.key === null ? MALFORMED_LINK : gate.notice}
             initialKey={link?.key ?? null}
             onJoined={onPaired}
             onOwner={onOwner}

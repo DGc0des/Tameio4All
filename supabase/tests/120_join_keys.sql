@@ -7,7 +7,8 @@ insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created
   ('00000000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now()),
   ('00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now()),
   ('00000000-0000-0000-0000-0000000000d3', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now()),
-  ('00000000-0000-0000-0000-0000000000d4', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now());
+  ('00000000-0000-0000-0000-0000000000d4', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now()),
+  ('00000000-0000-0000-0000-0000000000d5', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now());
 
 -- Owner A: shop A, one cashier.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
@@ -19,7 +20,7 @@ select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uu
 select set_config('t.key_a', public.owner_get_join_key(current_setting('t.shop_a')::uuid), true);
 do $$ begin
   if current_setting('t.key_a') !~ '^[A-HJ-NP-Z2-9]{16}$' then raise exception 'T1 bad key format: %', current_setting('t.key_a'); end if;
-  if public.owner_get_join_key(current_setting('t.shop_a')::uuid) <> current_setting('t.key_a') then raise exception 'T1 key changed on a second call'; end if;
+  if public.owner_get_join_key(current_setting('t.shop_a')::uuid) is distinct from current_setting('t.key_a') then raise exception 'T1 key changed on a second call'; end if;
 end $$;
 
 -- T3a an owner (non-anonymous) session cannot join
@@ -74,14 +75,14 @@ end $$;
 -- T4 join with lower case, dashes and spaces
 do $$ declare k text := current_setting('t.key_a'); begin
   if public.join_shop('  ' || lower(substr(k, 1, 4) || '-' || substr(k, 5, 4) || '-' || substr(k, 9, 4) || '-' || substr(k, 13, 4)) || ' ', 'iPhone')
-     <> current_setting('t.shop_a')::uuid then
+     is distinct from current_setting('t.shop_a')::uuid then
     raise exception 'T4 join returned wrong shop';
   end if;
   if (select count(*) from public.device_context()) <> 1 then raise exception 'T4 no context after join'; end if;
 end $$;
 reset role;
 do $$ begin
-  if (select label from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') <> 'iPhone' then raise exception 'T4 label not stored'; end if;
+  if (select label from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') is distinct from 'iPhone' then raise exception 'T4 label not stored'; end if;
 end $$;
 update public.devices set created_at = now() - interval '1 day' where user_id = '00000000-0000-0000-0000-0000000000d1';
 
@@ -92,15 +93,15 @@ select public.join_shop(current_setting('t.key_a'), 'Other label');
 reset role;
 do $$ begin
   if (select count(*) from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') <> 1 then raise exception 'T5 not one row'; end if;
-  if (select created_at from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') > now() - interval '23 hours' then raise exception 'T5 created_at reset'; end if;
-  if (select label from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') <> 'iPhone' then raise exception 'T5 label changed'; end if;
+  if coalesce((select created_at from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1'), now()) > now() - interval '23 hours' then raise exception 'T5 created_at reset'; end if;
+  if (select label from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') is distinct from 'iPhone' then raise exception 'T5 label changed'; end if;
 end $$;
 
 -- T7 staff_sign_in stamps last_seen_at/last_staff_id only on a correct PIN
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
-  if public.staff_sign_in(current_setting('t.maria')::uuid, '0000') ->> 'error' <> 'bad_pin' then raise exception 'T7 wrong PIN not bad_pin'; end if;
+  if public.staff_sign_in(current_setting('t.maria')::uuid, '0000') ->> 'error' is distinct from 'bad_pin' then raise exception 'T7 wrong PIN not bad_pin'; end if;
 end $$;
 reset role;
 do $$ begin
@@ -111,14 +112,14 @@ set local role authenticated;
 select set_config('t.tok1', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
 reset role;
 do $$ begin
-  if current_setting('t.tok1') = '' then raise exception 'T7 correct PIN refused'; end if;
+  if coalesce(current_setting('t.tok1'), '') = '' then raise exception 'T7 correct PIN refused'; end if;
   if (select last_seen_at from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') is null then raise exception 'T7 last_seen_at not set'; end if;
-  if (select last_staff_id from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') <> current_setting('t.maria')::uuid then raise exception 'T7 last_staff_id not set'; end if;
+  if (select last_staff_id from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') is distinct from current_setting('t.maria')::uuid then raise exception 'T7 last_staff_id not set'; end if;
 end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 do $$ begin
-  if (select last_staff_name from public.owner_list_devices(current_setting('t.shop_a')::uuid) where user_id = '00000000-0000-0000-0000-0000000000d1') <> 'ΜΑΡΙΑ' then
+  if (select last_staff_name from public.owner_list_devices(current_setting('t.shop_a')::uuid) where user_id = '00000000-0000-0000-0000-0000000000d1') is distinct from 'ΜΑΡΙΑ' then
     raise exception 'T7 owner_list_devices has no last_staff_name';
   end if;
 end $$;
@@ -133,11 +134,11 @@ do $$ begin
   raise exception 'T6 silent store switch';
 end $$;
 do $$ begin
-  if public.join_shop(current_setting('t.key_b'), 'iPhone', true) <> current_setting('t.shop_b')::uuid then raise exception 'T6 switch returned wrong shop'; end if;
+  if public.join_shop(current_setting('t.key_b'), 'iPhone', true) is distinct from current_setting('t.shop_b')::uuid then raise exception 'T6 switch returned wrong shop'; end if;
 end $$;
 reset role;
 do $$ begin
-  if (select shop_id from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') <> current_setting('t.shop_b')::uuid then raise exception 'T6 row not moved'; end if;
+  if (select shop_id from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') is distinct from current_setting('t.shop_b')::uuid then raise exception 'T6 row not moved'; end if;
   if (select last_seen_at from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') is not null then raise exception 'T6 last_seen_at kept'; end if;
   if (select last_staff_id from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') is not null then raise exception 'T6 last_staff_id kept'; end if;
   if exists (select 1 from public.staff_sessions where device_user_id = '00000000-0000-0000-0000-0000000000d1' and revoked_at is null) then
@@ -183,10 +184,10 @@ end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
-  if public.set_closing_field(current_setting('t.tok2'), current_setting('t.date')::date, 'c:card', '{"text":"1"}'::jsonb, null) ->> 'error' <> 'not_a_device' then
+  if public.set_closing_field(current_setting('t.tok2'), current_setting('t.date')::date, 'c:card', '{"text":"1"}'::jsonb, null) ->> 'error' is distinct from 'not_a_device' then
     raise exception 'T8 removed phone could still write';
   end if;
-  if public.join_shop(current_setting('t.key_a'), 'Android') <> current_setting('t.shop_a')::uuid then raise exception 'T8 removed phone could not rejoin'; end if;
+  if public.join_shop(current_setting('t.key_a'), 'Android') is distinct from current_setting('t.shop_a')::uuid then raise exception 'T8 removed phone could not rejoin'; end if;
 end $$;
 reset role;
 
@@ -199,7 +200,12 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 select public.join_shop(current_setting('t.key_b'), 'D4');
 reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d5","role":"authenticated","is_anonymous":true}', true);
+set local role authenticated;
+select public.join_shop(current_setting('t.key_a'), 'D5');
+reset role;
 update public.devices set created_at = now() - interval '31 days' where user_id in ('00000000-0000-0000-0000-0000000000d3', '00000000-0000-0000-0000-0000000000d4');
+update public.devices set created_at = now() - interval '60 days', last_seen_at = now() - interval '1 day' where user_id = '00000000-0000-0000-0000-0000000000d5';
 update public.devices set created_at = now() - interval '40 days', last_seen_at = now() - interval '31 days' where user_id = '00000000-0000-0000-0000-0000000000d2';
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
@@ -210,6 +216,7 @@ do $$ begin
     raise exception 'T10 unused devices of shop A kept';
   end if;
   if not exists (select 1 from public.devices where user_id = '00000000-0000-0000-0000-0000000000d1') then raise exception 'T10 the joining device was pruned'; end if;
+  if not exists (select 1 from public.devices where user_id = '00000000-0000-0000-0000-0000000000d5') then raise exception 'T10 an old but recently used device was pruned'; end if;
   if not exists (select 1 from public.devices where user_id = '00000000-0000-0000-0000-0000000000d4') then raise exception 'T10 shop B device pruned'; end if;
 end $$;
 
@@ -231,28 +238,32 @@ end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
+  if public.set_closing_field(current_setting('t.tok1'), current_setting('t.date')::date, 'c:card', '{"text":"1"}'::jsonb, null) ->> 'ok' = 'true' then
+    raise exception 'T9 old session token could still write';
+  end if;
   begin perform public.join_shop(current_setting('t.key_a'), 'iPhone');
     raise exception 'T9 old key accepted';
   exception when others then if sqlerrm not like '%invalid_code%' then raise exception 'T9 old key wrong error: %', sqlerrm; end if; end;
-  if public.join_shop(current_setting('t.key_a2'), 'iPhone') <> current_setting('t.shop_a')::uuid then raise exception 'T9 new key refused'; end if;
+  if public.join_shop(current_setting('t.key_a2'), 'iPhone') is distinct from current_setting('t.shop_a')::uuid then raise exception 'T9 new key refused'; end if;
+  -- Joined again, but the old token is still dead (rotation revoked it).
+  if public.set_closing_field(current_setting('t.tok1'), current_setting('t.date')::date, 'c:card', '{"text":"1"}'::jsonb, null) ->> 'error' is distinct from 'session_invalid' then
+    raise exception 'T9 old session token revived by re-joining';
+  end if;
 end $$;
 reset role;
 
 -- T11 anon gets nothing; the key table is closed; the pairing code is gone; revoked_at is not owner-writable
-set local role anon;
 do $$ begin
-  begin perform public.join_shop('x'); raise exception 'T11 anon join_shop';
-  exception when insufficient_privilege then null; end;
-  begin perform public.owner_get_join_key(gen_random_uuid()); raise exception 'T11 anon owner_get_join_key';
-  exception when insufficient_privilege then null; end;
-  begin perform public.owner_rotate_join_key(gen_random_uuid()); raise exception 'T11 anon owner_rotate_join_key';
-  exception when insufficient_privilege then null; end;
-  begin perform public.owner_remove_device(gen_random_uuid()); raise exception 'T11 anon owner_remove_device';
-  exception when insufficient_privilege then null; end;
-  begin perform * from public.owner_list_devices(gen_random_uuid()); raise exception 'T11 anon owner_list_devices';
-  exception when insufficient_privilege then null; end;
+  if has_function_privilege('anon', 'public.join_shop(text, text, boolean)', 'execute') then raise exception 'T11 anon can execute join_shop'; end if;
+  if has_function_privilege('anon', 'public.owner_get_join_key(uuid)', 'execute') then raise exception 'T11 anon can execute owner_get_join_key'; end if;
+  if has_function_privilege('anon', 'public.owner_rotate_join_key(uuid)', 'execute') then raise exception 'T11 anon can execute owner_rotate_join_key'; end if;
+  if has_function_privilege('anon', 'public.owner_remove_device(uuid)', 'execute') then raise exception 'T11 anon can execute owner_remove_device'; end if;
+  if has_function_privilege('anon', 'public.owner_list_devices(uuid)', 'execute') then raise exception 'T11 anon can execute owner_list_devices'; end if;
+  if has_table_privilege('anon', 'public.shop_join_keys', 'select') or has_table_privilege('authenticated', 'public.shop_join_keys', 'select') then
+    raise exception 'T11 shop_join_keys selectable by a client role';
+  end if;
+  if has_column_privilege('authenticated', 'public.devices', 'revoked_at', 'update') then raise exception 'T11 revoked_at owner-writable'; end if;
 end $$;
-reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 do $$ begin
