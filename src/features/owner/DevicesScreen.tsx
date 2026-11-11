@@ -6,12 +6,13 @@ import { checkLabel, DEVICE_LABEL_MAX } from './model/limits';
 import { ownerErrorMessage } from './model/messages';
 import { formatDate } from './model/time';
 import { ErrorText } from './OwnerUi';
+import { StoreLinkCard } from './StoreLinkCard';
 import { useAction } from './useAction';
 
 interface Props {
   api: OwnerApi;
   shopId: string;
-  now: () => Date;
+  shopName: string;
 }
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; devices: DeviceRow[] };
@@ -45,7 +46,9 @@ function DeviceEditor({ api, device, onChanged }: { api: OwnerApi; device: Devic
         <span className="row-label">
           <b>{title}</b>
           <span className="row-hint">
-            Συνδέθηκε {formatDate(device.createdAt)}
+            {device.lastSeenAt === null
+              ? 'Δεν χρησιμοποιήθηκε ακόμα'
+              : `Τελευταία χρήση ${formatDate(device.lastSeenAt)}${device.lastStaffName === null ? '' : ` · ${device.lastStaffName}`}`}
           </span>
         </span>
       </div>
@@ -71,7 +74,7 @@ function DeviceEditor({ api, device, onChanged }: { api: OwnerApi; device: Devic
           >
             Μετονομασία
           </button>
-          <button type="button" className="choice" onClick={() => setConfirming(true)}>
+          <button type="button" className="choice" disabled={action.busy} onClick={() => setConfirming(true)}>
             Αφαίρεση
           </button>
         </div>
@@ -79,12 +82,14 @@ function DeviceEditor({ api, device, onChanged }: { api: OwnerApi; device: Devic
       <ErrorText state={action.state} />
       {confirming && (
         <Sheet title="Αφαίρεση συσκευής" onClose={() => setConfirming(false)}>
-          <p>Η συσκευή «{title}» θα φύγει από τη λίστα.</p>
+          <p>
+            {`Η συσκευή «${title}» θα φύγει από τη λίστα και όποιος είναι συνδεδεμένος σε αυτήν θα αποσυνδεθεί. Αν έχει ακόμα τον σύνδεσμο του καταστήματος, μπορεί να ξαναμπεί· για να μην μπορεί, απενεργοποίησε τον υπάλληλο ή φτιάξε νέο σύνδεσμο.`}
+          </p>
           <div className="sheet-actions">
             <button type="button" className="btn btn-text" onClick={() => setConfirming(false)}>
               Άκυρο
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => void remove()}>
+            <button type="button" className="btn btn-primary" disabled={action.busy} onClick={() => void remove()}>
               Αφαίρεση
             </button>
           </div>
@@ -94,8 +99,7 @@ function DeviceEditor({ api, device, onChanged }: { api: OwnerApi; device: Devic
   );
 }
 
-/** Placeholder until the store-link card lands (stage 4, Task 6); `now` is unused meanwhile. */
-export function DevicesScreen({ api, shopId }: Props) {
+export function DevicesScreen({ api, shopId, shopName }: Props) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
 
   const reload = useCallback(async () => {
@@ -109,6 +113,7 @@ export function DevicesScreen({ api, shopId }: Props) {
 
   return (
     <>
+      <StoreLinkCard api={api} shopId={shopId} shopName={shopName} onRotated={() => void reload()} />
       {load.status === 'loading' && <p className="notice-soft">Φόρτωση…</p>}
       {load.status === 'error' && (
         <Card>
@@ -120,7 +125,7 @@ export function DevicesScreen({ api, shopId }: Props) {
           </button>
         </Card>
       )}
-      {load.status === 'ready' && load.devices.length === 0 && <p className="notice-soft">Καμία συνδεδεμένη συσκευή.</p>}
+      {load.status === 'ready' && load.devices.length === 0 && <p className="notice-soft">Καμία συσκευή στο κατάστημα.</p>}
       {load.status === 'ready' && load.devices.map((d) => <DeviceEditor key={d.userId} api={api} device={d} onChanged={() => void reload()} />)}
     </>
   );

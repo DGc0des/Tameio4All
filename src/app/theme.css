@@ -242,3 +242,20 @@ fieldset.card { min-width: 0; }
 .publish-bar p { flex: 1; margin: 0; font-size: 13px; color: var(--muted); }
 @media (prefers-reduced-transparency: reduce) { .publish-bar { background: var(--solid); -webkit-backdrop-filter: none; backdrop-filter: none; } }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .publish-bar { background: var(--solid); } }
+
+/* Store link QR (StoreLinkCard). The QR itself is fixed black on white (QrCode.tsx), never theme colors: it must scan
+   in both themes. The white frame keeps a light quiet zone even on the dark theme. */
+.qr-frame { width: min(240px, 100%); margin: 8px auto 0; padding: 0; border-radius: 12px; overflow: hidden; background: #fff; }
+.qr { display: block; width: 100%; height: auto; }
+/* The printed card: a child of <body> (portal), outside every glass container; opaque like .share-card. */
+.print-only { display: none; }
+@media print {
+  html, body { background: #fff !important; }
+  body::before { display: none; }
+  body > :not(.print-only) { display: none !important; }
+  .print-only { display: block; background: #fff; color: #000; text-align: center; padding: 24px; }
+  .print-only h1 { margin: 0 0 16px; font-size: 28px; }
+  .print-only .qr { width: 70mm; margin: 0 auto; }
+  .print-only .print-code { margin: 16px 0 8px; font-size: 26px; font-weight: 700; letter-spacing: 0.08em; }
+  .print-only p { font-size: 16px; }
+}

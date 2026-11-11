@@ -146,6 +146,7 @@ export function ShopLayout({ api, shopId, tab, date, navigate, store, now, email
           date={date}
           api={api}
           shopId={shopId}
+          shopName={load.name}
           navigate={navigate}
           store={store}
           now={now}
@@ -171,6 +172,7 @@ interface TabBodyProps {
   date?: string;
   api: OwnerApi;
   shopId: string;
+  shopName: string;
   navigate: OwnerNavigate;
   store: KeyValueStore;
   now: () => Date;
@@ -178,7 +180,7 @@ interface TabBodyProps {
   onHistoryRange: (from: string, to: string) => void;
 }
 
-function TabBody({ tab, date, api, shopId, navigate, store, now, historyRange, onHistoryRange }: TabBodyProps) {
+function TabBody({ tab, date, api, shopId, shopName, navigate, store, now, historyRange, onHistoryRange }: TabBodyProps) {
   if (tab === 'today') return <TodayScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
   if (tab === 'history') {
     return date ? (
@@ -189,5 +191,5 @@ function TabBody({ tab, date, api, shopId, navigate, store, now, historyRange, o
   }
   if (tab === 'settings') return <SettingsScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
   if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} />;
-  return <DevicesScreen api={api} shopId={shopId} now={now} />;
+  return <DevicesScreen api={api} shopId={shopId} shopName={shopName} />;
 }
