@@ -65,19 +65,13 @@ do $$ begin
   raise exception 'T4b expected staff_name_taken';
 end $$;
 
--- T5 create_pairing_code: 8 chars from the unambiguous alphabet
-select set_config('t.code', public.create_pairing_code(current_setting('t.shop_a')::uuid), true);
-do $$ begin
-  if current_setting('t.code') !~ '^[A-HJ-NP-Z2-9]{8}$' then raise exception 'T5 bad code format: %', current_setting('t.code'); end if;
-end $$;
+-- T5 (store keys: see 120_join_keys.sql)
 reset role;
 
--- T6 PIN and code are stored hashed only (checked as the migration owner)
+-- T6 PIN is stored hashed only (checked as the migration owner)
 do $$ begin
   if (select pin_hash from public.staff where id = current_setting('t.staff_a')::uuid) = '1234' then raise exception 'T6 PIN stored in plain text'; end if;
   if (select extensions.crypt('1234', pin_hash) = pin_hash from public.staff where id = current_setting('t.staff_a')::uuid) is not true then raise exception 'T6 PIN hash does not verify'; end if;
-  if (select count(*) from public.pairing_codes where code_hash = encode(extensions.digest(current_setting('t.code'), 'sha256'), 'hex')) <> 1 then raise exception 'T6 code not stored as sha256'; end if;
-  if (select expires_at from public.pairing_codes where code_hash = encode(extensions.digest(current_setting('t.code'), 'sha256'), 'hex')) > now() + interval '10 minutes 5 seconds' then raise exception 'T6 code lives longer than 10 minutes'; end if;
 end $$;
 
 -- T7 owner B cannot touch shop A through any owner function
@@ -90,8 +84,8 @@ do $$ begin
   exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7 staff wrong error: %', sqlerrm; end if; end;
   begin perform public.set_staff_pin(current_setting('t.staff_a')::uuid, '1111');
   exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7 pin wrong error: %', sqlerrm; end if; end;
-  begin perform public.create_pairing_code(current_setting('t.shop_a')::uuid);
-  exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7 code wrong error: %', sqlerrm; end if; end;
+  begin perform public.owner_get_join_key(current_setting('t.shop_a')::uuid);
+  exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7 join key wrong error: %', sqlerrm; end if; end;
 end $$;
 
 -- T7b set_staff_pin on a non-existent staff id also raises not_owner (never reveals existence)
@@ -104,7 +98,7 @@ reset role;
 do $$ begin
   if (select count(*) from public.shop_configs where shop_id = current_setting('t.shop_a')::uuid) <> 2 then raise exception 'T7 B published into A'; end if;
   if (select count(*) from public.staff where shop_id = current_setting('t.shop_a')::uuid) <> 1 then raise exception 'T7 B added staff to A'; end if;
-  if (select count(*) from public.pairing_codes where shop_id = current_setting('t.shop_a')::uuid) <> 1 then raise exception 'T7 B made a code for A'; end if;
+  if exists (select 1 from public.shop_join_keys where shop_id = current_setting('t.shop_a')::uuid) then raise exception 'T7 B made a key for A'; end if;
 end $$;
 
 -- T8 anonymous sessions (phones) cannot use owner functions

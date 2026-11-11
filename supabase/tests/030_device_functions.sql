@@ -1,4 +1,4 @@
--- 030 — pairing and phone functions. One transaction, ends in ROLLBACK.
+-- 030 — joining a store and phone functions. One transaction, ends in ROLLBACK.
 begin;
 insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created_at, updated_at) values
   ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'a1@test.local', false, now(), now()),
@@ -7,7 +7,7 @@ insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created
   ('00000000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now()),
   ('00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now());
 
--- Owner A sets up a shop, two staff, a second settings version and a pairing code.
+-- Owner A sets up a shop, two staff, a second settings version; reads the store key.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.shop', public.create_shop('Shop A', '{"schema":1}')::text, true);
@@ -15,13 +15,13 @@ select public.publish_config(current_setting('t.shop')::uuid, 1, '{"schema":1,"f
 select set_config('t.maria', public.create_staff(current_setting('t.shop')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
 select set_config('t.nikos', public.create_staff(current_setting('t.shop')::uuid, 'ΝΙΚΟΣ', '5555')::text, true);
 update public.staff set active = false where id = current_setting('t.nikos')::uuid;
-select set_config('t.code', public.create_pairing_code(current_setting('t.shop')::uuid), true);
+select set_config('t.code', public.owner_get_join_key(current_setting('t.shop')::uuid), true);
 
--- T1 an owner (non-anonymous) session cannot redeem a code
+-- T1 an owner (non-anonymous) session cannot join
 do $$ begin
-  begin perform public.redeem_pairing_code(current_setting('t.code'), 'x');
+  begin perform public.join_shop(current_setting('t.code'), 'x');
   exception when others then if sqlerrm not like '%not_a_device_session%' then raise exception 'T1 wrong error: %', sqlerrm; end if; return; end;
-  raise exception 'T1 owner redeemed a code';
+  raise exception 'T1 owner joined a store';
 end $$;
 reset role;
 
@@ -29,16 +29,16 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 
--- T2 before pairing: no context, not a device
+-- T2 before joining: no context, not a device
 do $$ begin
   if (select count(*) from public.device_context()) <> 0 then raise exception 'T2 unpaired phone has context'; end if;
   if public.verify_staff_pin(current_setting('t.maria')::uuid, '1234') ->> 'error' <> 'not_a_device' then raise exception 'T2 expected not_a_device'; end if;
 end $$;
 
--- T3 redeem works with lowercase and spaces, once
+-- T3 join works with lowercase and spaces
 do $$ begin
-  if public.redeem_pairing_code('  ' || lower(current_setting('t.code')) || ' ', 'Ταμείο 1') <> current_setting('t.shop')::uuid then
-    raise exception 'T3 redeem returned wrong shop';
+  if public.join_shop('  ' || lower(current_setting('t.code')) || ' ', 'Ταμείο 1') <> current_setting('t.shop')::uuid then
+    raise exception 'T3 join returned wrong shop';
   end if;
 end $$;
 
@@ -84,26 +84,14 @@ do $$ begin
   if (select failed_attempts from public.staff where id = current_setting('t.maria')::uuid) <> 1 then raise exception 'T7 counter not reset by correct PIN then +1 by bad one'; end if;
 end $$;
 
--- T8 the used code cannot be redeemed again (by another phone); an expired code is refused
+-- T8 the key is not single use (another phone joins with it); a wrong key is refused
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
-  begin perform public.redeem_pairing_code(current_setting('t.code'), 'x');
-  exception when others then if sqlerrm not like '%invalid_code%' then raise exception 'T8 wrong error: %', sqlerrm; end if; return; end;
-  raise exception 'T8 code reused';
-end $$;
-reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
-set local role authenticated;
-select set_config('t.code2', public.create_pairing_code(current_setting('t.shop')::uuid), true);
-reset role;
-update public.pairing_codes set expires_at = now() - interval '1 second' where code_hash = encode(extensions.digest(current_setting('t.code2'), 'sha256'), 'hex');
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
-set local role authenticated;
-do $$ begin
-  begin perform public.redeem_pairing_code(current_setting('t.code2'), 'x');
-  exception when others then if sqlerrm not like '%invalid_code%' then raise exception 'T8b wrong error: %', sqlerrm; end if; return; end;
-  raise exception 'T8b expired code accepted';
+  begin perform public.join_shop('ABCDEFGHJKLMNPQR', 'x');
+    raise exception 'T8 wrong key accepted';
+  exception when others then if sqlerrm not like '%invalid_code%' then raise exception 'T8 wrong error: %', sqlerrm; end if; end;
+  if public.join_shop(current_setting('t.code'), 'Ταμείο 2') <> current_setting('t.shop')::uuid then raise exception 'T8 second phone refused'; end if;
 end $$;
 reset role;
 

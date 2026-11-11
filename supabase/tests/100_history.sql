@@ -10,7 +10,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1}')::text, true);
 select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
-select set_config('t.code', public.create_pairing_code(current_setting('t.shop_a')::uuid), true);
+select set_config('t.code', public.owner_get_join_key(current_setting('t.shop_a')::uuid), true);
 select set_config('t.cfg_a', (select id::text from public.shop_configs where shop_id = current_setting('t.shop_a')::uuid), true);
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
@@ -20,7 +20,7 @@ reset role;
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
-select public.redeem_pairing_code(current_setting('t.code'), 'Ταμείο');
+select public.join_shop(current_setting('t.code'), 'Ταμείο');
 select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
 reset role;
 select set_config('t.bd', private.business_date(current_setting('t.shop_a')::uuid)::text, true);

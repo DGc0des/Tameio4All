@@ -13,7 +13,7 @@ set local role authenticated;
 select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1}')::text, true);
 select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
 select set_config('t.eleni', public.create_staff(current_setting('t.shop_a')::uuid, 'ΕΛΕΝΗ', '5678')::text, true);
-select set_config('t.code', public.create_pairing_code(current_setting('t.shop_a')::uuid), true);
+select set_config('t.code', public.owner_get_join_key(current_setting('t.shop_a')::uuid), true);
 select set_config('t.cfg_a', (select id::text from public.shop_configs where shop_id = current_setting('t.shop_a')::uuid), true);
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
@@ -26,7 +26,7 @@ reset role;
 -- Phone D1 pairs with shop A; maria signs in.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
-select public.redeem_pairing_code(current_setting('t.code'), 'Ταμείο');
+select public.join_shop(current_setting('t.code'), 'Ταμείο');
 select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
 reset role;
 select set_config('t.bd', private.business_date(current_setting('t.shop_a')::uuid)::text, true);
@@ -157,13 +157,13 @@ end $$;
 -- T7 a submit when no field was ever written works with revision 0 (shop B: owner-side nothing written).
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
-select set_config('t.code_b', public.create_pairing_code(current_setting('t.shop_b')::uuid), true);
+select set_config('t.code_b', public.owner_get_join_key(current_setting('t.shop_b')::uuid), true);
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
 insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created_at, updated_at) values
   ('00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now());
 set local role authenticated;
-select public.redeem_pairing_code(current_setting('t.code_b'), 'Ταμείο B');
+select public.join_shop(current_setting('t.code_b'), 'Ταμείο B');
 select set_config('t.token_b', public.staff_sign_in(current_setting('t.nikos')::uuid, '1234') ->> 'token', true);
 do $$
 declare r jsonb;

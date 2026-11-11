@@ -91,8 +91,8 @@ do $$ declare n int; begin
   update public.closings set voided_at = now() where id = '00000000-0000-0000-0000-00000000be01';
   get diagnostics n = row_count; if n <> 0 then raise exception 'T7 owner voided B closing'; end if;
 
-  -- T8 pairing codes are not readable at all
-  begin perform 1 from public.pairing_codes; raise exception 'T8 pairing codes readable';
+  -- T8 store keys are not readable at all
+  begin perform 1 from public.shop_join_keys; raise exception 'T8 store keys readable';
   exception when insufficient_privilege then null; end;
 end $$;
 reset role;

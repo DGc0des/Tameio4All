@@ -1,4 +1,4 @@
--- 050 — owner app support: shop rename, unlock_staff, pairing-code cleanup. One transaction, ends in ROLLBACK.
+-- 050 — owner app support: shop rename, unlock_staff, (pairing-code cleanup removed in stage 4). One transaction, ends in ROLLBACK.
 begin;
 insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created_at, updated_at) values
   ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'a1@test.local', false, now(), now()),
@@ -110,22 +110,5 @@ do $$ begin
   raise exception 'T8 anon can execute unlock_staff';
 end $$;
 reset role;
-
--- T9 creating a code deletes this shop's expired and used codes, not other shops' codes
-insert into public.pairing_codes (code_hash, shop_id, created_by, expires_at, used_at) values
-  ('t9-expired-a', current_setting('t.shop_a')::uuid, '00000000-0000-0000-0000-0000000000a1', now() - interval '1 minute', null),
-  ('t9-used-a',    current_setting('t.shop_a')::uuid, '00000000-0000-0000-0000-0000000000a1', now() + interval '5 minutes', now()),
-  ('t9-live-a',    current_setting('t.shop_a')::uuid, '00000000-0000-0000-0000-0000000000a1', now() + interval '5 minutes', null),
-  ('t9-expired-b', current_setting('t.shop_b')::uuid, '00000000-0000-0000-0000-0000000000b1', now() - interval '1 minute', null);
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
-set local role authenticated;
-select public.create_pairing_code(current_setting('t.shop_a')::uuid);
-reset role;
-do $$ begin
-  if exists (select 1 from public.pairing_codes where code_hash in ('t9-expired-a', 't9-used-a')) then raise exception 'T9 stale codes of A kept'; end if;
-  if not exists (select 1 from public.pairing_codes where code_hash = 't9-live-a') then raise exception 'T9 live code of A deleted'; end if;
-  if not exists (select 1 from public.pairing_codes where code_hash = 't9-expired-b') then raise exception 'T9 code of B deleted'; end if;
-  if (select count(*) from public.pairing_codes where shop_id = current_setting('t.shop_a')::uuid) <> 2 then raise exception 'T9 new code missing'; end if;
-end $$;
 
 rollback;
