@@ -401,11 +401,14 @@ begin
       'id', 'o1', 'description', 'Υδραυλικός', 'cents', 1200, 'addedBy', jsonb_build_object('kind', 'owner')))),
     current_setting('t.rev14')::bigint, 'h-15');
   if r ->> 'ok' <> 'true' then raise exception 'T15 resubmit after the owner save refused: %', r; end if;
-  if (private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date)).id::text <> r ->> 'closing_id' then
+  perform set_config('t.c15', r ->> 'closing_id', true);
+end $$;
+reset role;
+do $$ begin
+  if (private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date)).id::text <> current_setting('t.c15') then
     raise exception 'T15 resubmit is not current';
   end if;
 end $$;
-reset role;
 
 -- T16 a past-day correction (today - 1, filed in T11) leaves that day's open closing alone
 select set_config('t.f1_before', (select jsonb_build_object('revision', revision, 'last_submit', last_submit)::text

@@ -198,9 +198,13 @@ do $$ begin
 end $$;
 reset role;
 
--- T9 pre-existing rows are staff rows; the shape check holds
+-- T9 every row obeys closings_kind_shape (staff vs owner_correction); the shape check rejects bad inserts
 do $$ begin
-  if exists (select 1 from public.closings where kind <> 'staff' or staff_id is null or device_user_id is null) then raise exception 'T9 existing row not a staff row'; end if;
+  if exists (select 1 from public.closings where not (
+    (kind = 'staff' and staff_id is not null and device_user_id is not null and corrected_by is null and corrects_closing_id is null)
+    or (kind = 'owner_correction' and staff_id is null and device_user_id is null and corrected_by is not null))) then
+    raise exception 'T9 existing row violates the kind shape rule';
+  end if;
   begin
     insert into public.closings (shop_id, kind, config_id, business_date, inputs, idempotency_key)
     values (current_setting('t.shop_a')::uuid, 'staff', current_setting('t.cfg_a')::uuid, current_date, '{}', 't9a');
