@@ -37,6 +37,14 @@ describe('fromServerResult', () => {
     });
     expect(fromServerResult({ ok: false, error: 'staff_locked' })).toEqual({ code: 'staff_locked', lockedUntil: null });
   });
+  it('maps device_locked with its deadline', () => {
+    expect(fromServerResult({ ok: false, error: 'device_locked', locked_until: '2026-11-14T10:00:00Z' })).toEqual({
+      code: 'device_locked',
+      lockedUntil: '2026-11-14T10:00:00Z',
+    });
+    expect(fromServerResult({ ok: false, error: 'device_locked' })).toEqual({ code: 'device_locked', lockedUntil: null });
+    expect(fromServerResult({ ok: false, error: 'device_locked', locked_until: 5 })).toEqual({ code: 'device_locked', lockedUntil: null });
+  });
   it('returns null on success', () => {
     expect(fromServerResult({ ok: true })).toBeNull();
   });
@@ -57,6 +65,7 @@ describe('deviceErrorMessage', () => {
     { code: 'network' }, { code: 'unknown', detail: 'x' },
     { code: 'stale', current: { key: 'c:a', value: null, version: 0, updatedByName: '', updatedAt: '' } }, { code: 'bad_field' },
     { code: 'too_many_expenses' }, { code: 'draft_changed', revision: 3 }, { code: 'other_shop' },
+    { code: 'device_locked', lockedUntil: null },
   ];
   it('has a non-empty message for every code', () => {
     for (const e of all) expect(deviceErrorMessage(e).length).toBeGreaterThan(0);
@@ -67,5 +76,22 @@ describe('deviceErrorMessage', () => {
     expect(deviceErrorMessage({ code: 'invalid_code' })).toBe('Ο κωδικός καταστήματος δεν ισχύει. Ζήτα τον νέο σύνδεσμο.');
     expect(deviceErrorMessage({ code: 'not_a_device' })).toBe('Αυτή η συσκευή δεν είναι σε κατάστημα. Άνοιξε τον σύνδεσμο του καταστήματος.');
     expect(deviceErrorMessage({ code: 'other_shop' })).toBe('Η συσκευή είναι ήδη σε άλλο κατάστημα.');
+  });
+  it('says until when a lock lasts, in shop time (Europe/Athens)', () => {
+    // 10:00Z in November = 12:00 in Athens (UTC+2).
+    expect(deviceErrorMessage({ code: 'device_locked', lockedUntil: '2026-11-14T10:00:00Z' })).toBe(
+      'Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά στις 12:00.',
+    );
+    expect(deviceErrorMessage({ code: 'device_locked', lockedUntil: null })).toBe(
+      'Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά αργότερα.',
+    );
+    expect(deviceErrorMessage({ code: 'device_locked', lockedUntil: 'garbage' })).toBe(
+      'Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά αργότερα.',
+    );
+    // The lock time escalates, so the cashier message no longer promises 15 minutes.
+    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: '2026-11-14T10:00:00Z' })).toBe(
+      'Κλείδωσε μετά από 5 λάθος PIN. Δοκίμασε ξανά στις 12:00.',
+    );
+    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: null })).toBe('Κλείδωσε μετά από 5 λάθος PIN. Δοκίμασε ξανά αργότερα.');
   });
 });

@@ -284,6 +284,17 @@ describe('PhoneApp', () => {
     expect(loadStaffSession(store)).toBeNull();
   });
 
+  it('a locked phone stays on the sign-in screen and says until when (Review Focus 1)', async () => {
+    const signInFn = vi.fn<DeviceApi['signIn']>(() => fail<StaffSession>({ code: 'device_locked', lockedUntil: '2026-11-07T21:15:00Z' }));
+    start(fakeDeviceApi({ signIn: signInFn }));
+    await signIn('1234');
+    expect(await screen.findByText('Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά στις 23:15.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
+    expect(screen.queryByRole('heading', ENTRY)).toBeNull();
+    expect(screen.queryByLabelText('100€')).toBeNull();
+    expect(signInFn).toHaveBeenCalledTimes(1);
+  });
+
   it('a revoked phone found while signing in goes to the entry screen', async () => {
     start(fakeDeviceApi({ signIn: vi.fn(() => fail<StaffSession>({ code: 'device_revoked' })) }));
     await signIn('1234');

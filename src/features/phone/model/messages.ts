@@ -1,4 +1,11 @@
+import { formatTimeEl } from '../../../app/dates';
 import type { DeviceError } from '../../../data/remote/deviceApi';
+
+/** «στις HH:MM» (shop time) for a readable deadline, otherwise «αργότερα». */
+function retryAt(lockedUntil: string | null): string {
+  if (lockedUntil === null || Number.isNaN(Date.parse(lockedUntil))) return 'αργότερα';
+  return `στις ${formatTimeEl(lockedUntil)}`;
+}
 
 /** Greek, user-facing. Exhaustive over DeviceError so a new code cannot ship without a message. */
 export function deviceErrorMessage(e: DeviceError): string {
@@ -18,7 +25,9 @@ export function deviceErrorMessage(e: DeviceError): string {
     case 'bad_pin':
       return 'Λάθος PIN.';
     case 'staff_locked':
-      return 'Κλείδωσε για 15 λεπτά μετά από 5 λάθος PIN.';
+      return `Κλείδωσε μετά από 5 λάθος PIN. Δοκίμασε ξανά ${retryAt(e.lockedUntil)}.`;
+    case 'device_locked':
+      return `Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά ${retryAt(e.lockedUntil)}.`;
     case 'session_invalid':
       return 'Η σύνδεση έληξε. Βάλε ξανά το PIN σου.';
     case 'wrong_day':

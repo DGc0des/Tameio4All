@@ -127,6 +127,13 @@ describe('gateReducer — transitions', () => {
     expect(gateReducer(loading, { t: 'loaded', ctx: today, stored: null })).toEqual({ s: 'signed_out', ctx: today, offline: false });
   });
 
+  it('server_error staff_locked / device_locked changes nothing (the sign-in screen shows the message)', () => {
+    for (const code of ['staff_locked', 'device_locked'] as const) {
+      expect(gateReducer(signedOut, { t: 'server_error', error: { code, lockedUntil: null } })).toBe(signedOut);
+      expect(gateReducer(ready, { t: 'server_error', error: { code, lockedUntil: null } })).toBe(ready);
+    }
+  });
+
   it('server_error device_revoked from ready → unpaired (Review Focus 4)', () => {
     expect(gateReducer(ready, { t: 'server_error', error: { code: 'device_revoked' } })).toEqual({
       s: 'unpaired',

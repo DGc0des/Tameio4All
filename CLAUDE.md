@@ -133,8 +133,30 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   τον νέο σύνδεσμο».
 - A non-UUID id sent to any function fails with a Postgres type error before the function runs (nothing
   is changed).
-- `verify_staff_pin` / `staff_sign_in` / `submit_closing` return `{ok:false,error}` for expected failures — never
-  raise there (a raise rolls back the PIN lockout counter).
+- `staff_sign_in` / `submit_closing` / `set_closing_field` return `{ok:false,error}` for expected failures — never
+  raise there (a raise rolls back the PIN lockout counters). `staff_sign_in` is the only PIN entry point
+  (`verify_staff_pin` was dropped, L93); every PIN goes through `private.check_staff_pin`.
+- **PIN lockout** (migration `20261114000003_pin_lockout`, H24/M39). A phone is *trusted for a cashier* once that
+  cashier entered a correct PIN on it (a `device_staff_trust` row, written inside `check_staff_pin`; no client
+  table access). Wrong PINs are counted on two tracks:
+
+  | Phone is… | Wrong PIN is counted on | At 5 wrong | Blocks |
+  |---|---|---|---|
+  | not trusted for this cashier | `staff.failed_attempts` | the **cashier** is locked (`staff_locked`) | only phones not trusted for this cashier |
+  | trusted for this cashier | `device_staff_trust.failed_attempts` | the **phone** is locked (`device_locked`) | everyone on that phone |
+
+  Both results carry `locked_until`; the phone shows «Δοκίμασε ξανά στις HH:MM» (shop time) and stays on the
+  sign-in screen. Lock time escalates through `private.lock_duration(level)` = `least(15 min · 2^least(level, 7),
+  24 h)` → 15 m, 30 m, 1 h, 2 h, 4 h, 8 h, 16 h, then 24 h (`staff.lock_level` / `devices.lock_level`); the level
+  restarts at 0 when the previous lock ended more than 7 days ago (or there was none). **A correct PIN never clears
+  `locked_until` or `lock_level`** (an expired lock is harmless and the level must survive); it resets only its own
+  track's counter. `unlock_staff`/`set_staff_pin` reset the cashier's counter, lock and level; «Αφαίρεση»
+  (`owner_remove_device`) deletes the device row and with it its lock and trust rows (cascade); a `join_shop` that
+  moves a phone to another shop deletes its trust rows and clears its lock. **Lock order device → staff**:
+  `check_staff_pin` locks the `devices` row `FOR UPDATE` first, then the `staff` row; any function that locks both
+  must keep that order. Residual, accepted: an outsider can keep a cashier locked on phones that cashier has never
+  used (the way out is «Νέος σύνδεσμος»); a phone locked for a long time is freed by «Αφαίρεση» (it re-joins
+  untrusted).
 - Owner screens never call supabase directly — only through `OwnerApi`; UI tests use
   `tests/features/owner/fakeApi.ts` and never load supabase-js.
 - Auth uses PKCE with `detectSessionInUrl: false`; email links return as `?auth=signup|recovery&code=…`
@@ -160,7 +182,7 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   is stored (the PIN is never stored; the raw token only lives on the phone). One live session per phone (a new
   sign-in revokes the phone's earlier ones), valid for its business date only; it dies on sign-out, device
   revocation or staff deactivation. Phone functions authorize from the token + `auth.uid()`, never a
-  client-sent staff or shop id. Phones cannot read `staff_sessions` or call `private.*`.
+  client-sent staff or shop id. Phones cannot read `staff_sessions`/`device_staff_trust` or call `private.*`.
 - Phone: a stored `StaffSession` is used only when its `shopId` and `businessDate` match the device context;
   it is saved while the gate is `ready` and cleared on `signed_out`/`unpaired`. The gate entering `loading` is the
   one reload path (PhoneApp runs `loadGate`): after joining, after a sign-in that was offline or doesn't match

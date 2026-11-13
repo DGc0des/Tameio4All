@@ -13,7 +13,10 @@ export type DeviceError =
   | { code: 'owner_signed_in' }
   | { code: 'staff_not_found' }
   | { code: 'bad_pin' }
+  /** Too many wrong PINs for this cashier from phones they never signed in on. */
   | { code: 'staff_locked'; lockedUntil: string | null }
+  /** Too many wrong PINs on this phone (for a cashier who signed in here before): locked for everyone on it. */
+  | { code: 'device_locked'; lockedUntil: string | null }
   | { code: 'session_invalid' }
   | { code: 'wrong_day' }
   | { code: 'config_mismatch' }

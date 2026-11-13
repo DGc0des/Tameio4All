@@ -54,8 +54,8 @@ export function fromServerResult(json: unknown, ctx?: { key?: FieldKey }): Devic
   if (j.ok === true) return null;
   const error = str(j.error);
   if (j.ok !== false) return { code: 'unknown', detail: 'bad_response' };
-  if (error === 'staff_locked') {
-    return { code: 'staff_locked', lockedUntil: typeof j.locked_until === 'string' ? j.locked_until : null };
+  if (error === 'staff_locked' || error === 'device_locked') {
+    return { code: error, lockedUntil: typeof j.locked_until === 'string' ? j.locked_until : null };
   }
   if (error === 'draft_changed') {
     return typeof j.revision === 'number' && Number.isSafeInteger(j.revision)

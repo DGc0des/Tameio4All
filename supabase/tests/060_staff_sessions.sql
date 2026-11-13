@@ -115,7 +115,10 @@ do $$ begin
   end if;
 end $$;
 
--- T4 5 wrong PINs → 5th is staff_locked; the lock is persisted (returned, not raised)
+-- T4 5 wrong PINs → 5th is staff_locked; the lock is persisted (returned, not raised).
+-- d1 became trusted for maria at T1 (its misses would lock the phone, covered by 140); drop that trust row as the
+-- migration owner so this stays a test of the cashier track.
+delete from public.device_staff_trust where device_user_id = '00000000-0000-0000-0000-0000000000d1';
 set local role authenticated;
 do $$
 declare r jsonb;
