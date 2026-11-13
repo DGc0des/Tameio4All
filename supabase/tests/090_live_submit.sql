@@ -32,8 +32,7 @@ reset role;
 select set_config('t.bd', private.business_date(current_setting('t.shop_a')::uuid)::text, true);
 select set_config('t.good', jsonb_build_object(
   'schema', 2, 'counts', jsonb_build_object('10000', 5), 'channelCents', jsonb_build_object('wolt', 4560),
-  'expenses', jsonb_build_array(jsonb_build_object('id', 'e1', 'description', 'Nice', 'cents', 1300,
-    'addedBy', jsonb_build_object('kind', 'staff', 'id', current_setting('t.maria'))))
+  'expenses', '[]'::jsonb  -- no expense lines: since M40 a submitted line must exist in the live closing (see T9/T-M40)
 )::text, true);
 
 
@@ -244,7 +243,7 @@ begin
   if r is distinct from jsonb_build_object('ok', true, 'closing_id', r -> 'closing_id', 'repeat', false) or r ->> 'closing_id' is null then
     raise exception 'T9 staff line with its author refused: %', r;
   end if;
-  -- a line with no e: field and an owner author keeps the stage-1 rule
+  -- a line with no e: field is refused whoever the author is (M40; the stage-1 fallback is gone)
   r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
         'expenses', jsonb_build_array(jsonb_build_object('id', 'zz9', 'description', 'X', 'cents', 100, 'addedBy', owner_a))), rev, 'key-9e');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T9 owner line without a field accepted: %', r; end if;
@@ -252,6 +251,52 @@ end $$;
 reset role;
 do $$ begin
   if exists (select 1 from public.closings where idempotency_key in ('key-9b', 'key-9c', 'key-9e')) then raise exception 'T9 a refused submit stored a closing'; end if;
+end $$;
+
+-- T-M40 a submitted line must exist, not removed, in the live closing, with its stored author.
+set local role authenticated;
+do $$
+declare
+  tok text := current_setting('t.token');
+  cfg uuid := current_setting('t.cfg_a')::uuid;
+  bd date := current_setting('t.bd')::date;
+  maria jsonb := jsonb_build_object('kind', 'staff', 'id', current_setting('t.maria'));
+  eleni jsonb := jsonb_build_object('kind', 'staff', 'id', current_setting('t.eleni'));
+  owner_a jsonb := jsonb_build_object('kind', 'owner');
+  rev bigint;
+  r jsonb;
+begin
+  rev := (public.get_open_closing(tok) #>> '{closing,revision}')::bigint;
+  -- T-M40-1 invented line attributed to a colleague -> bad_inputs
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'inv1', 'description', 'X', 'cents', 100, 'addedBy', eleni))), rev, 'key-m40-1');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T-M40-1 invented line for a colleague accepted: %', r; end if;
+  -- T-M40-2 invented line under the cashier's own id -> bad_inputs
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'inv2', 'description', 'X', 'cents', 100, 'addedBy', maria))), rev, 'key-m40-2');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T-M40-2 invented own line accepted: %', r; end if;
+  -- T-M40-4 no lines -> ok; an existing, not removed line with its stored author -> ok
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', '[]'::jsonb), rev, 'key-m40-4a');
+  if (r ->> 'ok')::boolean is not true then raise exception 'T-M40-4 empty expenses refused: %', r; end if;
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'o1', 'description', 'Υδραυλικός', 'cents', 1200, 'addedBy', owner_a))), rev, 'key-m40-4b');
+  if (r ->> 'ok')::boolean is not true then raise exception 'T-M40-4 existing line refused: %', r; end if;
+  -- T-M40-3 the line m1 (Μαρία's, already submitted as key-9d) is removed -> a submit that still has it is bad_inputs
+  r := public.set_closing_field(tok, bd, 'e:m1', '{"addedBy":{"kind":"owner"},"order":2,"removed":true}', null);
+  if (r ->> 'ok')::boolean is not true then raise exception 'T-M40-3 remove failed: %', r; end if;
+  rev := (public.get_open_closing(tok) #>> '{closing,revision}')::bigint;
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'm1', 'description', 'X', 'cents', 100, 'addedBy', maria))), rev, 'key-m40-3');
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T-M40-3 removed line accepted: %', r; end if;
+  -- T-M40-5 the lost-answer retry of key-9d (stored before the removal) is still a repeat, with an old revision
+  r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'm1', 'description', 'X', 'cents', 100, 'addedBy', maria))), rev - 1, 'key-9d');
+  if (r ->> 'ok')::boolean is not true or (r ->> 'repeat')::boolean is not true then raise exception 'T-M40-5 retry after removal not a repeat: %', r; end if;
+end $$;
+reset role;
+do $$ begin
+  if exists (select 1 from public.closings where idempotency_key in ('key-m40-1', 'key-m40-2', 'key-m40-3')) then raise exception 'T-M40 a refused submit stored a closing'; end if;
 end $$;
 
 rollback;

@@ -22,6 +22,9 @@ set local role authenticated;
 select public.join_shop(current_setting('t.code'), 'Δεύτερο');
 reset role;
 
+-- Since M40 a submitted line must exist in the live closing; the pinned config allows lines.
+update public.shop_configs set config = '{"schema":1,"maxExpenses":5}' where id = current_setting('t.cfg_a')::uuid;
+
 -- Phone D1 joins, signs in, and submits today's closing with one expense line.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
@@ -31,10 +34,16 @@ select public.get_open_closing(current_setting('t.token'));
 do $$
 declare r jsonb;
 begin
+  -- the line exists in the live closing first (M40)
+  r := public.set_closing_field(current_setting('t.token'), current_setting('t.bd')::date, 'e:e1', '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', null);
+  if (r ->> 'ok')::boolean is not true then raise exception 'setup e:e1 failed: %', r; end if;
+  r := public.set_closing_field(current_setting('t.token'), current_setting('t.bd')::date, 'e:e1:d', '{"text":"Nice"}', null);
+  r := public.set_closing_field(current_setting('t.token'), current_setting('t.bd')::date, 'e:e1:a', '{"text":"13"}', null);
+  if r ->> 'revision' is distinct from '3' then raise exception 'setup e:e1:a failed: %', r; end if;
   r := public.submit_closing(current_setting('t.token'), current_setting('t.cfg_a')::uuid, current_setting('t.bd')::date,
         jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
           'expenses', jsonb_build_array(jsonb_build_object('id', 'e1', 'description', 'Nice', 'cents', 1300,
-            'addedBy', jsonb_build_object('kind', 'staff', 'id', current_setting('t.maria'))))), 0, 'h23-1');
+            'addedBy', jsonb_build_object('kind', 'staff', 'id', current_setting('t.maria'))))), 3, 'h23-1');
   if (r ->> 'ok')::boolean is not true then raise exception 'setup submit failed: %', r; end if;
 end $$;
 reset role;

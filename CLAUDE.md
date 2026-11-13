@@ -96,7 +96,8 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   migration updating that check, or phones' submissions will be refused as `bad_inputs`.
 - Schema 2 is a cross-file invariant: `validateClosingInputs` and `private.inputs_shape_ok` both accept 1|2;
   `submit_closing` accepts only 2 (`bad_inputs` otherwise); schema-2 expenses need `id` (1–64 chars) and `addedBy`
-  (`{kind:'staff',id: uuid of a staff of the shop}` or `{kind:'owner'}`). Change one side and the other needs a
+  (`{kind:'staff',id: uuid of a staff of the shop}` or `{kind:'owner'}`); `submit_closing` further requires each line to
+  be a live, not removed `e:<id>` field with that same author (`owner_save_closing` for past days keeps the staff-of-the-shop rule). Change one side and the other needs a
   migration/commit in the same change.
 - Internal `private.*` helpers are not callable by clients, except `private.is_shop_owner` and
   `private.can_use_shop_topic` (both executable by `authenticated`; row-level security / realtime policies need
@@ -257,9 +258,10 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   broadcasts `submitted`; the open closing and its fields are kept (resubmit with a new key stores another
   row). The revision proves the client saw the latest fields; it does not prove `inputs` equals the merged
   fields (same trust as stage 1: the phone is the authenticated cashier).
-- **Owner-authored lines are submittable.** An expense `addedBy` must equal the stored author of that line's
-  `e:<id>` field in the open closing (owner or staff); for an id with no `e:<id>` field the stage-1 rule applies
-  (staff of the shop only, no owner). Authors stay server-attributed.
+- **Submitted lines must exist in the live closing (M40).** Every expense of `submit_closing` needs an `e:<id>` field
+  in the open closing that is not `removed`, and its `addedBy` must equal that field's stored author (owner or staff).
+  There is no fallback for an id with no field (the stage-1 rule is gone: an invented line is `bad_inputs`). Authors
+  stay server-attributed. A retry of an already stored submit is answered by the idempotency lookup before this check.
 - **Idempotency key** (client): minted when the submit sheet opens, kept while the inputs are unchanged and not
   yet acknowledged (retry / reopened sheet reuse it); an edit, a successful submit, or `draft_changed` makes the
   next opening mint a new key. `draft_changed` is not a failure: it does **not** go to `onServerError` (the sheet

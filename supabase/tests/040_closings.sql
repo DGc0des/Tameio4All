@@ -24,6 +24,9 @@ select set_config('t.cfg_b', (select id::text from public.shop_configs where sho
 reset role;
 select set_config('t.bd', private.business_date(current_setting('t.shop_a')::uuid)::text, true);
 
+-- Since M40 a submitted line must exist in the live closing; the pinned config allows lines.
+update public.shop_configs set config = '{"schema":1,"maxExpenses":5}' where id = current_setting('t.cfg_a')::uuid;
+
 -- Phone D1 pairs with shop A; maria signs in.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
@@ -39,57 +42,67 @@ declare
   author jsonb := jsonb_build_object('kind', 'staff', 'id', current_setting('t.maria'));
   good jsonb;
   r jsonb;
+  i int;
 begin
   good := jsonb_build_object('schema', 2, 'counts', '{"10000":5}'::jsonb, 'channelCents', '{"wolt":4560}'::jsonb,
             'expenses', jsonb_build_array(jsonb_build_object('id', 'e1', 'description', 'Nice', 'cents', 1300, 'addedBy', author)));
 
+  -- Setup: Μαρία creates the live lines e1 and e2 (revisions 1-6), as the app does before Υποβολή.
+  for i in 1..2 loop
+    r := public.set_closing_field(tok, bd, 'e:e' || i, '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', null);
+    if (r ->> 'ok')::boolean is not true then raise exception 'setup e:e% failed: %', i, r; end if;
+    r := public.set_closing_field(tok, bd, 'e:e' || i || ':d', '{"text":"x"}', null);
+    r := public.set_closing_field(tok, bd, 'e:e' || i || ':a', '{"text":"1"}', null);
+  end loop;
+  if r ->> 'revision' is distinct from '6' then raise exception 'setup revision wrong: %', r; end if;
+
   -- T1 happy path
-  r := public.submit_closing(tok, cfg, bd, good, 0, 'key-1');
+  r := public.submit_closing(tok, cfg, bd, good, 6, 'key-1');
   if (r ->> 'ok')::boolean is not true then raise exception 'T1 submit failed: %', r; end if;
   perform set_config('t.closing', r ->> 'closing_id', true);
 
   -- T2 same key, same inputs (key order different) → harmless repeat, same id
   r := public.submit_closing(tok, cfg, bd, jsonb_build_object(
         'expenses', jsonb_build_array(jsonb_build_object('addedBy', author, 'cents', 1300, 'description', 'Nice', 'id', 'e1')),
-        'channelCents', '{"wolt":4560}'::jsonb, 'counts', '{"10000":5}'::jsonb, 'schema', 2), 0, 'key-1');
+        'channelCents', '{"wolt":4560}'::jsonb, 'counts', '{"10000":5}'::jsonb, 'schema', 2), 6, 'key-1');
   if (r ->> 'ok')::boolean is not true or r ->> 'closing_id' <> current_setting('t.closing') or (r ->> 'repeat')::boolean is not true then
     raise exception 'T2 repeat not recognised: %', r;
   end if;
 
   -- T3 same key, different inputs → idempotency_conflict
-  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{"10000":9},"channelCents":{},"expenses":[]}', 0, 'key-1');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{"10000":9},"channelCents":{},"expenses":[]}', 6, 'key-1');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'idempotency_conflict') then raise exception 'T3 expected idempotency_conflict: %', r; end if;
 
   -- T4 another shop's config / staff are refused
-  r := public.submit_closing(tok, current_setting('t.cfg_b')::uuid, bd, good, 0, 'key-2');
+  r := public.submit_closing(tok, current_setting('t.cfg_b')::uuid, bd, good, 6, 'key-2');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'config_mismatch') then raise exception 'T4 expected config_mismatch: %', r; end if;
   r := public.staff_sign_in(current_setting('t.nikos')::uuid, '1234');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'staff_not_found') then raise exception 'T4b expected staff_not_found: %', r; end if;
 
   -- T5 malformed inputs are refused (checked against the full expected shape, so a silent success
   -- with a null 'error' key can't slip past an `<>` comparison that would itself evaluate to null)
-  r := public.submit_closing(tok, cfg, bd, '{"schema":3,"counts":{},"channelCents":{},"expenses":[]}', 0, 'key-3');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":3,"counts":{},"channelCents":{},"expenses":[]}', 6, 'key-3');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 schema 3 accepted: %', r; end if;
-  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{},"channelCents":{}}', 0, 'key-3');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{},"channelCents":{}}', 6, 'key-3');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 missing expenses accepted: %', r; end if;
-  r := public.submit_closing(tok, cfg, bd, '{"schema":"2","counts":{},"channelCents":{},"expenses":[]}', 0, 'key-3');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":"2","counts":{},"channelCents":{},"expenses":[]}', 6, 'key-3');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 string schema accepted: %', r; end if;
-  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{},"channelCents":{},"expenses":[{"description":7,"cents":"x"}]}', 0, 'key-3');
+  r := public.submit_closing(tok, cfg, bd, '{"schema":2,"counts":{},"channelCents":{},"expenses":[{"description":7,"cents":"x"}]}', 6, 'key-3');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 malformed expense accepted: %', r; end if;
-  r := public.submit_closing(tok, cfg, null, good, 0, 'key-3');
+  r := public.submit_closing(tok, cfg, null, good, 6, 'key-3');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 null date accepted: %', r; end if;
   r := public.submit_closing(tok, cfg, bd, good, 0, '');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_inputs') then raise exception 'T5 empty key accepted: %', r; end if;
 
   -- T6 a missing or unknown session token stores nothing
-  r := public.submit_closing(null, cfg, bd, good, 0, 'key-4');
+  r := public.submit_closing(null, cfg, bd, good, 6, 'key-4');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'session_invalid') then raise exception 'T6 null token accepted: %', r; end if;
-  r := public.submit_closing(repeat('0', 64), cfg, bd, good, 0, 'key-4');
+  r := public.submit_closing(repeat('0', 64), cfg, bd, good, 6, 'key-4');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'session_invalid') then raise exception 'T6 unknown token accepted: %', r; end if;
 
   -- T7 a second real closing of the same day stores fine
   r := public.submit_closing(tok, cfg, bd, jsonb_build_object('schema', 2, 'counts', '{}'::jsonb, 'channelCents', '{}'::jsonb,
-        'expenses', jsonb_build_array(jsonb_build_object('id', 'e2', 'description', 'Μεβγάλ', 'cents', 2160, 'addedBy', author))), 0, 'key-5');
+        'expenses', jsonb_build_array(jsonb_build_object('id', 'e2', 'description', 'Μεβγάλ', 'cents', 2160, 'addedBy', author))), 6, 'key-5');
   if (r ->> 'ok')::boolean is not true then raise exception 'T7 second closing failed: %', r; end if;
   perform set_config('t.closing2', r ->> 'closing_id', true);
 end $$;

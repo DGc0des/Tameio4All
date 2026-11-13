@@ -39,6 +39,8 @@ do $$ begin
   end if;
 end $$;
 
+-- Since M40 a submitted line must exist in the live closing; the pinned config allows lines.
+update public.shop_configs set config = '{"schema":1,"maxExpenses":5}' where id = current_setting('t.cfg_a')::uuid;
 -- Setup: two submissions today (the second with another expense); old open closings.
 set local role authenticated;
 do $$
@@ -47,20 +49,28 @@ declare
   cfg uuid := current_setting('t.cfg_a')::uuid;
   bd date := current_setting('t.bd')::date;
   maria jsonb := jsonb_build_object('kind', 'staff', 'id', current_setting('t.maria'));
-  in1 jsonb; in2 jsonb; r jsonb;
+  in1 jsonb; in2 jsonb; r jsonb; i int;
 begin
   r := public.set_closing_field(tok, bd, 'c:wolt', '{"text":"45,60"}', 0);
   if r ->> 'ok' <> 'true' then raise exception 'setup write failed: %', r; end if;
+  -- Μαρία creates the live line(s) first (M40): revisions 2-7.
+  for i in 1..2 loop
+    r := public.set_closing_field(tok, bd, 'e:e' || i, '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', null);
+    if (r ->> 'ok')::boolean is not true then raise exception 'setup e:e% failed: %', i, r; end if;
+    r := public.set_closing_field(tok, bd, 'e:e' || i || ':d', '{"text":"x"}', null);
+    r := public.set_closing_field(tok, bd, 'e:e' || i || ':a', '{"text":"1"}', null);
+  end loop;
+  if r ->> 'revision' is distinct from '7' then raise exception 'setup revision wrong: %', r; end if;
   in1 := jsonb_build_object('schema', 2, 'counts', jsonb_build_object('10000', 5), 'channelCents', jsonb_build_object('wolt', 4560),
     'expenses', jsonb_build_array(jsonb_build_object('id', 'e1', 'description', 'Nice', 'cents', 1300, 'addedBy', maria)));
   in2 := jsonb_build_object('schema', 2, 'counts', jsonb_build_object('10000', 5), 'channelCents', jsonb_build_object('wolt', 4560),
     'expenses', jsonb_build_array(
       jsonb_build_object('id', 'e1', 'description', 'Nice', 'cents', 1300, 'addedBy', maria),
       jsonb_build_object('id', 'e2', 'description', 'Μεβγάλ', 'cents', 2160, 'addedBy', maria)));
-  r := public.submit_closing(tok, cfg, bd, in1, 1, 'h-1');
+  r := public.submit_closing(tok, cfg, bd, in1, 7, 'h-1');
   if r ->> 'ok' <> 'true' then raise exception 'setup submit 1 failed: %', r; end if;
   perform set_config('t.c1', r ->> 'closing_id', true);
-  r := public.submit_closing(tok, cfg, bd, in2, 1, 'h-2');
+  r := public.submit_closing(tok, cfg, bd, in2, 7, 'h-2');
   if r ->> 'ok' <> 'true' then raise exception 'setup submit 2 failed: %', r; end if;
   perform set_config('t.c2', r ->> 'closing_id', true);
   perform set_config('t.in2', in2::text, true);
