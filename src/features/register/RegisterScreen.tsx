@@ -98,7 +98,7 @@ export function RegisterScreen(props: RegisterProps) {
 
   useEffect(() => {
     let cancelled = false;
-    void api.suggestionData().then((r) => {
+    void api.suggestionData(session.token).then((r) => {
       if (cancelled) return;
       if (r.ok) setHistory(buildSupplierHistory(r.data));
       else onServerError(r.error);
@@ -106,7 +106,7 @@ export function RegisterScreen(props: RegisterProps) {
     return () => {
       cancelled = true;
     };
-  }, [api, onServerError, historyRound]);
+  }, [api, onServerError, historyRound, session.token]);
 
   // The engine's notices (an offline edit lost to someone else, a day change) show once as a toast.
   useEffect(() => {

@@ -8,6 +8,7 @@ import { loadPending } from '../../src/data/local/openClosing';
 import { loadStaffSession, saveCachedContext, saveStaffSession } from '../../src/data/local/phone';
 import { memoryStore, shopKey, type KeyValueStore } from '../../src/data/local/storage';
 import type { DeviceApi } from '../../src/data/remote/deviceApi';
+import type { PastExpense } from '../../src/core/suggestions';
 import type { OwnerAppProps } from '../../src/features/owner/OwnerApp';
 import type { ShareFn } from '../../src/features/register/share';
 import { joinJuicePreset } from '../../src/core/presets';
@@ -264,6 +265,23 @@ describe('register flows', () => {
     type('100€', '1500');
     expect(button('Υποβολή').disabled).toBe(true);
     expect(screen.getByText('Χρειάζεται σύνδεση για υποβολή')).toBeTruthy();
+  });
+
+  it('asks for suggestions with the signed-in session token (H23)', async () => {
+    const api = fakeDeviceApi();
+    await start(memoryStore(), true, api);
+    expect(api.suggestionData).toHaveBeenCalledWith('token-1');
+  });
+
+  it('an unknown suggestion failure leaves the register usable (Review Focus 5)', async () => {
+    const api = fakeDeviceApi({
+      suggestionData: vi.fn(() => fail<PastExpense[]>({ code: 'unknown', detail: 'x' })),
+    });
+    await start(memoryStore(), true, api);
+    await settle();
+    type('100€', '3');
+    expect((screen.getByLabelText('100€') as HTMLInputElement).value).toBe('3');
+    expect(screen.queryByRole('heading', { name: 'Ποιος είσαι;' })).toBeNull();
   });
 
   it('suggests a supplier from the server history and learns a submitted expense', async () => {

@@ -305,15 +305,20 @@ begin
    where (x ->> 'business_date')::date = current_setting('t.bd')::date - 1;
   if d ->> 'status' <> 'submitted' then raise exception 'T11 day not submitted: %', d; end if;
 end $$;
--- a phone reads its suggestions: the new day's lines are in (relies on the day being within the window)
+-- a phone reads its suggestions: the new day's lines are in (relies on the day being within the window).
+-- ΜΑΡΙΑ is deactivated since T9 (which killed her session), so she is reactivated for a fresh sign-in
+-- and deactivated again afterwards.
+update public.staff set active = true where id = current_setting('t.maria')::uuid;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
+select set_config('t.stok', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
 do $$ begin
-  if not exists (select 1 from public.expense_suggestion_data() where description = 'Ιδιοκτήτης έξοδο' and business_date = current_setting('t.bd')::date - 1) then
+  if not exists (select 1 from public.expense_suggestion_data(current_setting('t.stok')) where description = 'Ιδιοκτήτης έξοδο' and business_date = current_setting('t.bd')::date - 1) then
     raise exception 'T11 suggestions miss the corrected day';
   end if;
 end $$;
 reset role;
+update public.staff set active = false where id = current_setting('t.maria')::uuid;
 
 -- T12 no_closing_day, nothing stored
 do $$ begin perform set_config('t.n12', (select count(*)::text from public.closings), true); end $$;

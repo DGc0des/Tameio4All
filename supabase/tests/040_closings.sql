@@ -121,11 +121,11 @@ insert into public.closings (shop_id, staff_id, device_user_id, config_id, busin
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
-  if (select array_agg(description order by description) from public.expense_suggestion_data()) is distinct from array['Μεβγάλ', 'Νερό'] then
-    raise exception 'T9 wrong suggestion data: %', (select array_agg(description) from public.expense_suggestion_data());
+  if (select array_agg(description order by description) from public.expense_suggestion_data(current_setting('t.token'))) is distinct from array['Μεβγάλ', 'Νερό'] then
+    raise exception 'T9 wrong suggestion data: %', (select array_agg(description) from public.expense_suggestion_data(current_setting('t.token')));
   end if;
-  if (select cents from public.expense_suggestion_data() where description = 'Μεβγάλ') <> 2160 then raise exception 'T9 wrong cents'; end if;
-  if (select business_date from public.expense_suggestion_data() where description = 'Νερό') <> current_setting('t.bd')::date - 1 then raise exception 'T9 wrong date'; end if;
+  if (select cents from public.expense_suggestion_data(current_setting('t.token')) where description = 'Μεβγάλ') <> 2160 then raise exception 'T9 wrong cents'; end if;
+  if (select business_date from public.expense_suggestion_data(current_setting('t.token')) where description = 'Νερό') <> current_setting('t.bd')::date - 1 then raise exception 'T9 wrong date'; end if;
 end $$;
 reset role;
 
@@ -137,7 +137,7 @@ do $$ begin
        '{"schema":2,"counts":{},"channelCents":{},"expenses":[]}', 0, 'owner-key') is distinct from jsonb_build_object('ok', false, 'error', 'not_a_device') then
     raise exception 'T10 owner submitted a closing';
   end if;
-  if (select count(*) from public.expense_suggestion_data()) <> 0 then raise exception 'T10 owner got phone suggestion data'; end if;
+  if (select count(*) from public.expense_suggestion_data(current_setting('t.token'))) <> 0 then raise exception 'T10 owner got phone suggestion data'; end if;
 end $$;
 reset role;
 
@@ -150,7 +150,7 @@ do $$ begin
        '{"schema":2,"counts":{},"channelCents":{},"expenses":[]}', 0, 'revoked-key') is distinct from jsonb_build_object('ok', false, 'error', 'device_revoked') then
     raise exception 'T11 revoked phone submitted';
   end if;
-  if (select count(*) from public.expense_suggestion_data()) <> 0 then raise exception 'T11 revoked phone got suggestion data'; end if;
+  if (select count(*) from public.expense_suggestion_data(current_setting('t.token'))) <> 0 then raise exception 'T11 revoked phone got suggestion data'; end if;
 end $$;
 reset role;
 do $$ begin

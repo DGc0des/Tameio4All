@@ -189,10 +189,10 @@ do $$ begin
   begin perform public.owner_get_closing_day(current_setting('t.shop_a')::uuid, null); raise exception 'T7 phone allowed (day)';
   exception when others then if sqlerrm <> 'not_owner' then raise; end if; end;
   -- T8 suggestions come from the current version only (the first submission has no 'Μεβγάλ'... it has only Nice)
-  if (select array_agg(description order by description) from public.expense_suggestion_data()) is distinct from array['Nice', 'Μεβγάλ'] then
-    raise exception 'T8 wrong suggestions: %', (select array_agg(description) from public.expense_suggestion_data());
+  if (select array_agg(description order by description) from public.expense_suggestion_data(current_setting('t.token'))) is distinct from array['Nice', 'Μεβγάλ'] then
+    raise exception 'T8 wrong suggestions: %', (select array_agg(description) from public.expense_suggestion_data(current_setting('t.token')));
   end if;
-  if (select count(*) from public.expense_suggestion_data() where description = 'Nice') <> 1 then
+  if (select count(*) from public.expense_suggestion_data(current_setting('t.token')) where description = 'Nice') <> 1 then
     raise exception 'T8 both versions counted';
   end if;
 end $$;

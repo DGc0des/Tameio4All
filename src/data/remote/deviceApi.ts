@@ -70,7 +70,8 @@ export interface DeviceApi {
     revision: number,
     idempotencyKey: string,
   ): Promise<DResult<{ closingId: string; repeat: boolean }>>;
-  suggestionData(): Promise<DResult<PastExpense[]>>;
+  /** Past expense lines of the shop. Needs the signed-in cashier's token: without a live session the server returns no rows. */
+  suggestionData(token: string): Promise<DResult<PastExpense[]>>;
   /** Today's shared open closing (fields, revision, pinned config). */
   getOpenClosing(token: string): Promise<DResult<Snapshot>>;
   /**

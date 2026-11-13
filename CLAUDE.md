@@ -30,7 +30,8 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   union; `client.ts` builds the PKCE client. `supabase.ts` exports `getSupabase()`: the ONE shared
   client (owner and phone use the same instance). `deviceApi.ts` (the `DeviceApi` interface),
   `device.ts` (`createDeviceApi`, the one path for phone reads/writes: context, staff list, `join`,
-  sign in/out, open closing, `setField`, submit, suggestions) and `deviceErrors.ts` (`mapDeviceError` →
+  sign in/out, open closing, `setField`, submit, suggestions (`suggestionData(token)`: needs the staff token))
+  and `deviceErrors.ts` (`mapDeviceError` →
   closed `DeviceError`). `live.ts` (`openShopChannel`) is the realtime channel wrapper (private channel
   `shop:<shopId>`: `field` and `submitted` broadcasts in, presence in/out) plus the shape-checked parsers
   (`parseSnapshot`, `parseServerField`, `parseStaleCurrent`). `history.ts` has the shape-checked parsers of the
@@ -271,8 +272,10 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   cached snapshot; one queue key holding everyone's items, each engine using only its author's). Stage-1 keys `draft`, `draft-submitted`, `unsent` are no longer read or written
   (`drafts.ts`/`useDraftAutosave`/the unsent-draft notice were removed); they may linger on devices that ran
   stage 1 and are harmless.
-- Expense suggestions come from `DeviceApi.suggestionData` (refetched after each successful submit); the owner
-  Today view has no suggestion history.
+- Expense suggestions come from `DeviceApi.suggestionData(token)` (refetched after each successful submit); the owner
+  Today view has no suggestion history. `expense_suggestion_data(p_token)` checks `private.staff_session` first and returns
+  no rows (never raises) without a live session; the shop comes from the session. Without a live staff session a phone can
+  read only the shop name, the config and the staff names. A suggestion failure never blocks the register.
 - **Owner «Σήμερα»** shows the same boxes, totals and Φάκελος as the register: it reuses `LiveClosingView`, the
  register's `BottomBar` (without `onSubmit` there is no Υποβολή button) and `EnvelopeSheet` over the same
  `deriveClosing` → `planEnvelope` result. No Υποβολή from the owner; once a cashier has submitted, the owner can
@@ -293,7 +296,7 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   `device_user_id` (both are nullable now).
 - **Current version of a day = the non-voided row with the highest `seq`** for (shop, business date) —
   `private.current_closing(shop, date)` is the helper. The list, the day detail and the save guard use it;
-  `expense_suggestion_data` and `owner_get_closing_day` repeat the same `seq desc` rule inline — change all together. Never order versions by `created_at` (100 T1 backdates one to prove it).
+  `expense_suggestion_data(p_token)` (staff token required) and `owner_get_closing_day` repeat the same `seq desc` rule inline — change all together. Never order versions by `created_at` (100 T1 backdates one to prove it).
 - **Totals are never stored or computed in SQL**: every number in history comes from `evaluateTotals`/
   `deriveClosing`/`planEnvelope` with the config of that version (`config_id`; the day detail carries every
   version's config, the list only the current versions'). Stored `config`/`inputs` are untrusted: they go

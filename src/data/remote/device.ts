@@ -134,8 +134,8 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
       return ack ? { ok: true, data: ack } : { ok: false, error: bad };
     },
     live: (shop, me, h) => openShopChannel(client, shop, me, h),
-    async suggestionData() {
-      const r = await run(client.rpc('expense_suggestion_data'));
+    async suggestionData(token) {
+      const r = await run(client.rpc('expense_suggestion_data', { p_token: token }));
       if (!r.ok) return r;
       const rows = (Array.isArray(r.data) ? r.data : []) as Record<string, unknown>[];
       const data: PastExpense[] = rows

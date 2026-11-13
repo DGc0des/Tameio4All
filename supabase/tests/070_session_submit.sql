@@ -118,8 +118,8 @@ begin
   if (r ->> 'ok')::boolean is not true or (r ->> 'repeat')::boolean or r ->> 'closing_id' = current_setting('t.closing') then
     raise exception 'T7 resubmit failed: %', r;
   end if;
-  if (select array_agg(description || ':' || cents) from public.expense_suggestion_data()) is distinct from array['Μεβγάλ:2160'] then
-    raise exception 'T7 wrong suggestion data: %', (select array_agg(description) from public.expense_suggestion_data());
+  if (select array_agg(description || ':' || cents) from public.expense_suggestion_data(current_setting('t.token'))) is distinct from array['Μεβγάλ:2160'] then
+    raise exception 'T7 wrong suggestion data: %', (select array_agg(description) from public.expense_suggestion_data(current_setting('t.token')));
   end if;
 
   -- T5b a signed-out token is refused

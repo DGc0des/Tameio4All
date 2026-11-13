@@ -154,10 +154,16 @@ describe('createDeviceApi', () => {
     const s = stub({
       rpc: { expense_suggestion_data: { data: [{ description: 'Φρούτα', cents: 1250, business_date: '2026-11-06' }], error: null } },
     });
-    expect(await createDeviceApi(s.client).suggestionData()).toEqual({
+    expect(await createDeviceApi(s.client).suggestionData('tok')).toEqual({
       ok: true,
       data: [{ description: 'Φρούτα', cents: 1250, date: '2026-11-06' }],
     });
+  });
+
+  it('suggestionData sends the staff token', async () => {
+    const s = stub({ rpc: { expense_suggestion_data: { data: [], error: null } } });
+    await createDeviceApi(s.client).suggestionData('tok');
+    expect(s.rpc).toHaveBeenCalledWith('expense_suggestion_data', { p_token: 'tok' });
   });
 
   it('suggestionData skips rows whose cents is not a safe non-negative integer', async () => {
@@ -171,7 +177,7 @@ describe('createDeviceApi', () => {
       { description: 'G', cents: 0, business_date: '2026-11-06' },
     ];
     const s = stub({ rpc: { expense_suggestion_data: { data: rows, error: null } } });
-    expect(await createDeviceApi(s.client).suggestionData()).toEqual({
+    expect(await createDeviceApi(s.client).suggestionData('tok')).toEqual({
       ok: true,
       data: [
         { description: 'F', cents: 700, date: '2026-11-06' },
