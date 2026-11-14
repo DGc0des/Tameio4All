@@ -290,6 +290,24 @@ Test-only fix `3f614be`: two pre-existing SQL test bugs (`100` T9 assumed every 
 | L101 | `submit_closing` accepts the same expense id twice in one `inputs`; amounts in a submit are still not proven equal to the live fields (accepted trust) | open |
 | L102 | Deferred minors: `check_config` accepts a missing `maxExpenses` key (read as 0) but rejects JSON `5.0`/`30.0` that TS accepts; `SignInScreen` imports `PIN_LENGTH` from `owner/model`; `020` T12 checks `sqlerrm` only; a duplicate staff name at exactly 100 staff reports `too_many_staff`; `130` lacks deactivated-staff/stale-date token cases; `T-M40-5` does not assert the repeat's `closing_id`; `070` T7 and `090` lost some cross-cashier / expense-line coverage; historical specs still say 4 digits | open |
 
+## Legal review 2026-11-14
+Branch `legal-fixes`. Findings: `LEGAL_FINDINGS_2026-11-14.md`; plan: `docs/superpowers/plans/2026-11-14-legal-fixes.md`
+(Part A = paperwork for Dimitris, Part B = code). Not legal advice; a Greek lawyer reviews the texts (A5).
+
+| ID | Issue | Why it matters | Status |
+|---|---|---|---|
+| LG1 | No privacy notice, terms or provider identity | GDPR Art. 13 notice at collection; a B2B seller must say who it is | open — Task 5 (legal pages) waits for the provider details and the LG4 answer |
+| LG2 | Nothing can be deleted | GDPR Art. 17 / 5(1)(e): erasure and limited retention | fixed in code — migration `20261115000001_erasure` + owner buttons; **not applied to dev, `160` not run** |
+| LG3 | No data processing agreements | We process each shop's staff data (Art. 28); Supabase and Vercel are sub-processors | open — DPA text in Task 5; sub-processor DPAs are A2 |
+| LG4 | Ownership of tameioV2 undocumented | An employer may own a program written for it (Law 2121/1993 Art. 40) | open — A1 (written confirmation) |
+| LG5 | Employee monitoring | Per-cashier authorship and lockouts; the shop must inform its staff | open — terms/DPA text and the «Προσωπικό» notice in Task 5 |
+| LG6 | No liability cap, no "not a fiscal record" | Totals and corrections could be mistaken for tax records | open — terms in Task 5 |
+| LG7 | No breach procedure | 72 h to the authority; processors must tell controllers without delay | fixed — `docs/legal/breach-procedure.md`, `docs/legal/processing-record.md` |
+| LG8 | A real shop's details in the repo | Another business's data and formulas would be shared with the code | fixed — `b6b360b`; git history still has the name |
+| LG9 | No third-party notices | MIT/OFL require keeping the copyright notice | fixed — `00d8f6f` (`npm run notices`) |
+| LG10 | Brand and product names | Trademark conflict for the commercial name | open — A3 (register check) |
+| LG11 | Selling needs a registered business | Invoicing and VAT before the first charge | open — A4 |
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped
@@ -330,6 +348,9 @@ CI now runs the production build (`npm run build`) as well, after test.
   login screen, the email can sign up again) was not done. **Do not deploy the client before the migration**: the three
   buttons call functions that do not exist yet, and `listStaff` filters on `erased_at`, a column that does not exist
   yet (the «Προσωπικό» tab would fail to load).
+  Also not verified: a phone whose anonymous identity was purged after 30 idle days (expected: the sign-in fails, a new
+  anonymous session is created and the stored key re-joins silently — never seen on a device); lawyer review of the
+  texts (A5); the Supabase and Vercel DPAs (A2); the ownership letter for tameioV2 (A1).
 - Review fixes 2026-11-11 (M38, L87–L89), NOT verified: the 15 s timeout has only run against fakes — not on a real
   phone with a stalled network (devtools throttling "offline after connect", or a captive Wi-Fi), and not that
   supabase-js surfaces the timeout to `mapDeviceError`/`mapError` as `Error: request_timeout` / `AuthRetryableFetchError`
