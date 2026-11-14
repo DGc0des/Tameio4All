@@ -13,7 +13,7 @@ insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created
 -- Owner A: shop (maxExpenses 2) + ΜΑΡΙΑ + ΝΙΚΟΣ + two codes. Owner B: shop + code.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
-select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1,"maxExpenses":2}')::text, true);
+select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1,"maxExpenses":2,"denominations":[5000,10000],"channels":[{"id":"wolt"},{"id":"card"}]}')::text, true);
 select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
 select set_config('t.nikos', public.create_staff(current_setting('t.shop_a')::uuid, 'ΝΙΚΟΣ', '5678')::text, true);
 select set_config('t.code1', public.owner_get_join_key(current_setting('t.shop_a')::uuid), true);
@@ -22,7 +22,7 @@ select set_config('t.cfg_a', (select id::text from public.shop_configs where sho
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
-select set_config('t.shop_b', public.create_shop('Shop B', '{"schema":1,"maxExpenses":5}')::text, true);
+select set_config('t.shop_b', public.create_shop('Shop B', '{"schema":1,"maxExpenses":5,"denominations":[5000,10000],"channels":[{"id":"wolt"},{"id":"card"}]}')::text, true);
 select set_config('t.zoe', public.create_staff(current_setting('t.shop_b')::uuid, 'ΖΩΗ', '1234')::text, true);
 select set_config('t.code3', public.owner_get_join_key(current_setting('t.shop_b')::uuid), true);
 reset role;
@@ -66,7 +66,7 @@ end $$;
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
-select public.publish_config(current_setting('t.shop_a')::uuid, 1, '{"schema":1,"maxExpenses":2,"note":"v2"}');
+select public.publish_config(current_setting('t.shop_a')::uuid, 1, '{"schema":1,"maxExpenses":2,"denominations":[5000,10000],"channels":[{"id":"wolt"},{"id":"card"}],"note":"v2"}');
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
@@ -411,5 +411,75 @@ begin
     raise exception 'T9 RLS not enabled on both tables';
   end if;
 end $$;
+
+-- T-M42 (M42): d:/c: keys must exist in the pinned config; total e:<id> rows (removed included) capped at maxExpenses * 5.
+-- A fresh shop keeps these writes away from shop A's counted rows above (owner writes, no phone needed).
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+select set_config('t.shop_m', public.create_shop('Shop M42', '{"schema":1,"maxExpenses":2,"denominations":[100,5000],"channels":[{"id":"card"}]}')::text, true);
+reset role;
+select set_config('t.bd_m', private.business_date(current_setting('t.shop_m')::uuid)::text, true);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$
+declare
+  shop uuid := current_setting('t.shop_m')::uuid; bd date := current_setting('t.bd_m')::date;
+  r jsonb; rev0 bigint; rev1 bigint; i int;
+begin
+  -- T-M42-1 denominations
+  r := public.owner_set_closing_field(shop, bd, 'd:200', '{"text":"1","mode":"amount"}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T-M42-1 d:200 not in config accepted: %', r; end if;
+  r := public.owner_set_closing_field(shop, bd, 'd:0100', '{"text":"1","mode":"amount"}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T-M42-1 non-canonical d:0100 accepted: %', r; end if;
+  r := public.owner_set_closing_field(shop, bd, 'd:100', '{"text":"1","mode":"amount"}', null);
+  if (r ->> 'ok')::boolean is not true then raise exception 'T-M42-1 d:100 in config refused: %', r; end if;
+  rev0 := (r ->> 'revision')::bigint;
+  -- T-M42-2 channels (and: the rejected writes above/below did not bump the revision)
+  r := public.owner_set_closing_field(shop, bd, 'c:wolt', '{"text":"1"}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T-M42-2 c:wolt not in config accepted: %', r; end if;
+  r := public.owner_set_closing_field(shop, bd, 'c:card', '{"text":"1"}', null);
+  if (r ->> 'ok')::boolean is not true then raise exception 'T-M42-2 c:card in config refused: %', r; end if;
+  rev1 := (r ->> 'revision')::bigint;
+  if rev1 <> rev0 + 1 then raise exception 'T-M42-2 rejected write bumped revision: % -> %', rev0, rev1; end if;
+  -- T-M42-3 total e:<id> rows capped at maxExpenses * 5 = 10, removed included
+  for i in 1..10 loop
+    r := public.owner_set_closing_field(shop, bd, 'e:m' || i, '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', null);
+    if (r ->> 'ok')::boolean is not true then raise exception 'T-M42-3 create e:m% failed: %', i, r; end if;
+    r := public.owner_set_closing_field(shop, bd, 'e:m' || i, '{"addedBy":{"kind":"owner"},"order":1,"removed":true}', null);
+    if (r ->> 'ok')::boolean is not true then raise exception 'T-M42-3 remove e:m% failed: %', i, r; end if;
+  end loop;
+  r := public.owner_set_closing_field(shop, bd, 'e:m11', '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', null);
+  if r is distinct from '{"ok":false,"error":"too_many_expenses"}'::jsonb then raise exception 'T-M42-3 11th line accepted: %', r; end if;
+  r := public.owner_set_closing_field(shop, bd, 'e:m1', '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', null);
+  if (r ->> 'ok')::boolean is not true then raise exception 'T-M42-3 un-remove of an existing line refused: %', r; end if;
+end $$;
+reset role;
+-- T-M42-4 junk denominations/channels in the pinned config: bad_field, never an exception
+update public.shop_configs set config = config || '{"denominations":"x","channels":7}'::jsonb where shop_id = current_setting('t.shop_m')::uuid;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$
+declare
+  shop uuid := current_setting('t.shop_m')::uuid; bd date := current_setting('t.bd_m')::date; r jsonb;
+begin
+  r := public.owner_set_closing_field(shop, bd, 'd:100', '{"text":"1","mode":"amount"}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T-M42-4 d: with junk denominations: %', r; end if;
+  r := public.owner_set_closing_field(shop, bd, 'c:card', '{"text":"1"}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T-M42-4 c: with junk channels: %', r; end if;
+end $$;
+reset role;
+update public.shop_configs set config = config || '{"denominations":[100,"x",null],"channels":[7,null,{"id":5},"card"]}'::jsonb where shop_id = current_setting('t.shop_m')::uuid;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$
+declare
+  shop uuid := current_setting('t.shop_m')::uuid; bd date := current_setting('t.bd_m')::date; r jsonb;
+begin
+  r := public.owner_set_closing_field(shop, bd, 'c:card', '{"text":"1"}', null);
+  if r is distinct from '{"ok":false,"error":"bad_field"}'::jsonb then raise exception 'T-M42-4 c: with junk channel elements: %', r; end if;
+  r := public.owner_set_closing_field(shop, bd, 'd:100', '{"text":"2","mode":"amount"}', null);
+  if (r ->> 'ok')::boolean is not true then raise exception 'T-M42-4 d:100 with mixed-junk array refused: %', r; end if;
+end $$;
+reset role;
 
 rollback;

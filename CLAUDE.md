@@ -218,6 +218,10 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   `.length`). The SQL regex is looser than TS in one place: it accepts non-canonical keys such as `d:0100`;
   `parseKey` rejects them, so a bad field must be dropped individually when parsing a snapshot, never null the
   whole snapshot.
+  The regex (`closing_field_ok`) still accepts `d:0100`, but the write path (`write_closing_field`, migration
+  `20261114000005_closing_field_limits`) now rejects non-canonical and out-of-config `d:`/`c:` keys (`bad_field`: the
+  denomination must be in the pinned config's `denominations`, the channel id in its `channels`; junk config JSON
+  accepts nothing) and caps total `e:<id>` lines at `maxExpenses × 5` including removed ones (`too_many_expenses`).
 - **One write path.** Phones write only through `set_closing_field(token, date, key, value, base_version)`, owners
   through `owner_set_closing_field(shop, date, key, value, base_version)` (migration `…0003_live_fixes`; the date is
   the snapshot's — the day on screen — and anything but the shop's business date is `wrong_day`, like the phone).

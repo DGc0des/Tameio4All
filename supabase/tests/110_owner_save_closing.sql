@@ -42,7 +42,7 @@ do $$ begin
 end $$;
 
 -- Since M40 a submitted line must exist in the live closing; the pinned config allows lines.
-update public.shop_configs set config = '{"schema":1,"maxExpenses":5}' where id = current_setting('t.cfg_a')::uuid;
+update public.shop_configs set config = '{"schema":1,"maxExpenses":5,"denominations":[5000,10000],"channels":[{"id":"wolt"},{"id":"card"}]}' where id = current_setting('t.cfg_a')::uuid;
 -- Setup: one staff submission today by ΜΑΡΙΑ (e1), an unsubmitted today-1 with one field, an empty today-2.
 set local role authenticated;
 do $$
@@ -356,7 +356,7 @@ do $$ begin
 end $$;
 
 -- T13 today needs the live revision: none, or an old one after a later write -> draft_changed, nothing stored
-update public.shop_configs set config = '{"schema":1,"maxExpenses":5}' where id = current_setting('t.cfg_a')::uuid;
+update public.shop_configs set config = '{"schema":1,"maxExpenses":5,"denominations":[5000,10000],"channels":[{"id":"wolt"},{"id":"card"}]}' where id = current_setting('t.cfg_a')::uuid;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 do $$

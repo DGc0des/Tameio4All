@@ -10,7 +10,7 @@ insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created
 -- Owner A: shop, staff ΜΑΡΙΑ + ΕΛΕΝΗ, code. Owner B: shop + staff ΝΙΚΟΣ (cross-shop checks).
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
-select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1}')::text, true);
+select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1,"denominations":[5000,10000],"channels":[{"id":"wolt"},{"id":"card"}]}')::text, true);
 select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
 select set_config('t.eleni', public.create_staff(current_setting('t.shop_a')::uuid, 'ΕΛΕΝΗ', '5678')::text, true);
 select set_config('t.code', public.owner_get_join_key(current_setting('t.shop_a')::uuid), true);
@@ -193,7 +193,7 @@ end $$;
 
 -- T9 owner-added lines: a phone must submit the stored author of an e:<id> line (owner or staff).
 -- The pinned config of shop A gets maxExpenses so lines can exist.
-update public.shop_configs set config = '{"schema":1,"maxExpenses":5}' where id = current_setting('t.cfg_a')::uuid;
+update public.shop_configs set config = '{"schema":1,"maxExpenses":5,"denominations":[5000,10000],"channels":[{"id":"wolt"},{"id":"card"}]}' where id = current_setting('t.cfg_a')::uuid;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 do $$

@@ -40,7 +40,7 @@ do $$ begin
 end $$;
 
 -- Since M40 a submitted line must exist in the live closing; the pinned config allows lines.
-update public.shop_configs set config = '{"schema":1,"maxExpenses":5}' where id = current_setting('t.cfg_a')::uuid;
+update public.shop_configs set config = '{"schema":1,"maxExpenses":5,"denominations":[5000,10000],"channels":[{"id":"wolt"},{"id":"card"}]}' where id = current_setting('t.cfg_a')::uuid;
 -- Setup: two submissions today (the second with another expense); old open closings.
 set local role authenticated;
 do $$
