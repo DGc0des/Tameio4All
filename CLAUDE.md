@@ -146,8 +146,10 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   | not trusted for this cashier | `staff.failed_attempts` | the **cashier** is locked (`staff_locked`) | only phones not trusted for this cashier |
   | trusted for this cashier | `device_staff_trust.failed_attempts` | the **phone** is locked (`device_locked`) | everyone on that phone |
 
-  Both results carry `locked_until`; the phone shows «Δοκίμασε ξανά στις HH:MM» (shop time) and stays on the
-  sign-in screen. Lock time escalates through `private.lock_duration(level)` = `least(15 min · 2^least(level, 7),
+  Both results carry `locked_until`; the phone shows «Δοκίμασε ξανά στις HH:MM» (shop time; «αύριο στις HH:MM» when it
+  ends on a later Athens calendar day, «στις DD/MM HH:MM» beyond that — `athensDaysAfter` in `src/app/dates.ts`) and
+  stays on the sign-in screen; `device_locked` also tells the cashier the owner can free the phone with «Αφαίρεση» in
+  «Συσκευές» (the owner UI does not show device locks). Lock time escalates through `private.lock_duration(level)` = `least(15 min · 2^least(level, 7),
   24 h)` → 15 m, 30 m, 1 h, 2 h, 4 h, 8 h, 16 h, then 24 h (`staff.lock_level` / `devices.lock_level`); the level
   restarts at 0 when the previous lock ended more than 7 days ago (or there was none). **A correct PIN never clears
   `locked_until` or `lock_level`** (an expired lock is harmless and the level must survive); it resets only its own

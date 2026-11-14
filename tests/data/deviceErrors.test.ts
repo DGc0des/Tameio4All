@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DeviceError } from '../../src/data/remote/deviceApi';
 import { fromServerResult, mapDeviceError } from '../../src/data/remote/deviceErrors';
 import { deviceErrorMessage } from '../../src/features/phone/model/messages';
@@ -79,21 +79,49 @@ describe('deviceErrorMessage', () => {
     expect(deviceErrorMessage({ code: 'not_a_device' })).toBe('Αυτή η συσκευή δεν είναι σε κατάστημα. Άνοιξε τον σύνδεσμο του καταστήματος.');
     expect(deviceErrorMessage({ code: 'other_shop' })).toBe('Η συσκευή είναι ήδη σε άλλο κατάστημα.');
   });
-  it('says until when a lock lasts, in shop time (Europe/Athens)', () => {
-    // 10:00Z in November = 12:00 in Athens (UTC+2).
-    expect(deviceErrorMessage({ code: 'device_locked', lockedUntil: '2026-11-14T10:00:00Z' })).toBe(
-      'Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά στις 12:00.',
-    );
-    expect(deviceErrorMessage({ code: 'device_locked', lockedUntil: null })).toBe(
-      'Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά αργότερα.',
-    );
-    expect(deviceErrorMessage({ code: 'device_locked', lockedUntil: 'garbage' })).toBe(
-      'Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά αργότερα.',
-    );
+  const DEV = 'Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά ';
+  const HINT = ', ή ζήτα από τον ιδιοκτήτη «Αφαίρεση» της συσκευής στις «Συσκευές».';
+  const STAFF = 'Κλείδωσε μετά από 5 λάθος PIN. Δοκίμασε ξανά ';
+  // A fixed "now" through fake timers (the default `now` argument is `new Date()`).
+  const at = (iso: string) => { vi.useFakeTimers(); vi.setSystemTime(new Date(iso)); };
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('says until when a lock lasts, in shop time (Europe/Athens), and how the owner frees the phone', () => {
+    at('2026-11-14T09:45:00Z'); // 11:45 in Athens (UTC+2 in November)
+    // 10:00Z in November = 12:00 in Athens, the same day.
+    expect(deviceErrorMessage({ code: 'device_locked', lockedUntil: '2026-11-14T10:00:00Z' })).toBe(`${DEV}στις 12:00${HINT}`);
+    expect(deviceErrorMessage({ code: 'device_locked', lockedUntil: null })).toBe(`${DEV}αργότερα${HINT}`);
+    expect(deviceErrorMessage({ code: 'device_locked', lockedUntil: 'garbage' })).toBe(`${DEV}αργότερα${HINT}`);
     // The lock time escalates, so the cashier message no longer promises 15 minutes.
-    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: '2026-11-14T10:00:00Z' })).toBe(
-      'Κλείδωσε μετά από 5 λάθος PIN. Δοκίμασε ξανά στις 12:00.',
+    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: '2026-11-14T10:00:00Z' })).toBe(`${STAFF}στις 12:00.`);
+    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: null })).toBe(`${STAFF}αργότερα.`);
+  });
+
+  it('a 24 h lock ends tomorrow at the same clock time: «αύριο στις»', () => {
+    at('2026-11-14T07:14:00Z'); // 09:14 Athens
+    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: '2026-11-15T07:14:00Z' })).toBe(`${STAFF}αύριο στις 09:14.`);
+    expect(deviceErrorMessage({ code: 'device_locked', lockedUntil: '2026-11-15T07:14:00Z' })).toBe(`${DEV}αύριο στις 09:14${HINT}`);
+  });
+
+  it('the day is decided at Athens midnight, not UTC midnight', () => {
+    // now 23:50 Athens (21:50Z); 00:10 Athens next day is still 22:10Z the same UTC day → «αύριο».
+    at('2026-11-14T21:50:00Z');
+    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: '2026-11-14T22:10:00Z' })).toBe(`${STAFF}αύριο στις 00:10.`);
+    // 23:55 Athens the same evening → today.
+    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: '2026-11-14T21:55:00Z' })).toBe(`${STAFF}στις 23:55.`);
+    // now 00:20 Athens (22:20Z the previous UTC day); 01:00 Athens → today, though the UTC date differs.
+    at('2026-11-14T22:20:00Z');
+    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: '2026-11-14T23:00:00Z' })).toBe(`${STAFF}στις 01:00.`);
+  });
+
+  it('more than one day later shows the date (never happens with a 24 h maximum, but stays unambiguous)', () => {
+    at('2026-11-14T07:00:00Z');
+    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: '2026-11-16T08:30:00Z' })).toBe(`${STAFF}στις 16/11 10:30.`);
+  });
+
+  it('an explicit now argument works without fake timers', () => {
+    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: '2026-11-15T07:14:00Z' }, new Date('2026-11-14T07:14:00Z'))).toBe(
+      `${STAFF}αύριο στις 09:14.`,
     );
-    expect(deviceErrorMessage({ code: 'staff_locked', lockedUntil: null })).toBe('Κλείδωσε μετά από 5 λάθος PIN. Δοκίμασε ξανά αργότερα.');
   });
 });

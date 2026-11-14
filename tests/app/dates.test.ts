@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addDaysIso, formatDateEl, formatDayEl, formatDayMonth, formatDayMonthLongEl, formatStampEl, formatTimeEl, formatWeekRangeEl, formatWeekdayEl,
+  addDaysIso, athensDaysAfter, formatDayMonthAthens, formatDateEl, formatDayEl, formatDayMonth, formatDayMonthLongEl, formatStampEl, formatTimeEl, formatWeekRangeEl, formatWeekdayEl,
   isIsoDate, todayIso, weekStartIso,
 } from '../../src/app/dates';
 
@@ -95,5 +95,24 @@ describe('week helpers', () => {
       expect(formatDayMonthLongEl(bad)).toBe(bad);
       expect(formatWeekRangeEl(bad)).toBe(bad);
     }
+  });
+});
+
+describe('athensDaysAfter / formatDayMonthAthens', () => {
+  it('counts shop-time (Europe/Athens) calendar days, not UTC days', () => {
+    const now = new Date('2026-11-14T21:50:00Z'); // 23:50 Athens
+    expect(athensDaysAfter('2026-11-14T21:55:00Z', now)).toBe(0);
+    expect(athensDaysAfter('2026-11-14T22:10:00Z', now)).toBe(1); // 00:10 Athens, same UTC day
+    expect(athensDaysAfter('2026-11-16T08:00:00Z', now)).toBe(2);
+    expect(athensDaysAfter('2026-11-13T08:00:00Z', now)).toBe(-1);
+    expect(athensDaysAfter('garbage', now)).toBeNull();
+  });
+  it('is not shifted by the daylight-saving change (Athens: 2026-10-25)', () => {
+    // 23:30 Athens (UTC+3) on the 24th → 24 h later is 22:30 Athens (UTC+2) on the 25th.
+    expect(athensDaysAfter('2026-10-25T20:30:00Z', new Date('2026-10-24T20:30:00Z'))).toBe(1);
+  });
+  it('formats the Athens day and month', () => {
+    expect(formatDayMonthAthens('2026-11-14T22:10:00Z')).toBe('15/11');
+    expect(formatDayMonthAthens('x')).toBe('x');
   });
 });

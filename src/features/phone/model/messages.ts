@@ -1,14 +1,22 @@
-import { formatTimeEl } from '../../../app/dates';
+import { athensDaysAfter, formatDayMonthAthens, formatTimeEl } from '../../../app/dates';
 import type { DeviceError } from '../../../data/remote/deviceApi';
 
-/** «στις HH:MM» (shop time) for a readable deadline, otherwise «αργότερα». */
-function retryAt(lockedUntil: string | null): string {
-  if (lockedUntil === null || Number.isNaN(Date.parse(lockedUntil))) return 'αργότερα';
-  return `στις ${formatTimeEl(lockedUntil)}`;
+/**
+ * When a lock ends, in shop time: «στις HH:MM» today, «αύριο στις HH:MM» tomorrow, «στις DD/MM HH:MM» later
+ * (locks last at most 24 h, but the rule does not rely on it); «αργότερα» for an unreadable deadline.
+ */
+function retryAt(lockedUntil: string | null, now: Date): string {
+  if (lockedUntil === null) return 'αργότερα';
+  const days = athensDaysAfter(lockedUntil, now);
+  if (days === null) return 'αργότερα';
+  const time = formatTimeEl(lockedUntil);
+  if (days <= 0) return `στις ${time}`;
+  if (days === 1) return `αύριο στις ${time}`;
+  return `στις ${formatDayMonthAthens(lockedUntil)} ${time}`;
 }
 
 /** Greek, user-facing. Exhaustive over DeviceError so a new code cannot ship without a message. */
-export function deviceErrorMessage(e: DeviceError): string {
+export function deviceErrorMessage(e: DeviceError, now: Date = new Date()): string {
   switch (e.code) {
     case 'not_a_device':
       return 'Αυτή η συσκευή δεν είναι σε κατάστημα. Άνοιξε τον σύνδεσμο του καταστήματος.';
@@ -27,9 +35,9 @@ export function deviceErrorMessage(e: DeviceError): string {
     case 'pin_not_set':
       return 'Δεν έχει οριστεί PIN. Ζήτα από τον ιδιοκτήτη να ορίσει νέο PIN 6 ψηφίων.';
     case 'staff_locked':
-      return `Κλείδωσε μετά από 5 λάθος PIN. Δοκίμασε ξανά ${retryAt(e.lockedUntil)}.`;
+      return `Κλείδωσε μετά από 5 λάθος PIN. Δοκίμασε ξανά ${retryAt(e.lockedUntil, now)}.`;
     case 'device_locked':
-      return `Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά ${retryAt(e.lockedUntil)}.`;
+      return `Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά ${retryAt(e.lockedUntil, now)}, ή ζήτα από τον ιδιοκτήτη «Αφαίρεση» της συσκευής στις «Συσκευές».`;
     case 'session_invalid':
       return 'Η σύνδεση έληξε. Βάλε ξανά το PIN σου.';
     case 'wrong_day':

@@ -288,7 +288,7 @@ describe('PhoneApp', () => {
     const signInFn = vi.fn<DeviceApi['signIn']>(() => fail<StaffSession>({ code: 'device_locked', lockedUntil: '2026-11-07T21:15:00Z' }));
     start(fakeDeviceApi({ signIn: signInFn }));
     await signIn('123456');
-    expect(await screen.findByText('Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά στις 23:15.')).toBeTruthy();
+    expect(await screen.findByText('Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά στις 23:15, ή ζήτα από τον ιδιοκτήτη «Αφαίρεση» της συσκευής στις «Συσκευές».')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
     expect(screen.queryByRole('heading', ENTRY)).toBeNull();
     expect(screen.queryByLabelText('100€')).toBeNull();

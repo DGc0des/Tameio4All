@@ -47,6 +47,35 @@ export function formatTimeEl(iso: string): string {
   return `${get('hour')}:${get('minute')}`;
 }
 
+const DATE_ATHENS = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Athens', year: 'numeric', month: '2-digit', day: '2-digit' });
+
+/** Shop-time (Europe/Athens) calendar date of an instant as [year, month 1–12, day]. */
+function athensDate(t: number): [number, number, number] {
+  const p = DATE_ATHENS.formatToParts(new Date(t));
+  const get = (type: string) => Number(p.find((x) => x.type === type)?.value);
+  return [get('year'), get('month'), get('day')];
+}
+
+/**
+ * How many shop-time (Europe/Athens) calendar days the instant `iso` is after `now`: 0 = same day, 1 = tomorrow,
+ * negative = an earlier day. Null for unreadable input.
+ */
+export function athensDaysAfter(iso: string, now: Date): number | null {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t) || Number.isNaN(now.getTime())) return null;
+  const [y1, m1, d1] = athensDate(now.getTime());
+  const [y2, m2, d2] = athensDate(t);
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000);
+}
+
+/** An ISO timestamp → "15/11", the shop-time (Europe/Athens) day and month. Unknown input is returned unchanged. */
+export function formatDayMonthAthens(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  const [, mo, d] = athensDate(t);
+  return `${pad(d)}/${pad(mo)}`;
+}
+
 const STAMP_EL = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Athens', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 });
