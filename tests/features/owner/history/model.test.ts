@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { joinJuicePreset } from '../../../../src/core/presets';
+import { juiceBarPreset } from '../../../../src/core/presets';
 import { evaluateTotals, type ClosingInputs } from '../../../../src/core/formula';
 import { planEnvelope } from '../../../../src/core/envelope';
 import { deriveClosing } from '../../../../src/features/register/derive';
@@ -10,7 +10,7 @@ import {
   OWNER_NAME, UNKNOWN_AUTHOR, applyLocalEdit, breakdown, openInputs, snapshotFromInputs, summarizeInputs, summarizeOpen, weekCells,
 } from '../../../../src/features/owner/history/model';
 
-const config = joinJuicePreset;
+const config = juiceBarPreset;
 const S1 = 'aaaaaaaa-0000-0000-0000-000000000001';
 const inputs2: ClosingInputs = {
   schema: 2,

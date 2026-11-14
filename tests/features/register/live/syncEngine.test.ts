@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { joinJuicePreset } from '../../../../src/core/presets';
+import { juiceBarPreset } from '../../../../src/core/presets';
 import { loadPending, loadSnapshot, savePending, saveSnapshot } from '../../../../src/data/local/openClosing';
 import { memoryStore, type KeyValueStore } from '../../../../src/data/local/storage';
 import type { DResult, DeviceError } from '../../../../src/data/remote/deviceApi';
@@ -21,7 +21,7 @@ const field = (key: string, text: string, version: number, by = 'ΝΙΚΟΣ'): S
 });
 function snap(fields: ServerField[] = [], over: Partial<Snapshot> = {}): Snapshot {
   return {
-    id: 'oc-1', businessDate: DAY, configId: 'config-1', config: joinJuicePreset, revision: 1, lastSubmit: null,
+    id: 'oc-1', businessDate: DAY, configId: 'config-1', config: juiceBarPreset, revision: 1, lastSubmit: null,
     fields: Object.fromEntries(fields.map((f) => [f.key, f])), ...over,
   };
 }

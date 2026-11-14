@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { minus, newShopConfig, plus, validateConfig, type ShopConfig } from '../../../src/core/config';
-import { joinJuicePreset } from '../../../src/core/presets';
+import { juiceBarPreset } from '../../../src/core/presets';
 import { applySettings, isEditableConfig, nextId, type SettingsAction } from '../../../src/features/owner/model/settingsDraft';
 import { formulaText, termLabel, termOptions } from '../../../src/features/owner/model/terms';
 
-const jj = (): ShopConfig => structuredClone(joinJuicePreset) as ShopConfig;
+const jj = (): ShopConfig => structuredClone(juiceBarPreset) as ShopConfig;
 const apply = (c: ShopConfig, ...actions: SettingsAction[]) =>
   actions.reduce((acc, a) => applySettings(acc, a).config, c);
 

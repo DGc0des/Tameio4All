@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ClosingInputs } from '../../../../src/core/formula';
 import { centsToPlain } from '../../../../src/core/money';
-import { joinJuicePreset } from '../../../../src/core/presets';
+import { juiceBarPreset } from '../../../../src/core/presets';
 import type { OwnerApi, Result } from '../../../../src/data/remote/ownerApi';
 import { DayScreen } from '../../../../src/features/owner/history/DayScreen';
 import { applyLocalEdit, snapshotFromInputs } from '../../../../src/features/owner/history/model';
@@ -35,10 +35,10 @@ const v1 = version('v1', { createdAt: '2026-11-09T17:05:00Z', inputs: { ...curre
 const v2 = version('v2');
 const v3 = version('v3', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', correctsId: 'v2', inputs: { ...currentInputs, counts: { '10000': 7 } } });
 const day = (over: Partial<DayDetail> = {}): DayDetail => ({
-  today: '2026-11-11', businessDate: DATE, versions: [v2, v1], configs: { cfg1: joinJuicePreset }, staffNames: NAMES, open: null, ...over,
+  today: '2026-11-11', businessDate: DATE, versions: [v2, v1], configs: { cfg1: juiceBarPreset }, staffNames: NAMES, open: null, ...over,
 });
 const openSnap: Snapshot = {
-  id: 'oc-1', businessDate: DATE, configId: 'cfg-open', config: joinJuicePreset, revision: 2, lastSubmit: null,
+  id: 'oc-1', businessDate: DATE, configId: 'cfg-open', config: juiceBarPreset, revision: 2, lastSubmit: null,
   fields: { 'd:10000': { key: 'd:10000', value: { text: '2', mode: 'count' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-09T20:00:00Z' } },
 };
 
@@ -149,10 +149,10 @@ describe('CorrectionEditor', () => {
     type('WOLT', '1.234');
     expect(box('WOLT').value).toBe('1.234');
     const local = applyLocalEdit(
-      snapshotFromInputs({ config: joinJuicePreset, configId: 'cfg1', businessDate: DATE, inputs: currentInputs, newId: () => 'z' }),
+      snapshotFromInputs({ config: juiceBarPreset, configId: 'cfg1', businessDate: DATE, inputs: currentInputs, newId: () => 'z' }),
       'c:wolt', amountValue('1.234'),
     );
-    const reason = envelopeBlockReason(deriveClosing(joinJuicePreset, draftFromFields(local, [])));
+    const reason = envelopeBlockReason(deriveClosing(juiceBarPreset, draftFromFields(local, [])));
     expect(reason).not.toBeNull();
     expect(screen.getByText(reason!)).toBeTruthy();
     expect(saveButton().disabled).toBe(true);

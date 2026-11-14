@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OwnerRoute } from '../../../../src/app/router';
 import { addDaysIso, formatDayMonthLongEl, formatTimeEl, formatWeekdayEl } from '../../../../src/app/dates';
-import { joinJuicePreset } from '../../../../src/core/presets';
+import { juiceBarPreset } from '../../../../src/core/presets';
 import { formatEuro } from '../../../../src/core/money';
 import type { ClosingInputs } from '../../../../src/core/formula';
 import { memoryStore } from '../../../../src/data/local/storage';
@@ -35,10 +35,10 @@ const TODAY = '2026-11-11';
 const MON = '2026-11-09';
 const SUN = '2026-11-15';
 const list = (days: HistoryDay[], over: Partial<HistoryList> = {}): HistoryList => ({
-  today: TODAY, from: MON, to: SUN, configs: { cfg1: joinJuicePreset, bad: {} }, days, ...over,
+  today: TODAY, from: MON, to: SUN, configs: { cfg1: juiceBarPreset, bad: {} }, days, ...over,
 });
 const openSnap = (businessDate: string): Snapshot => ({
-  id: 'oc-1', businessDate, configId: 'cfg1', config: joinJuicePreset, revision: 2, lastSubmit: null,
+  id: 'oc-1', businessDate, configId: 'cfg1', config: juiceBarPreset, revision: 2, lastSubmit: null,
   fields: { 'd:10000': { key: 'd:10000', value: { text: '200', mode: 'amount' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-09T20:00:00Z' } },
 });
 const cardName = (date: string) => new RegExp(`${formatWeekdayEl(date)}.*${formatDayMonthLongEl(date)}`);
@@ -48,7 +48,7 @@ const cards = () => Array.from(document.querySelectorAll<HTMLElement>('.week-car
 const inertCard = (date: string) => screen.getByText(formatDayMonthLongEl(date)).closest<HTMLElement>('.week-card')!;
 const RANGE = '9 – 15 Νοεμβρίου 2026';
 const expectedLines = (inp: unknown) => {
-  const s = summarizeInputs(joinJuicePreset, inp)!;
+  const s = summarizeInputs(juiceBarPreset, inp)!;
   return [...s.totals.map((t) => [t.label, formatEuro(t.cents)] as const), ['Έξοδα', formatEuro(s.expensesCents)] as const];
 };
 

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { validateConfig } from '../../src/core/config';
 import { evaluateTotals, type ClosingInputs } from '../../src/core/formula';
-import { joinJuicePreset } from '../../src/core/presets';
+import { juiceBarPreset } from '../../src/core/presets';
 
-describe('joinJuicePreset', () => {
+describe('juiceBarPreset', () => {
   it('is a valid config', () => {
-    expect(validateConfig(joinJuicePreset)).toEqual([]);
+    expect(validateConfig(juiceBarPreset)).toEqual([]);
   });
 
   it('matches tameioV2 formulas on a full closing', () => {
@@ -24,7 +24,7 @@ describe('joinJuicePreset', () => {
         { description: 'Nice', cents: 780 },
       ],
     };
-    expect(evaluateTotals(joinJuicePreset, inputs)).toEqual({
+    expect(evaluateTotals(juiceBarPreset, inputs)).toEqual({
       tameio: 185520,
       expenses_total: 2030,
       cash: 36755,
@@ -35,7 +35,7 @@ describe('joinJuicePreset', () => {
 
   it('matches tameioV2 on an empty form (ΜΕΤΡΗΤΑ −1000)', () => {
     const empty: ClosingInputs = { schema: 1, counts: {}, channelCents: {}, expenses: [] };
-    expect(evaluateTotals(joinJuicePreset, empty)).toEqual({
+    expect(evaluateTotals(juiceBarPreset, empty)).toEqual({
       tameio: 0,
       expenses_total: 0,
       cash: -100000,
@@ -45,22 +45,22 @@ describe('joinJuicePreset', () => {
   });
 
   it('carries the V2 tare products but no supplier data (suggestions are learned per shop)', () => {
-    expect(joinJuicePreset.tareItems).toContainEqual({ name: 'Σολομός μπροστά', tareGrams: 360 });
-    expect(Object.keys(joinJuicePreset)).not.toContain('seedSuppliers');
+    expect(juiceBarPreset.tareItems).toContainEqual({ name: 'Σολομός μπροστά', tareGrams: 360 });
+    expect(Object.keys(juiceBarPreset)).not.toContain('seedSuppliers');
   });
 
   it('is deeply frozen so consumers cannot mutate the shared preset', () => {
-    expect(Object.isFrozen(joinJuicePreset)).toBe(true);
-    expect(Object.isFrozen(joinJuicePreset.channels[0])).toBe(true);
-    expect(Object.isFrozen(joinJuicePreset.totals[0])).toBe(true);
-    expect(Object.isFrozen(joinJuicePreset.tareItems[0])).toBe(true);
-    expect(Object.isFrozen(joinJuicePreset.totals[0]!.terms)).toBe(true);
+    expect(Object.isFrozen(juiceBarPreset)).toBe(true);
+    expect(Object.isFrozen(juiceBarPreset.channels[0])).toBe(true);
+    expect(Object.isFrozen(juiceBarPreset.totals[0])).toBe(true);
+    expect(Object.isFrozen(juiceBarPreset.tareItems[0])).toBe(true);
+    expect(Object.isFrozen(juiceBarPreset.totals[0]!.terms)).toBe(true);
 
     expect(() => {
-      joinJuicePreset.floatCents = 0;
+      juiceBarPreset.floatCents = 0;
     }).toThrow();
     expect(() => {
-      joinJuicePreset.channels[0]!.label = 'mutated';
+      juiceBarPreset.channels[0]!.label = 'mutated';
     }).toThrow();
   });
 });

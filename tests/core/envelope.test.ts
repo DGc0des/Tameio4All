@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { planEnvelope } from '../../src/core/envelope';
-import { joinJuicePreset } from '../../src/core/presets';
+import { juiceBarPreset } from '../../src/core/presets';
 
-const JJ = joinJuicePreset.denominations;
+const JJ = juiceBarPreset.denominations;
 
 describe('planEnvelope', () => {
   it('finds the exact combination greedy misses (H1: 60€ from 1×50 + 3×20)', () => {

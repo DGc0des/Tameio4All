@@ -11,7 +11,7 @@ import type { DeviceApi } from '../../src/data/remote/deviceApi';
 import type { PastExpense } from '../../src/core/suggestions';
 import type { OwnerAppProps } from '../../src/features/owner/OwnerApp';
 import type { ShareFn } from '../../src/features/register/share';
-import { joinJuicePreset } from '../../src/core/presets';
+import { juiceBarPreset } from '../../src/core/presets';
 import { FAKE_CONFIG_ID, FAKE_SHOP_ID, fail, fakeDeviceApi, fakeServer, ok } from '../features/phone/fakeDeviceApi';
 
 const NOW = () => new Date(2026, 10, 7, 22, 0);
@@ -259,7 +259,7 @@ describe('register flows', () => {
 
   it('disables Υποβολή while offline', async () => {
     const store = memoryStore();
-    saveCachedContext(store, { shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-07' });
+    saveCachedContext(store, { shopId: FAKE_SHOP_ID, shopName: 'Δοκιμαστικό', configId: FAKE_CONFIG_ID, config: juiceBarPreset, businessDate: '2026-11-07' });
     await start(store, true, fakeDeviceApi({ context: vi.fn(() => fail<null>({ code: 'network' })) }));
     expect(screen.getByText('Εκτός σύνδεσης')).toBeTruthy();
     type('100€', '1500');
@@ -372,7 +372,7 @@ describe('navigation', () => {
   });
 
   it('a day change found at submit reloads into the new day’s closing', async () => {
-    const tomorrow = { shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-08' };
+    const tomorrow = { shopId: FAKE_SHOP_ID, shopName: 'Δοκιμαστικό', configId: FAKE_CONFIG_ID, config: juiceBarPreset, businessDate: '2026-11-08' };
     const context = vi
       .fn<DeviceApi['context']>()
       .mockReturnValueOnce(ok({ ...tomorrow, businessDate: '2026-11-07' }))

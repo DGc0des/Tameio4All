@@ -3,7 +3,7 @@
 ## Context
 
 `tameioV2` (`~/Desktop/vs_code_projects/tameioV2`) is a vanilla-JS cash-closing tool in daily use at
-Join Juice. Everything shop-specific is hardcoded: staff names (`index.html:22-25`), the 1000€ float
+a real shop. Everything shop-specific is hardcoded: staff names (`index.html:22-25`), the 1000€ float
 (`script.js:547`), WOLT/EFOOD/myPos/Eurobank IDs and formulas (`script.js:545-563`), the supplier
 history (`expense-suggestions.js`), tare products (`apovara.js`). Closings only exist as a shared PNG.
 

@@ -5,7 +5,7 @@ import { formatDateEl } from '../../../../src/app/dates';
 import { denomLabel } from '../../../../src/core/denominations';
 import type { ClosingInputs } from '../../../../src/core/formula';
 import { formatEuro } from '../../../../src/core/money';
-import { joinJuicePreset } from '../../../../src/core/presets';
+import { juiceBarPreset } from '../../../../src/core/presets';
 import { memoryStore } from '../../../../src/data/local/storage';
 import type { Result } from '../../../../src/data/remote/ownerApi';
 import { DayScreen } from '../../../../src/features/owner/history/DayScreen';
@@ -45,10 +45,10 @@ const version = (id: string, over: Partial<ClosingVersion> = {}): ClosingVersion
 const v1 = version('v1', { createdAt: '2026-11-09T17:05:00Z', authorName: 'ΓΙΑΝΝΗΣ', inputs: olderInputs });
 const v2 = version('v2');
 const day = (over: Partial<DayDetail> = {}): DayDetail => ({
-  today: '2026-11-11', businessDate: DATE, versions: [v2, v1], configs: { cfg1: joinJuicePreset }, staffNames: NAMES, open: null, ...over,
+  today: '2026-11-11', businessDate: DATE, versions: [v2, v1], configs: { cfg1: juiceBarPreset }, staffNames: NAMES, open: null, ...over,
 });
 const openSnap: Snapshot = {
-  id: 'oc-1', businessDate: DATE, configId: 'cfg1', config: joinJuicePreset, revision: 2, lastSubmit: null,
+  id: 'oc-1', businessDate: DATE, configId: 'cfg1', config: juiceBarPreset, revision: 2, lastSubmit: null,
   fields: { 'd:10000': { key: 'd:10000', value: { text: '2', mode: 'count' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-09T20:00:00Z' } },
 };
 
@@ -81,7 +81,7 @@ describe('DayScreen', () => {
   it('shows the counted denominations, channels, expense lines with authors and every total', async () => {
     setup();
     await loaded();
-    const b = breakdown(joinJuicePreset, currentInputs, NAMES)!;
+    const b = breakdown(juiceBarPreset, currentInputs, NAMES)!;
 
     const counted = within(region('Καταμέτρηση'));
     expect(b.denominations.length).toBe(2);
@@ -106,7 +106,7 @@ describe('DayScreen', () => {
     expect(lemons.textContent).toContain('Ιδιοκτήτης');
 
     const totals = within(region('Σύνολα'));
-    expect(b.totals.length).toBe(joinJuicePreset.totals.length);
+    expect(b.totals.length).toBe(juiceBarPreset.totals.length);
     for (const t of b.totals) {
       expect(totals.getByText(t.label).parentElement!.textContent).toContain(formatEuro(t.cents));
     }

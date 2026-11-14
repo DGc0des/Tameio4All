@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DeviceContext, StaffSession } from '../../../src/data/remote/deviceApi';
 import { gateReducer, type Gate } from '../../../src/features/phone/model/gate';
 
-const ctx: DeviceContext = { shopId: 'shop-1', shopName: 'Join Juice', configId: 'c1', config: {}, businessDate: '2026-11-07' };
+const ctx: DeviceContext = { shopId: 'shop-1', shopName: 'Δοκιμαστικό', configId: 'c1', config: {}, businessDate: '2026-11-07' };
 const session: StaffSession = { token: 't', staffId: 's1', name: 'ΜΑΡΙΑ', businessDate: '2026-11-07', shopId: 'shop-1' };
 const loading: Gate = { s: 'loading' };
 const ready: Gate = { s: 'ready', ctx, session, offline: false };

@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode, type ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { joinJuicePreset } from '../../../src/core/presets';
+import { juiceBarPreset } from '../../../src/core/presets';
 import type { PastExpense } from '../../../src/core/suggestions';
 import { loadCachedContext, loadStaffSession, saveCachedContext, saveJoinKey, saveStaffSession } from '../../../src/data/local/phone';
 import { saveSnapshot } from '../../../src/data/local/openClosing';
@@ -16,9 +16,9 @@ import { fail, FAKE_CONFIG_ID, FAKE_SHOP_ID, fakeDeviceApi, ok } from './fakeDev
 afterEach(cleanup);
 
 const CTX: DeviceContext = {
-  shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-07',
+  shopId: FAKE_SHOP_ID, shopName: 'Δοκιμαστικό', configId: FAKE_CONFIG_ID, config: juiceBarPreset, businessDate: '2026-11-07',
 };
-const SNAPSHOT: Snapshot = { id: 'oc-1', businessDate: '2026-11-07', configId: FAKE_CONFIG_ID, config: joinJuicePreset, revision: 1, lastSubmit: null, fields: {} };
+const SNAPSHOT: Snapshot = { id: 'oc-1', businessDate: '2026-11-07', configId: FAKE_CONFIG_ID, config: juiceBarPreset, revision: 1, lastSubmit: null, fields: {} };
 const SESSION: StaffSession = { token: 'token-1', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-07', shopId: FAKE_SHOP_ID };
 const K = 'ABCDEFGHJKLMNPQR';
 const LABEL = platformLabel(navigator.userAgent);
@@ -159,7 +159,7 @@ describe('PhoneApp', () => {
     const api = fakeDeviceApi({ join, context });
     start(api, store, { link: { key: K } });
     const sheet = await screen.findByRole('dialog', { name: 'Αλλαγή καταστήματος' });
-    expect(within(sheet).getByText('Η συσκευή είναι στο «Join Juice». Να μπει στο κατάστημα του συνδέσμου;')).toBeTruthy();
+    expect(within(sheet).getByText('Η συσκευή είναι στο «Δοκιμαστικό». Να μπει στο κατάστημα του συνδέσμου;')).toBeTruthy();
     fireEvent.click(within(sheet).getByRole('button', { name: 'Αλλαγή' }));
     expect(await screen.findByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
     expect(join).toHaveBeenLastCalledWith(K, LABEL, { switchShop: true });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateConfig } from '../../../src/core/config';
 import { evaluateTotals, type ClosingInputs } from '../../../src/core/formula';
-import { joinJuicePreset } from '../../../src/core/presets';
+import { juiceBarPreset } from '../../../src/core/presets';
 import { buildFirstConfig } from '../../../src/features/owner/model/firstSetup';
 import { checkLabel, checkName, isEmail, isPin, STAFF_NAME_MAX } from '../../../src/features/owner/model/limits';
 import { formatClock, formatDate, isLocked } from '../../../src/features/owner/model/time';
@@ -58,13 +58,13 @@ describe('time', () => {
 });
 
 describe('buildFirstConfig', () => {
-  it('builds a valid config whose ΤΑΜΕΙΟ/ΜΕΤΡΗΤΑ match the Join Juice preset', () => {
+  it('builds a valid config whose ΤΑΜΕΙΟ/ΜΕΤΡΗΤΑ match the juice bar preset', () => {
     const config = buildFirstConfig({
-      floatCents: joinJuicePreset.floatCents,
-      channels: joinJuicePreset.channels.map((c) => ({ label: `  ${c.label} `, type: c.type })),
+      floatCents: juiceBarPreset.floatCents,
+      channels: juiceBarPreset.channels.map((c) => ({ label: `  ${c.label} `, type: c.type })),
     });
     expect(validateConfig(config)).toEqual([]);
-    expect(config.channels.map((c) => c.label)).toEqual(joinJuicePreset.channels.map((c) => c.label));
+    expect(config.channels.map((c) => c.label)).toEqual(juiceBarPreset.channels.map((c) => c.label));
 
     const amounts = [15000, 4560, 2310, 31025, 8840];
     const inputsFor = (ids: string[]): ClosingInputs => ({
@@ -74,7 +74,7 @@ describe('buildFirstConfig', () => {
       expenses: [{ description: 'x', cents: 1250 }],
     });
     const mine = evaluateTotals(config, inputsFor(config.channels.map((c) => c.id)));
-    const preset = evaluateTotals(joinJuicePreset, inputsFor(joinJuicePreset.channels.map((c) => c.id)));
+    const preset = evaluateTotals(juiceBarPreset, inputsFor(juiceBarPreset.channels.map((c) => c.id)));
     expect(mine.tameio).toBe(preset.tameio);
     expect(mine.cash).toBe(preset.cash);
   });

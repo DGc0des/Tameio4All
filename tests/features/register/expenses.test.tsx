@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { joinJuicePreset as cfg } from '../../../src/core/presets';
+import { juiceBarPreset as cfg } from '../../../src/core/presets';
 import type { SupplierHistory } from '../../../src/core/suggestions';
 import { deriveClosing } from '../../../src/features/register/derive';
 import type { Draft } from '../../../src/features/register/draft';

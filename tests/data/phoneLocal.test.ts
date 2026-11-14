@@ -11,7 +11,7 @@ const throwing: KeyValueStore = {
   removeItem: () => { throw new Error('denied'); },
 };
 const session: StaffSession = { token: 't1', staffId: 's1', name: 'ΜΑΡΙΑ', businessDate: '2026-11-07', shopId: 'shop-1' };
-const ctx: DeviceContext = { shopId: 'shop-1', shopName: 'Join Juice', configId: 'c1', config: { schema: 1 }, businessDate: '2026-11-07' };
+const ctx: DeviceContext = { shopId: 'shop-1', shopName: 'Δοκιμαστικό', configId: 'c1', config: { schema: 1 }, businessDate: '2026-11-07' };
 const SESSION_KEY = 'tameio4all:v1:phone:session';
 const CONTEXT_KEY = 'tameio4all:v1:phone:context';
 

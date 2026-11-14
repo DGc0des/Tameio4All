@@ -10,8 +10,8 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-/** Join Juice Bars, Thessaloniki — reproduces tameioV2 exactly. First real shop and parity test. */
-export const joinJuicePreset: ShopConfig = deepFreeze({
+/** A juice bar with two delivery platforms and two card terminals — the parity fixture for tameioV2's formulas. */
+export const juiceBarPreset: ShopConfig = deepFreeze({
   schema: 1,
   floatCents: 100000,
   denominations: EUR_DENOMINATIONS.filter((d) => d <= 10000),

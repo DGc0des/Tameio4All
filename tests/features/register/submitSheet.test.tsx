@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { joinJuicePreset as cfg } from '../../../src/core/presets';
+import { juiceBarPreset as cfg } from '../../../src/core/presets';
 import type { ClosingInputs } from '../../../src/core/formula';
 import type { DResult } from '../../../src/data/remote/deviceApi';
 import { deriveClosing } from '../../../src/features/register/derive';

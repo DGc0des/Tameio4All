@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ConfigErrorCode } from '../../../src/core/config';
-import { joinJuicePreset } from '../../../src/core/presets';
+import { juiceBarPreset } from '../../../src/core/presets';
 import type { OwnerError } from '../../../src/data/remote/errors';
 import { configErrorMessage, configErrorSection, nameProblemMessage, ownerErrorMessage } from '../../../src/features/owner/model/messages';
 
@@ -28,12 +28,12 @@ const greek = /[Ͱ-Ͽ]/;
 describe('messages', () => {
   it('has a Greek message for every config error code', () => {
     for (const code of Object.keys(CONFIG_CODES) as ConfigErrorCode[]) {
-      expect(configErrorMessage({ code, detail: 'channel: ch_1' }, joinJuicePreset)).toMatch(greek);
+      expect(configErrorMessage({ code, detail: 'channel: ch_1' }, juiceBarPreset)).toMatch(greek);
     }
   });
 
   it('names totals in a cycle by label', () => {
-    expect(configErrorMessage({ code: 'cycle', detail: 'cash → tameio → cash' }, joinJuicePreset)).toContain('ΜΕΤΡΗΤΑ → ΤΑΜΕΙΟ → ΜΕΤΡΗΤΑ');
+    expect(configErrorMessage({ code: 'cycle', detail: 'cash → tameio → cash' }, juiceBarPreset)).toContain('ΜΕΤΡΗΤΑ → ΤΑΜΕΙΟ → ΜΕΤΡΗΤΑ');
   });
 
   it('places errors in their section', () => {

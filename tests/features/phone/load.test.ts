@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { joinJuicePreset } from '../../../src/core/presets';
+import { juiceBarPreset } from '../../../src/core/presets';
 import { loadCachedContext, loadJoinKey, saveCachedContext, saveJoinKey, saveStaffSession } from '../../../src/data/local/phone';
 import { memoryStore, type KeyValueStore } from '../../../src/data/local/storage';
 import type { DeviceApi, DeviceContext, StaffSession } from '../../../src/data/remote/deviceApi';
@@ -8,7 +8,7 @@ import { fail, FAKE_CONFIG_ID, FAKE_SHOP_ID, fakeDeviceApi, ok } from './fakeDev
 
 const K = 'ABCDEFGHJKLMNPQR';
 const CTX: DeviceContext = {
-  shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: joinJuicePreset, businessDate: '2026-11-07',
+  shopId: FAKE_SHOP_ID, shopName: 'Δοκιμαστικό', configId: FAKE_CONFIG_ID, config: juiceBarPreset, businessDate: '2026-11-07',
 };
 const SESSION: StaffSession = { token: 'token-1', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-07', shopId: FAKE_SHOP_ID };
 

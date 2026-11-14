@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { joinJuicePreset } from '../../../src/core/presets';
+import { juiceBarPreset } from '../../../src/core/presets';
 import type { LiveChannel, LiveFieldEvent, LiveHandlers, LiveStatus } from '../../../src/data/remote/live';
 import type { FieldKey, ServerField, Snapshot } from '../../../src/features/register/live/fields';
 import type { DResult, DeviceApi, DeviceError, StaffSession } from '../../../src/data/remote/deviceApi';
@@ -77,7 +77,7 @@ export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'conf
     revision: 0,
     fields: {},
     lastSubmit: null,
-    config: init.config ?? joinJuicePreset,
+    config: init.config ?? juiceBarPreset,
     names: init.names ?? { 'token-1': 'ΜΑΡΙΑ', 'token-2': 'ΝΙΚΟΣ' },
     staffIds: init.staffIds ?? { 'token-1': 'staff-maria', 'token-2': 'staff-nikos' },
     at: init.at ?? '2026-11-07T19:42:00.000Z',
@@ -147,7 +147,7 @@ export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'conf
 }
 
 /**
- * A paired phone for shop «Join Juice»; PIN 123456 signs in. Every method is a vi.fn. The live-closing
+ * A paired phone for shop «Δοκιμαστικό»; PIN 123456 signs in. Every method is a vi.fn. The live-closing
  * calls go to `server` (a fresh one unless shared, e.g. by two phones in one test).
  */
 export function fakeDeviceApi(overrides: Partial<DeviceApi> = {}, server: FakeServer = fakeServer()): DeviceApi {
@@ -157,9 +157,9 @@ export function fakeDeviceApi(overrides: Partial<DeviceApi> = {}, server: FakeSe
     context: vi.fn(() =>
       ok({
         shopId: FAKE_SHOP_ID,
-        shopName: 'Join Juice',
+        shopName: 'Δοκιμαστικό',
         configId: FAKE_CONFIG_ID,
-        config: joinJuicePreset,
+        config: juiceBarPreset,
         businessDate: FAKE_DATE,
       }),
     ),

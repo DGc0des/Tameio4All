@@ -13,7 +13,7 @@ import { FAKE_CONFIG_ID, FAKE_SHOP_ID, fail, fakeDeviceApi, fakeLive, fakeServer
 
 afterEach(cleanup);
 
-const CTX: DeviceContext = { shopId: FAKE_SHOP_ID, shopName: 'Join Juice', configId: FAKE_CONFIG_ID, config: null, businessDate: '2026-11-07' };
+const CTX: DeviceContext = { shopId: FAKE_SHOP_ID, shopName: 'Δοκιμαστικό', configId: FAKE_CONFIG_ID, config: null, businessDate: '2026-11-07' };
 const MARIA: StaffSession = { token: 'token-1', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-07', shopId: FAKE_SHOP_ID };
 const NIKOS: StaffSession = { token: 'token-2', staffId: 'staff-nikos', name: 'ΝΙΚΟΣ', businessDate: '2026-11-07', shopId: FAKE_SHOP_ID };
 

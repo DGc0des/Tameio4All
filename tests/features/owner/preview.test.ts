@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { newShopConfig } from '../../../src/core/config';
-import { joinJuicePreset } from '../../../src/core/presets';
+import { juiceBarPreset } from '../../../src/core/presets';
 import { previewTotals } from '../../../src/features/owner/model/preview';
 
 describe('previewTotals', () => {
   it('evaluates the configured totals on sample amounts', () => {
-    const r = previewTotals(joinJuicePreset, { counted: '1500', expenses: '20,30', channels: { mypos: '310.25', wolt: '' } });
+    const r = previewTotals(juiceBarPreset, { counted: '1500', expenses: '20,30', channels: { mypos: '310.25', wolt: '' } });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const byId = Object.fromEntries(r.totals.map((t) => [t.id, t.cents]));
@@ -15,7 +15,7 @@ describe('previewTotals', () => {
   });
 
   it('reports unusable sample fields instead of guessing', () => {
-    expect(previewTotals(joinJuicePreset, { counted: '10.02', expenses: 'x', channels: { wolt: '-5' } }))
+    expect(previewTotals(juiceBarPreset, { counted: '10.02', expenses: 'x', channels: { wolt: '-5' } }))
       .toEqual({ ok: false, reason: 'bad_sample', fields: ['counted', 'wolt', 'expenses'] });
   });
 

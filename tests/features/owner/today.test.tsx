@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { joinJuicePreset } from '../../../src/core/presets';
+import { juiceBarPreset } from '../../../src/core/presets';
 import { formatEuro } from '../../../src/core/money';
 import { deriveClosing } from '../../../src/features/register/derive';
 import { draftFromFields } from '../../../src/features/register/live/merge';
@@ -21,7 +21,7 @@ afterEach(cleanup);
 
 const SHOP = '3f2c1a9e-5b7d-4c8e-9f10-112233445566';
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
-  id: 'oc-1', businessDate: '2026-11-07', configId: 'c1', config: joinJuicePreset, revision: 0, lastSubmit: null, fields: {}, ...over,
+  id: 'oc-1', businessDate: '2026-11-07', configId: 'c1', config: juiceBarPreset, revision: 0, lastSubmit: null, fields: {}, ...over,
 });
 
 function setup(over: Parameters<typeof fakeApi>[0] = {}, store = memoryStore()) {
@@ -171,7 +171,7 @@ describe('TodayScreen', () => {
     const s = snap({ fields });
     setup({ todayClosing: vi.fn(() => ok(s)) });
     await loaded();
-    const expected = deriveClosing(joinJuicePreset, draftFromFields(s, [])).envelope;
+    const expected = deriveClosing(juiceBarPreset, draftFromFields(s, [])).envelope;
     expect(expected.targetCents).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Φάκελος' }));
     const dialog = await screen.findByRole('dialog');

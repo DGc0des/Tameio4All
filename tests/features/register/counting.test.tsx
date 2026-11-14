@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { joinJuicePreset as cfg } from '../../../src/core/presets';
+import { juiceBarPreset as cfg } from '../../../src/core/presets';
 import { BottomBar } from '../../../src/features/register/BottomBar';
 import { ChannelsCard } from '../../../src/features/register/ChannelsCard';
 import { CountCard } from '../../../src/features/register/CountCard';

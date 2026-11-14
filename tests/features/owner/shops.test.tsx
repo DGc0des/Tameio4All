@@ -17,7 +17,7 @@ describe('ShopsScreen', () => {
   it('auto-opens the only shop on first load', async () => {
     const navigate = vi.fn();
     const onLoaded = vi.fn();
-    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Join Juice' }])) })} navigate={navigate} autoOpen onLoaded={onLoaded} onSignOut={vi.fn()} onExit={vi.fn()} />);
+    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό' }])) })} navigate={navigate} autoOpen onLoaded={onLoaded} onSignOut={vi.fn()} onExit={vi.fn()} />);
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ name: 'shop', shopId: A, tab: 'settings' }, { replace: true }));
     expect(onLoaded).toHaveBeenCalled();
   });
@@ -60,7 +60,7 @@ describe('NewShopScreen', () => {
     const api = fakeApi();
     const navigate = vi.fn();
     render(<NewShopScreen api={api} navigate={navigate} />);
-    type('Όνομα καταστήματος', '  Join Juice ');
+    type('Όνομα καταστήματος', '  Δοκιμαστικό ');
     type('Αρχικό ταμείο (€)', '1000');
     fireEvent.click(screen.getByRole('button', { name: '+ Κανάλι' }));
     type('Όνομα καναλιού 1', 'WOLT');
@@ -68,7 +68,7 @@ describe('NewShopScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Δημιουργία' }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ name: 'shop', shopId: '11111111-1111-4111-8111-111111111111', tab: 'settings' }, { replace: true }));
     const [name, config] = (api.createShop as ReturnType<typeof vi.fn>).mock.calls[0] as [string, ShopConfig];
-    expect(name).toBe('Join Juice');
+    expect(name).toBe('Δοκιμαστικό');
     expect(config.floatCents).toBe(100000);
     expect(config.channels).toEqual([{ id: 'ch_1', label: 'WOLT', type: 'delivery' }]);
     expect(validateConfig(config)).toEqual([]);
@@ -93,15 +93,15 @@ describe('NewShopScreen', () => {
 
 describe('ShopLayout', () => {
   it('shows the shop name, renames it, and switches tabs', async () => {
-    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Join Juice' }])) });
+    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό' }])) });
     const navigate = vi.fn();
     render(<ShopLayout api={api} shopId={A} tab="settings" navigate={navigate} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={vi.fn()} />);
-    expect(await screen.findByRole('heading', { name: 'Join Juice' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Δοκιμαστικό' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Μετονομασία καταστήματος' }));
-    type('Νέο όνομα καταστήματος', 'Join Juice 2');
+    type('Νέο όνομα καταστήματος', 'Δοκιμαστικό 2');
     fireEvent.click(screen.getByRole('button', { name: 'Αποθήκευση ονόματος' }));
-    expect(await screen.findByRole('heading', { name: 'Join Juice 2' })).toBeTruthy();
-    expect(api.renameShop).toHaveBeenCalledWith(A, 'Join Juice 2');
+    expect(await screen.findByRole('heading', { name: 'Δοκιμαστικό 2' })).toBeTruthy();
+    expect(api.renameShop).toHaveBeenCalledWith(A, 'Δοκιμαστικό 2');
     fireEvent.click(screen.getByRole('button', { name: 'Προσωπικό' }));
     expect(navigate).toHaveBeenCalledWith({ name: 'shop', shopId: A, tab: 'staff' });
   });
@@ -113,17 +113,17 @@ describe('ShopLayout', () => {
 
   it('exits back to the register from the footer', async () => {
     const onExit = vi.fn();
-    render(<ShopLayout api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Join Juice' }])) })} shopId={A} tab="settings" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={onExit} />);
-    await screen.findByRole('heading', { name: 'Join Juice' });
+    render(<ShopLayout api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό' }])) })} shopId={A} tab="settings" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={onExit} />);
+    await screen.findByRole('heading', { name: 'Δοκιμαστικό' });
     fireEvent.click(screen.getByRole('button', { name: '← Ταμείο' }));
     expect(onExit).toHaveBeenCalled();
   });
 
   it('shows a load error with retry', async () => {
-    const listShops = vi.fn().mockReturnValueOnce(fail({ code: 'network' })).mockReturnValue(ok([{ id: A, name: 'Join Juice' }]));
+    const listShops = vi.fn().mockReturnValueOnce(fail({ code: 'network' })).mockReturnValue(ok([{ id: A, name: 'Δοκιμαστικό' }]));
     render(<ShopLayout api={fakeApi({ listShops })} shopId={A} tab="settings" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={vi.fn()} />);
     expect((await screen.findByRole('alert')).textContent).toContain('Δεν υπάρχει σύνδεση');
     fireEvent.click(screen.getByRole('button', { name: 'Ξανά' }));
-    expect(await screen.findByRole('heading', { name: 'Join Juice' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Δοκιμαστικό' })).toBeTruthy();
   });
 });

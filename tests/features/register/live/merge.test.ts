@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { joinJuicePreset as cfg } from '../../../../src/core/presets';
+import { juiceBarPreset as cfg } from '../../../../src/core/presets';
 import { deriveClosing } from '../../../../src/features/register/derive';
 import { applyServerField, draftFromFields, fieldLabel, presenceTags, revisionGap } from '../../../../src/features/register/live/merge';
 import type { PendingEdit, ServerField, Snapshot } from '../../../../src/features/register/live/fields';

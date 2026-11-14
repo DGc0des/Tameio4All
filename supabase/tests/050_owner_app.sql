@@ -21,7 +21,7 @@ select set_config('t.staff_a', public.create_staff(current_setting('t.shop_a')::
 
 -- T1 owner A renames their own shop
 do $$ declare n int; begin
-  update public.shops set name = 'Join Juice Καλαμαριά' where id = current_setting('t.shop_a')::uuid;
+  update public.shops set name = 'Δοκιμαστικό Καλαμαριά' where id = current_setting('t.shop_a')::uuid;
   get diagnostics n = row_count;
   if n <> 1 then raise exception 'T1 own rename changed % rows', n; end if;
 end $$;

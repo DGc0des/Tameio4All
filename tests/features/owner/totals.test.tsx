@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ShopConfig } from '../../../src/core/config';
-import { joinJuicePreset } from '../../../src/core/presets';
+import { juiceBarPreset } from '../../../src/core/presets';
 import { applySettings } from '../../../src/features/owner/model/settingsDraft';
 import { PreviewCard } from '../../../src/features/owner/settings/PreviewCard';
 import { TotalsSection } from '../../../src/features/owner/settings/TotalsSection';
@@ -20,7 +20,7 @@ function Harness({ initial }: { initial: ShopConfig }) {
     </>
   );
 }
-const jj = (): ShopConfig => structuredClone(joinJuicePreset) as ShopConfig;
+const jj = (): ShopConfig => structuredClone(juiceBarPreset) as ShopConfig;
 const totals = () => JSON.parse(screen.getByTestId('json').textContent ?? '[]') as ShopConfig['totals'];
 
 describe('TotalsSection', () => {

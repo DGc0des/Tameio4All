@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { newShopConfig, type ShopConfig } from '../../../src/core/config';
-import { joinJuicePreset } from '../../../src/core/presets';
+import { juiceBarPreset } from '../../../src/core/presets';
 import { loadOwnerDraft, saveOwnerDraft } from '../../../src/data/local/ownerDrafts';
 import { memoryStore, type KeyValueStore } from '../../../src/data/local/storage';
 import type { OwnerApi } from '../../../src/data/remote/ownerApi';
@@ -12,7 +12,7 @@ import { fail, fakeApi, ok } from './fakeApi';
 afterEach(cleanup);
 const SHOP = '11111111-1111-4111-8111-111111111111';
 const NOW = () => new Date(2026, 8, 29, 12, 0);
-const jj = (): ShopConfig => structuredClone(joinJuicePreset) as ShopConfig;
+const jj = (): ShopConfig => structuredClone(juiceBarPreset) as ShopConfig;
 const serverAt = (version: number, config: unknown = jj()) => vi.fn(() => ok({ id: `c${version}`, version, config }));
 const publishButton = () => screen.getByRole('button', { name: 'Δημοσίευση' }) as HTMLButtonElement;
 

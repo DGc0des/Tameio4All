@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { joinJuicePreset as cfg } from '../../../src/core/presets';
+import { juiceBarPreset as cfg } from '../../../src/core/presets';
 import {
   deriveClosing, envelopeBlockReason, fieldError, fieldId, submitBlockReason,
 } from '../../../src/features/register/derive';

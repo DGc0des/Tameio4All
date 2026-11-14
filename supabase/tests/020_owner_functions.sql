@@ -12,9 +12,9 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 
 -- T1 create_shop stores the shop and settings version 1
-select set_config('t.shop_a', public.create_shop('  Join Juice  ', '{"schema":1,"floatCents":100000}')::text, true);
+select set_config('t.shop_a', public.create_shop('  Δοκιμαστικό  ', '{"schema":1,"floatCents":100000}')::text, true);
 do $$ begin
-  if (select name from public.shops where id = current_setting('t.shop_a')::uuid) <> 'Join Juice' then raise exception 'T1 shop name not trimmed/stored'; end if;
+  if (select name from public.shops where id = current_setting('t.shop_a')::uuid) <> 'Δοκιμαστικό' then raise exception 'T1 shop name not trimmed/stored'; end if;
   if (select array_agg(version) from public.shop_configs where shop_id = current_setting('t.shop_a')::uuid) is distinct from array[1] then raise exception 'T1 no version 1'; end if;
 end $$;
 
