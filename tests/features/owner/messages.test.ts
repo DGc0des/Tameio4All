@@ -21,6 +21,7 @@ const OWNER_ERRORS: Record<OwnerError['code'], OwnerError> = {
   idempotency_conflict: { code: 'idempotency_conflict' }, bad_range: { code: 'bad_range' },
   draft_changed: { code: 'draft_changed' },
   too_many_shops: { code: 'too_many_shops' }, too_many_staff: { code: 'too_many_staff' }, too_many_versions: { code: 'too_many_versions' },
+  confirm_mismatch: { code: 'confirm_mismatch' },
   unknown: { code: 'unknown', detail: 'x' },
 };
 const greek = /[Ͱ-Ͽ]/;
@@ -48,6 +49,10 @@ describe('messages', () => {
     expect(ownerErrorMessage({ code: 'too_many_shops' })).toBe('Έφτασες το όριο των 20 καταστημάτων.');
     expect(ownerErrorMessage({ code: 'too_many_staff' })).toBe('Έφτασες το όριο των 100 ατόμων σε αυτό το κατάστημα.');
     expect(ownerErrorMessage({ code: 'too_many_versions' })).toBe('Πάρα πολλές αλλαγές ρυθμίσεων σήμερα. Δοκίμασε ξανά αύριο.');
+  });
+
+  it('words the deletion confirmation error', () => {
+    expect(ownerErrorMessage({ code: 'confirm_mismatch' })).toBe('Το όνομα δεν ταιριάζει. Γράψε το ακριβώς όπως φαίνεται.');
   });
 
   it('has a Greek message for every owner error', () => {

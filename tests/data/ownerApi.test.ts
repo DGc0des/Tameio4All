@@ -9,7 +9,7 @@ type Reply = { data: unknown; error: unknown };
 function fake(reply: Reply, authReply: Reply = { data: {}, error: null }) {
   const calls: unknown[][] = [];
   const builder: Record<string, unknown> = {};
-  for (const m of ['select', 'update', 'eq', 'order', 'limit']) {
+  for (const m of ['select', 'update', 'eq', 'is', 'order', 'limit']) {
     builder[m] = (...args: unknown[]) => {
       calls.push([m, ...args]);
       return builder;
@@ -28,6 +28,10 @@ function fake(reply: Reply, authReply: Reply = { data: {}, error: null }) {
     auth: {
       exchangeCodeForSession: () => Promise.resolve(authReply),
       signInWithPassword: () => Promise.resolve(authReply),
+      signOut: (...args: unknown[]) => {
+        calls.push(['signOut', ...args]);
+        return Promise.resolve({ error: null });
+      },
     },
   };
   return { api: createOwnerApi(client as unknown as SupabaseClient), calls };
@@ -104,6 +108,33 @@ describe('createOwnerApi', () => {
     expect(await fake(notOwner).api.rotateJoinKey('s1')).toEqual({ ok: false, error: { code: 'not_owner' } });
     expect(await fake(notOwner).api.listDevices('s1')).toEqual({ ok: false, error: { code: 'not_owner' } });
     expect(await fake(notOwner).api.removeDevice('u1')).toEqual({ ok: false, error: { code: 'not_owner' } });
+  });
+
+  it('eraseStaff / deleteShop / deleteAccount call the right functions', async () => {
+    const { api, calls } = fake({ data: null, error: null });
+    expect(await api.eraseStaff('st1')).toEqual({ ok: true, data: undefined });
+    expect(await api.deleteShop('s1', 'Shop A')).toEqual({ ok: true, data: undefined });
+    expect(await api.deleteAccount()).toEqual({ ok: true, data: undefined });
+    expect(calls).toEqual([
+      ['rpc', 'owner_erase_staff', { p_staff_id: 'st1' }],
+      ['rpc', 'owner_delete_shop', { p_shop_id: 's1', p_confirm_name: 'Shop A' }],
+      ['rpc', 'owner_delete_account'],
+      ['signOut', { scope: 'local' }],
+    ]);
+  });
+
+  it('keeps the session when the account deletion fails', async () => {
+    const { api, calls } = fake({ data: null, error: { message: 'not_owner', code: '42501' } });
+    expect(await api.deleteAccount()).toEqual({ ok: false, error: { code: 'not_owner' } });
+    expect(calls.some((c) => c[0] === 'signOut')).toBe(false);
+    expect(await fake({ data: null, error: { message: 'confirm_mismatch', code: '22023' } }).api.deleteShop('s1', 'x'))
+      .toEqual({ ok: false, error: { code: 'confirm_mismatch' } });
+  });
+
+  it('listStaff asks only for rows that are not erased', async () => {
+    const { api, calls } = fake({ data: [], error: null });
+    await api.listStaff('s1');
+    expect(calls).toContainEqual(['is', 'erased_at', null]);
   });
 
   it('removes a device through owner_remove_device', async () => {

@@ -108,7 +108,9 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
     },
     setDayChange: (shopId, time) => run(client.rpc('set_day_change_time', { p_shop_id: shopId, p_time: time })),
     async listStaff(shopId) {
-      const r = await run(client.from('staff').select('id, name, active, locked_until, has_pin').eq('shop_id', shopId).order('name'));
+      const r = await run(
+        client.from('staff').select('id, name, active, locked_until, has_pin').eq('shop_id', shopId).is('erased_at', null).order('name'),
+      );
       if (!r.ok) return r;
       const rows = (r.data ?? []) as { id: string; name: string; active: boolean; locked_until: string | null; has_pin: boolean }[];
       return {
@@ -120,6 +122,20 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
     setStaffPin: async (staffId, pin) => done(await run(client.rpc('set_staff_pin', { p_staff_id: staffId, p_pin: pin }))),
     unlockStaff: async (staffId) => done(await run(client.rpc('unlock_staff', { p_staff_id: staffId }))),
     updateStaff: async (staffId, patch) => oneRow(await run(client.from('staff').update(patch).eq('id', staffId).select('id'))),
+    eraseStaff: async (staffId) => done(await run(client.rpc('owner_erase_staff', { p_staff_id: staffId }))),
+    deleteShop: async (shopId, confirmName) =>
+      done(await run(client.rpc('owner_delete_shop', { p_shop_id: shopId, p_confirm_name: confirmName }))),
+    async deleteAccount() {
+      const r = done(await run(client.rpc('owner_delete_account')));
+      if (r.ok) {
+        try {
+          await client.auth.signOut({ scope: 'local' });
+        } catch {
+          // the account is gone; the stored session is useless either way
+        }
+      }
+      return r;
+    },
     joinKey: async (shopId) => keyResult(await run(client.rpc('owner_get_join_key', { p_shop_id: shopId }))),
     rotateJoinKey: async (shopId) => keyResult(await run(client.rpc('owner_rotate_join_key', { p_shop_id: shopId }))),
     async listDevices(shopId) {

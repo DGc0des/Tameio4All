@@ -72,6 +72,12 @@ export interface OwnerApi {
   setStaffPin(staffId: string, pin: string): Promise<Result<void>>;
   unlockStaff(staffId: string): Promise<Result<void>>;
   updateStaff(staffId: string, patch: { name?: string; active?: boolean }): Promise<Result<void>>;
+  /** Erases a cashier for good: the row stays (closings keep it) under a placeholder name; never listed again. */
+  eraseStaff(staffId: string): Promise<Result<void>>;
+  /** Deletes the shop and everything in it. `confirmName` must be the shop's name (`confirm_mismatch` otherwise). */
+  deleteShop(shopId: string, confirmName: string): Promise<Result<void>>;
+  /** Deletes the account and all its shops, then signs out of this browser. */
+  deleteAccount(): Promise<Result<void>>;
   /** The shop's permanent store key (16 characters, created on first use). */
   joinKey(shopId: string): Promise<Result<string>>;
   /** Replaces the store key; the old link stops working and every device leaves the shop. */

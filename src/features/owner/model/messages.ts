@@ -44,6 +44,8 @@ export function ownerErrorMessage(e: OwnerError): string {
       return 'Έφτασες το όριο των 100 ατόμων σε αυτό το κατάστημα.';
     case 'too_many_versions':
       return 'Πάρα πολλές αλλαγές ρυθμίσεων σήμερα. Δοκίμασε ξανά αύριο.';
+    case 'confirm_mismatch':
+      return 'Το όνομα δεν ταιριάζει. Γράψε το ακριβώς όπως φαίνεται.';
     case 'bad_name':
       return 'Το όνομα είναι κενό ή πολύ μεγάλο.';
     case 'invalid_credentials':

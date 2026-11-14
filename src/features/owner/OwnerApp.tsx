@@ -134,6 +134,7 @@ function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redir
       return (
         <ShopsScreen
           api={api}
+          store={store}
           navigate={navigate}
           autoOpen={autoOpen.current}
           onLoaded={() => {

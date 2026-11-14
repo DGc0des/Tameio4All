@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  loadEntryMode, loadPending, loadSnapshot, saveEntryMode, savePending, saveSnapshot,
+  clearShop, loadEntryMode, loadPending, loadSnapshot, saveEntryMode, savePending, saveSnapshot,
 } from '../../src/data/local/openClosing';
 import { memoryStore, type KeyValueStore } from '../../src/data/local/storage';
 import type { PendingEdit, Snapshot } from '../../src/features/register/live/fields';
@@ -136,5 +136,23 @@ describe('entry mode', () => {
   it('failure-safe with a throwing store', () => {
     expect(loadEntryMode(throwing, 'shop-1')).toBe('amount');
     expect(saveEntryMode(throwing, 'shop-1', 'count')).toBe(false);
+  });
+});
+
+describe('clearShop', () => {
+  it('removes the shop queue, snapshot and entry mode, leaving other shops', () => {
+    const s = memoryStore();
+    savePending(s, 'shop-1', 'staff-maria', [edit()]);
+    saveSnapshot(s, 'shop-1', snap);
+    saveEntryMode(s, 'shop-1', 'count');
+    saveSnapshot(s, 'shop-2', snap);
+    clearShop(s, 'shop-1');
+    expect(s.getItem(K('pending'))).toBeNull();
+    expect(s.getItem(K('snapshot'))).toBeNull();
+    expect(s.getItem(K('entryMode'))).toBeNull();
+    expect(loadSnapshot(s, 'shop-2')).toEqual(snap);
+  });
+  it('failure-safe with a throwing store', () => {
+    expect(() => clearShop(throwing, 'shop-1')).not.toThrow();
   });
 });

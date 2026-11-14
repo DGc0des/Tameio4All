@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { validateConfig, type ShopConfig } from '../../../src/core/config';
+import { loadSnapshot, saveSnapshot } from '../../../src/data/local/openClosing';
 import { memoryStore } from '../../../src/data/local/storage';
 import { NewShopScreen } from '../../../src/features/owner/NewShopScreen';
 import { ShopLayout } from '../../../src/features/owner/ShopLayout';
@@ -17,14 +18,14 @@ describe('ShopsScreen', () => {
   it('auto-opens the only shop on first load', async () => {
     const navigate = vi.fn();
     const onLoaded = vi.fn();
-    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό' }])) })} navigate={navigate} autoOpen onLoaded={onLoaded} onSignOut={vi.fn()} onExit={vi.fn()} />);
+    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό' }])) })} store={memoryStore()} navigate={navigate} autoOpen onLoaded={onLoaded} onSignOut={vi.fn()} onExit={vi.fn()} />);
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ name: 'shop', shopId: A, tab: 'settings' }, { replace: true }));
     expect(onLoaded).toHaveBeenCalled();
   });
 
   it('lists several shops and offers a new one', async () => {
     const navigate = vi.fn();
-    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α' }, { id: B, name: 'Β' }])) })} navigate={navigate} autoOpen onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={vi.fn()} />);
+    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α' }, { id: B, name: 'Β' }])) })} store={memoryStore()} navigate={navigate} autoOpen onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Β' }));
     expect(navigate).toHaveBeenCalledWith({ name: 'shop', shopId: B, tab: 'settings' });
     fireEvent.click(screen.getByRole('button', { name: '+ Νέο κατάστημα' }));
@@ -33,14 +34,14 @@ describe('ShopsScreen', () => {
 
   it('does not auto-open when coming back to the list', async () => {
     const navigate = vi.fn();
-    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α' }])) })} navigate={navigate} autoOpen={false} onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={vi.fn()} />);
+    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α' }])) })} store={memoryStore()} navigate={navigate} autoOpen={false} onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={vi.fn()} />);
     await screen.findByRole('button', { name: 'Α' });
     expect(navigate).not.toHaveBeenCalled();
   });
 
   it('shows a load error with retry', async () => {
     const listShops = vi.fn().mockReturnValueOnce(fail({ code: 'network' })).mockReturnValue(ok([]));
-    render(<ShopsScreen api={fakeApi({ listShops })} navigate={vi.fn()} autoOpen onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={vi.fn()} />);
+    render(<ShopsScreen api={fakeApi({ listShops })} store={memoryStore()} navigate={vi.fn()} autoOpen onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={vi.fn()} />);
     expect((await screen.findByRole('alert')).textContent).toContain('Δεν υπάρχει σύνδεση');
     fireEvent.click(screen.getByRole('button', { name: 'Ξανά' }));
     expect(await screen.findByText(/Δεν έχεις ακόμα κατάστημα/)).toBeTruthy();
@@ -48,10 +49,46 @@ describe('ShopsScreen', () => {
 
   it('exits back to the register from the header', async () => {
     const onExit = vi.fn();
-    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([])) })} navigate={vi.fn()} autoOpen={false} onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={onExit} />);
+    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([])) })} store={memoryStore()} navigate={vi.fn()} autoOpen={false} onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={onExit} />);
     await screen.findByText(/Δεν έχεις ακόμα κατάστημα/);
     fireEvent.click(screen.getByRole('button', { name: '← Ταμείο' }));
     expect(onExit).toHaveBeenCalled();
+  });
+
+  it('deletes the account only after the email is typed', async () => {
+    const onSignOut = vi.fn();
+    const store = memoryStore();
+    saveSnapshot(store, A, { id: 'oc', businessDate: '2026-09-29', configId: 'c1', config: {}, revision: 0, lastSubmit: null, fields: {} });
+    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α' }])) });
+    render(<ShopsScreen api={api} store={store} navigate={vi.fn()} autoOpen={false} onLoaded={vi.fn()} onSignOut={onSignOut} onExit={vi.fn()} />);
+    await screen.findByRole('button', { name: 'Α' });
+    fireEvent.click(screen.getByRole('button', { name: 'Διαγραφή λογαριασμού' }));
+    const sheet = screen.getByRole('dialog');
+    expect(sheet.textContent).toContain('Σβήνονται οριστικά ο λογαριασμός σου και όλα τα καταστήματά σου.');
+    const confirmButton = within(sheet).getByRole('button', { name: 'Διαγραφή' }) as HTMLButtonElement;
+    await waitFor(() => expect(api.session).toHaveBeenCalled());
+    fireEvent.change(within(sheet).getByLabelText('Email για επιβεβαίωση'), { target: { value: 'other@test.gr' } });
+    expect(confirmButton.disabled).toBe(true);
+    fireEvent.change(within(sheet).getByLabelText('Email για επιβεβαίωση'), { target: { value: ' Owner@Test.gr ' } });
+    expect(confirmButton.disabled).toBe(false);
+    fireEvent.click(confirmButton);
+    await waitFor(() => expect(onSignOut).toHaveBeenCalled());
+    expect(api.deleteAccount).toHaveBeenCalledTimes(1);
+    expect(loadSnapshot(store, A)).toBeNull();
+  });
+
+  it('keeps the account and shows the message when the deletion fails', async () => {
+    const onSignOut = vi.fn();
+    const api = fakeApi({ deleteAccount: vi.fn(() => fail<void>({ code: 'network' })) });
+    render(<ShopsScreen api={api} store={memoryStore()} navigate={vi.fn()} autoOpen={false} onLoaded={vi.fn()} onSignOut={onSignOut} onExit={vi.fn()} />);
+    await screen.findByText(/Δεν έχεις ακόμα κατάστημα/);
+    fireEvent.click(screen.getByRole('button', { name: 'Διαγραφή λογαριασμού' }));
+    const sheet = screen.getByRole('dialog');
+    await waitFor(() => expect(api.session).toHaveBeenCalled());
+    fireEvent.change(within(sheet).getByLabelText('Email για επιβεβαίωση'), { target: { value: 'owner@test.gr' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Διαγραφή' }));
+    expect((await within(sheet).findByRole('alert')).textContent).toContain('Δεν υπάρχει σύνδεση');
+    expect(onSignOut).not.toHaveBeenCalled();
   });
 });
 

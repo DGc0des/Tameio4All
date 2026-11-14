@@ -19,6 +19,10 @@ describe('mapError', () => {
     }
   });
 
+  it('maps the shop deletion confirmation error', () => {
+    expect(mapError({ message: 'confirm_mismatch', code: '22023' })).toEqual({ code: 'confirm_mismatch' });
+  });
+
   it('maps the stage 3 owner save and history errors', () => {
     for (const code of ['bad_inputs', 'config_mismatch', 'no_closing_day', 'idempotency_conflict', 'bad_range'] as const) {
       expect(mapError({ message: code })).toEqual({ code });

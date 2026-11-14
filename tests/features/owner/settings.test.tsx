@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { newShopConfig, type ShopConfig } from '../../../src/core/config';
 import { juiceBarPreset } from '../../../src/core/presets';
+import { loadSnapshot, saveSnapshot } from '../../../src/data/local/openClosing';
 import { loadOwnerDraft, saveOwnerDraft } from '../../../src/data/local/ownerDrafts';
 import { memoryStore, type KeyValueStore } from '../../../src/data/local/storage';
 import type { OwnerApi } from '../../../src/data/remote/ownerApi';
@@ -16,10 +17,46 @@ const jj = (): ShopConfig => structuredClone(juiceBarPreset) as ShopConfig;
 const serverAt = (version: number, config: unknown = jj()) => vi.fn(() => ok({ id: `c${version}`, version, config }));
 const publishButton = () => screen.getByRole('button', { name: 'Δημοσίευση' }) as HTMLButtonElement;
 
-function start(api: OwnerApi, store: KeyValueStore = memoryStore()) {
-  render(<SettingsScreen api={api} shopId={SHOP} store={store} now={NOW} />);
+function start(api: OwnerApi, store: KeyValueStore = memoryStore(), navigate = vi.fn()) {
+  render(<SettingsScreen api={api} shopId={SHOP} shopName="Δοκιμαστικό" navigate={navigate} store={store} now={NOW} />);
   return store;
 }
+
+describe('DangerZoneCard (shop deletion)', () => {
+  const deleteButton = () => screen.getByRole('button', { name: 'Διαγραφή καταστήματος' }) as HTMLButtonElement;
+  const confirm = (v: string) => fireEvent.change(screen.getByLabelText('Όνομα καταστήματος για επιβεβαίωση'), { target: { value: v } });
+
+  it('enables shop deletion only when the typed name matches', async () => {
+    const navigate = vi.fn();
+    const api = fakeApi({ latestConfig: serverAt(3) });
+    const store = memoryStore();
+    saveSnapshot(store, SHOP, { id: 'oc', businessDate: '2026-09-29', configId: 'c3', config: {}, revision: 0, lastSubmit: null, fields: {} });
+    saveOwnerDraft(store, SHOP, { config: jj(), baseVersion: 3, savedAt: 0 });
+    start(api, store, navigate);
+    await screen.findByText(/Έκδοση 3/);
+    expect(deleteButton().disabled).toBe(true);
+    confirm('δοκιμαστικό');
+    expect(deleteButton().disabled).toBe(true);
+    confirm('  Δοκιμαστικό ');
+    expect(deleteButton().disabled).toBe(false);
+    fireEvent.click(deleteButton());
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ name: 'shops' }));
+    expect(api.deleteShop).toHaveBeenCalledTimes(1);
+    expect(api.deleteShop).toHaveBeenCalledWith(SHOP, 'Δοκιμαστικό');
+    expect(loadSnapshot(store, SHOP)).toBeNull();
+    expect(loadOwnerDraft(store, SHOP)).toBeNull();
+  });
+
+  it('shows the server message when the name no longer matches', async () => {
+    const navigate = vi.fn();
+    start(fakeApi({ latestConfig: serverAt(3), deleteShop: vi.fn(() => fail<void>({ code: 'confirm_mismatch' })) }), memoryStore(), navigate);
+    await screen.findByText(/Έκδοση 3/);
+    confirm('Δοκιμαστικό');
+    fireEvent.click(deleteButton());
+    expect(await screen.findByText('Το όνομα δεν ταιριάζει. Γράψε το ακριβώς όπως φαίνεται.')).toBeTruthy();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});
 
 describe('SettingsScreen', () => {
   it('loads the latest version; nothing to publish until something changes', async () => {

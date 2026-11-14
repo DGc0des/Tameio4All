@@ -7,8 +7,9 @@ import { Card } from '../../../ui/Card';
 import { Sheet } from '../../../ui/Sheet';
 import { configErrorMessage, configErrorSection, ownerErrorMessage, type SettingsSection } from '../model/messages';
 import { applySettings, isEditableConfig, type SettingsAction } from '../model/settingsDraft';
-import { ErrorText } from '../OwnerUi';
+import { ErrorText, type OwnerNavigate } from '../OwnerUi';
 import { useAction } from '../useAction';
+import { DangerZoneCard } from './DangerZoneCard';
 import { DayChangeCard } from './DayChangeCard';
 import { ChannelsSection } from './ChannelsSection';
 import { GeneralSection } from './GeneralSection';
@@ -19,6 +20,8 @@ import { TotalsSection } from './TotalsSection';
 interface Props {
   api: OwnerApi;
   shopId: string;
+  shopName: string;
+  navigate: OwnerNavigate;
   store: KeyValueStore;
   now: () => Date;
 }
@@ -33,7 +36,7 @@ type Load = { status: 'loading' } | { status: 'error'; message: string } | { sta
 
 const same = (a: ShopConfig | null, b: ShopConfig): boolean => a !== null && JSON.stringify(a) === JSON.stringify(b);
 
-export function SettingsScreen({ api, shopId, store, now }: Props) {
+export function SettingsScreen({ api, shopId, shopName, navigate, store, now }: Props) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [draft, setDraft] = useState<{ config: ShopConfig; baseVersion: number } | null>(null);
@@ -222,6 +225,8 @@ export function SettingsScreen({ api, shopId, store, now }: Props) {
           <ErrorText state={publish.state} />
         </>
       )}
+      <DangerZoneCard api={api} shopId={shopId} shopName={shopName} navigate={navigate} store={store} />
+
 
       {conflict !== undefined && (
         <Sheet title="Οι ρυθμίσεις άλλαξαν" subtitle={ownerErrorMessage({ code: 'version_conflict', currentVersion: conflict })} onClose={() => setConflict(undefined)}>

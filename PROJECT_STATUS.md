@@ -320,6 +320,16 @@ https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
 CI now runs the production build (`npm run build`) as well, after test.
 
 ## Not verified
+- Legal fixes (branch `legal-fixes`), NOT verified: migration `20261115000001_erasure` is written but **not applied** to
+  dev and `supabase/tests/160_erasure.sql` was never run (no database access in that session). Before applying, run the
+  privilege probe of plan `2026-11-14-legal-fixes` Task 3 Step 1 (can a `security definer` function delete from
+  `auth.users`?); if it is refused, account and phone-user deletion need an Edge Function. After applying: run `160`,
+  then `020`, `060`, `110`, `140`, `150`. The real column names of `auth.sessions` used by `private.purge_stale`
+  (`user_id`, `created_at`, `updated_at`) were not checked. The manual owner check of Task 4 Step 5 (erase a cashier →
+  history shows «Διαγραμμένος υπάλληλος …»; delete a shop while a phone is open → entry screen; delete the account →
+  login screen, the email can sign up again) was not done. **Do not deploy the client before the migration**: the three
+  buttons call functions that do not exist yet, and `listStaff` filters on `erased_at`, a column that does not exist
+  yet (the «Προσωπικό» tab would fail to load).
 - Review fixes 2026-11-11 (M38, L87–L89), NOT verified: the 15 s timeout has only run against fakes — not on a real
   phone with a stalled network (devtools throttling "offline after connect", or a captive Wi-Fi), and not that
   supabase-js surfaces the timeout to `mapDeviceError`/`mapError` as `Error: request_timeout` / `AuthRetryableFetchError`

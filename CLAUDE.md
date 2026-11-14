@@ -43,6 +43,10 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   adapter over `OwnerApi`). A bare shop route still lands on «Ρυθμίσεις». «Συσκευές» (`DevicesScreen`) shows the
   store link card (`StoreLinkCard`: link, QR via `QrCode`/qrcode-generator, the code as XXXX-XXXX-XXXX-XXXX, copy,
   print, «Νέος σύνδεσμος» with confirmation) and the device list (last use, last cashier, «Αφαίρεση»).
+ Deletion (LG2): «Προσωπικό» «Οριστική διαγραφή» (confirmation sheet → `OwnerApi.eraseStaff`; `listStaff` hides erased
+ rows), the last card of «Ρυθμίσεις» `DangerZoneCard` (type the shop name → `deleteShop`, then `clearShop` +
+ `clearOwnerDraft` and back to the shop list), and «Διαγραφή λογαριασμού» on the shop list (type the account email →
+ `deleteAccount`, which signs out of this browser; every listed shop's local data is cleared).
 - `src/features/owner/history/` — «Ιστορικό» (stage 3): `types.ts` (`HistoryList`/`HistoryDay`/`DayDetail`/
   `ClosingVersion`), pure `model.ts` (`summarizeInputs`/`summarizeOpen`, `weekCells`, `breakdown`, `snapshotFromInputs`,
   `applyLocalEdit`; every number goes through `evaluateTotals`/`planEnvelope`, never throws on unreadable
@@ -113,6 +117,9 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
  sessions older than 90 days and anonymous users older than 30 days with no `devices` row and no auth session used in
  30 days. Residual: realtime broadcast payloads (`updated_by_name`, `staff_name`) already sent stay in
  `realtime.messages` until Supabase drops the partition; free-text expense descriptions are not scanned.
+ `confirm_mismatch` has a `mapError` case and the Greek message «Το όνομα δεν ταιριάζει. Γράψε το ακριβώς όπως φαίνεται.».
+ `clearShop(store, shop)` (`data/local/openClosing.ts`) removes a deleted shop's queue (every author's), snapshot and
+ entry mode.
 - Internal `private.*` helpers are not callable by clients, except `private.is_shop_owner` and
   `private.can_use_shop_topic` (both executable by `authenticated`; row-level security / realtime policies need
   them; each only answers a boolean about the caller's own access).

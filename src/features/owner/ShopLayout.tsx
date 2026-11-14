@@ -189,7 +189,9 @@ function TabBody({ tab, date, api, shopId, shopName, navigate, store, now, histo
       <HistoryScreen key={shopId} api={api} shopId={shopId} navigate={navigate} initialRange={historyRange} onRangeLoaded={onHistoryRange} />
     );
   }
-  if (tab === 'settings') return <SettingsScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
+  if (tab === 'settings') {
+    return <SettingsScreen key={shopId} api={api} shopId={shopId} shopName={shopName} navigate={navigate} store={store} now={now} />;
+  }
   if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} />;
   return <DevicesScreen api={api} shopId={shopId} shopName={shopName} />;
 }

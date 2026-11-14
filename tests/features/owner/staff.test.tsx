@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StaffRow } from '../../../src/data/remote/ownerApi';
 import { OwnerStaffScreen } from '../../../src/features/owner/OwnerStaffScreen';
-import { fakeApi, ok } from './fakeApi';
+import { fail, fakeApi, ok } from './fakeApi';
 
 afterEach(cleanup);
 const SHOP = '11111111-1111-4111-8111-111111111111';
@@ -106,5 +106,34 @@ describe('OwnerStaffScreen', () => {
     type('PIN νέου ατόμου', '123456');
     fireEvent.click(screen.getByRole('button', { name: 'Προσθήκη' }));
     expect((await screen.findByRole('alert')).textContent).toContain('Υπάρχει ήδη');
+  });
+
+  it('erases a cashier only after the confirmation sheet', async () => {
+    const listStaff = vi.fn().mockReturnValueOnce(ok([maria])).mockReturnValue(ok([]));
+    const api = fakeApi({ listStaff });
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} />);
+    const card = await screen.findByRole('group', { name: 'ΜΑΡΙΑ' });
+    fireEvent.click(within(card).getByRole('button', { name: 'Οριστική διαγραφή' }));
+    const sheet = screen.getByRole('dialog');
+    expect(sheet.textContent).toContain('Οριστική διαγραφή του/της ΜΑΡΙΑ;');
+    expect(api.eraseStaff).not.toHaveBeenCalled();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Άκυρο' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(api.eraseStaff).not.toHaveBeenCalled();
+
+    fireEvent.click(within(card).getByRole('button', { name: 'Οριστική διαγραφή' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Διαγραφή' }));
+    expect(await screen.findByText(/Δεν υπάρχει ακόμα προσωπικό/)).toBeTruthy();
+    expect(api.eraseStaff).toHaveBeenCalledTimes(1);
+    expect(api.eraseStaff).toHaveBeenCalledWith('m');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps the sheet open with the message when the erase fails', async () => {
+    const api = fakeApi({ listStaff: vi.fn(() => ok([maria])), eraseStaff: vi.fn(() => fail<void>({ code: 'network' })) });
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} />);
+    fireEvent.click(within(await screen.findByRole('group', { name: 'ΜΑΡΙΑ' })).getByRole('button', { name: 'Οριστική διαγραφή' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Διαγραφή' }));
+    expect((await within(screen.getByRole('dialog')).findByRole('alert')).textContent).toContain('Δεν υπάρχει σύνδεση');
   });
 });

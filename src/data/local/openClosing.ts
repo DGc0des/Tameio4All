@@ -82,3 +82,14 @@ export function loadEntryMode(store: KeyValueStore, shopId: string): EntryMode {
 export function saveEntryMode(store: KeyValueStore, shopId: string, m: EntryMode): boolean {
   return writeJson(store, entryModeKey(shopId), m);
 }
+
+/** Forgets everything stored for a deleted shop: the queue (every author's), the snapshot and the entry mode. */
+export function clearShop(store: KeyValueStore, shopId: string): void {
+  for (const key of [pendingKey(shopId), snapshotKey(shopId), entryModeKey(shopId)]) {
+    try {
+      store.removeItem(key);
+    } catch {
+      // storage refused: nothing more can be done
+    }
+  }
+}

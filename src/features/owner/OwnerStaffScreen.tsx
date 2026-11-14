@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { OwnerApi, StaffRow } from '../../data/remote/ownerApi';
 import { Card } from '../../ui/Card';
+import { Sheet } from '../../ui/Sheet';
 import { checkName, isPin, PIN_LENGTH, STAFF_NAME_MAX } from './model/limits';
 import { nameProblemMessage, ownerErrorMessage } from './model/messages';
 import { formatClock, isLocked } from './model/time';
@@ -20,8 +21,17 @@ const PIN_HINT = `Το PIN πρέπει να είναι ${PIN_LENGTH} ψηφία
 function StaffEditor({ api, person, now, onChanged }: { api: OwnerApi; person: StaffRow; now: () => Date; onChanged: () => void }) {
   const [mode, setMode] = useState<'view' | 'rename' | 'pin'>('view');
   const [text, setText] = useState('');
+  const [confirmErase, setConfirmErase] = useState(false);
   const action = useAction();
+  const erase = useAction();
   const locked = isLocked(person.lockedUntil, now().getTime());
+
+  const doErase = async () => {
+    if ((await erase.run(() => api.eraseStaff(person.id))).ok) {
+      setConfirmErase(false);
+      onChanged();
+    }
+  };
 
   const after = async (p: Promise<{ ok: boolean }>) => {
     if ((await p).ok) {
@@ -69,7 +79,27 @@ function StaffEditor({ api, person, now, onChanged }: { api: OwnerApi; person: S
           <button type="button" className="choice" onClick={() => { setText(person.name); setMode('rename'); }}>
             Μετονομασία
           </button>
+          <button type="button" className="choice" onClick={() => { erase.clear(); setConfirmErase(true); }}>
+            Οριστική διαγραφή
+          </button>
         </div>
+      )}
+      {confirmErase && (
+        <Sheet title="Οριστική διαγραφή" onClose={() => setConfirmErase(false)}>
+          <p>
+            Οριστική διαγραφή του/της {person.name}; Το όνομα και το PIN σβήνονται και δεν επανέρχονται. Τα κλεισίματα
+            που υπέβαλε μένουν στο ιστορικό ως «Διαγραμμένος υπάλληλος».
+          </p>
+          <div className="sheet-actions">
+            <button type="button" className="btn btn-text" onClick={() => setConfirmErase(false)}>
+              Άκυρο
+            </button>
+            <button type="button" className="btn btn-primary" disabled={erase.busy} onClick={() => void doErase()}>
+              Διαγραφή
+            </button>
+          </div>
+          <ErrorText state={erase.state} />
+        </Sheet>
       )}
       {mode === 'rename' && (
         <form className="row" onSubmit={saveName} noValidate>
