@@ -19,7 +19,9 @@ const OWNER_ERRORS: Record<OwnerError['code'], OwnerError> = {
   closing_changed: { code: 'closing_changed', currentId: null }, bad_inputs: { code: 'bad_inputs' },
   config_mismatch: { code: 'config_mismatch' }, no_closing_day: { code: 'no_closing_day' },
   idempotency_conflict: { code: 'idempotency_conflict' }, bad_range: { code: 'bad_range' },
-  draft_changed: { code: 'draft_changed' }, unknown: { code: 'unknown', detail: 'x' },
+  draft_changed: { code: 'draft_changed' },
+  too_many_shops: { code: 'too_many_shops' }, too_many_staff: { code: 'too_many_staff' }, too_many_versions: { code: 'too_many_versions' },
+  unknown: { code: 'unknown', detail: 'x' },
 };
 const greek = /[Ͱ-Ͽ]/;
 
@@ -40,6 +42,12 @@ describe('messages', () => {
     expect(configErrorSection({ code: 'cycle', detail: '' })).toBe('totals');
     expect(configErrorSection({ code: 'bad_tare', detail: '' })).toBe('tare');
     expect(configErrorSection({ code: 'bad_float', detail: '' })).toBe('general');
+  });
+
+  it('words the cap errors', () => {
+    expect(ownerErrorMessage({ code: 'too_many_shops' })).toBe('Έφτασες το όριο των 20 καταστημάτων.');
+    expect(ownerErrorMessage({ code: 'too_many_staff' })).toBe('Έφτασες το όριο των 100 ατόμων σε αυτό το κατάστημα.');
+    expect(ownerErrorMessage({ code: 'too_many_versions' })).toBe('Πάρα πολλές αλλαγές ρυθμίσεων σήμερα. Δοκίμασε ξανά αύριο.');
   });
 
   it('has a Greek message for every owner error', () => {

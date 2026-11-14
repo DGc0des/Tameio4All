@@ -91,6 +91,7 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   functions only), every function is `security definer` + `search_path = ''` with execute for
   `authenticated` only. Identity only from `auth.uid()`/`auth.jwt()`.
 - `ClosingInputs.schema` is 2 for new closings (`CLOSING_INPUTS_SCHEMA`): each expense carries `id` and `addedBy` (`{kind:'staff',id}` | `{kind:'owner'}`); schema 1 rows stay readable. `validateClosingInputs` enforces the schema-2 expense rules as `bad_shape`; a draft expense with no author (pre-sign-in) is blocked from submit by `submitBlockReason`.
+- Owner caps (migration `20261114000004`): 20 shops per owner (`too_many_shops`), 100 staff rows per shop, active or not (`too_many_staff`), 50 config versions per shop created in the last 24 h (`too_many_versions`); each raised with errcode 22023 by `create_shop`/`create_staff`/`publish_config` under a lock, each with a `mapError` case and a Greek `ownerErrorMessage`.
 - Cross-file invariant: the closing `inputs` shape is defined by `ClosingInputs` (src/core) AND
   checked by `private.inputs_shape_ok` (SQL). Bumping `schema` or changing the shape needs a new
   migration updating that check, or phones' submissions will be refused as `bad_inputs`.

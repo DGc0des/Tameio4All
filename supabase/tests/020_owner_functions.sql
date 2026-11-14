@@ -139,4 +139,53 @@ do $$ begin
 end $$;
 reset role;
 
+-- T12 caps (M41): 20 shops per owner, 100 staff per shop, 50 config versions per shop per 24 h; per owner/shop
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$
+declare n int; v_shop uuid;
+begin
+  -- owner A already has shop_a; 19 more make 20
+  for n in 1..19 loop perform public.create_shop('Cap ' || n, '{"schema":1}'); end loop;
+  if (select count(*) from public.shops where owner_id = '00000000-0000-0000-0000-0000000000a1') <> 20 then raise exception 'T12 shop count not 20'; end if;
+  begin
+    perform public.create_shop('Cap 21', '{"schema":1}');
+    raise exception 'T12 21st shop allowed';
+  exception when others then if sqlerrm not like '%too_many_shops%' then raise exception 'T12 wrong shop error: %', sqlerrm; end if; end;
+  -- staff: shop_a has 1 (staff_a); add 99 → 100, the 101st raises
+  v_shop := current_setting('t.shop_a')::uuid;
+  for n in 1..99 loop perform public.create_staff(v_shop, 'Cap staff ' || n, '1234'); end loop;
+  begin
+    perform public.create_staff(v_shop, 'Cap staff over', '1234');
+    raise exception 'T12 101st staff allowed';
+  exception when others then if sqlerrm not like '%too_many_staff%' then raise exception 'T12 wrong staff error: %', sqlerrm; end if; end;
+end $$;
+
+-- versions: shop_a has versions 1 and 2; publish up to 50 in the last 24 h
+do $$
+declare n int; v_shop uuid := current_setting('t.shop_a')::uuid;
+begin
+  for n in 3..50 loop perform public.publish_config(v_shop, n - 1, '{"schema":1}'); end loop;
+  begin
+    perform public.publish_config(v_shop, 50, '{"schema":1}');
+    raise exception 'T12 51st version allowed';
+  exception when others then if sqlerrm not like '%too_many_versions%' then raise exception 'T12 wrong version error: %', sqlerrm; end if; end;
+end $$;
+
+-- owner B is not affected by A's counts
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
+do $$ begin
+  perform public.create_shop('B shop', '{"schema":1}');
+end $$;
+reset role;
+
+-- older rows no longer count: move them back 25 h (migration owner), then publishing works again
+update public.shop_configs set created_at = now() - interval '25 hours' where shop_id = current_setting('t.shop_a')::uuid;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$ begin
+  if public.publish_config(current_setting('t.shop_a')::uuid, 50, '{"schema":1}') <> 51 then raise exception 'T12 publish after 25 h failed'; end if;
+end $$;
+reset role;
+
 rollback;

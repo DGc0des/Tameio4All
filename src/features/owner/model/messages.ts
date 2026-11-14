@@ -38,6 +38,12 @@ export function ownerErrorMessage(e: OwnerError): string {
       return 'Το διάστημα δεν είναι έγκυρο (έως 366 ημέρες, «Από» πριν το «Έως»).';
     case 'draft_changed':
       return 'Οι αριθμοί άλλαξαν μόλις τώρα — έλεγξέ τους και πάτα ξανά.';
+    case 'too_many_shops':
+      return 'Έφτασες το όριο των 20 καταστημάτων.';
+    case 'too_many_staff':
+      return 'Έφτασες το όριο των 100 ατόμων σε αυτό το κατάστημα.';
+    case 'too_many_versions':
+      return 'Πάρα πολλές αλλαγές ρυθμίσεων σήμερα. Δοκίμασε ξανά αύριο.';
     case 'bad_name':
       return 'Το όνομα είναι κενό ή πολύ μεγάλο.';
     case 'invalid_credentials':

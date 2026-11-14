@@ -13,6 +13,12 @@ describe('mapError', () => {
       .toEqual({ code: 'version_conflict', currentVersion: null });
   });
 
+  it('maps the owner cap errors', () => {
+    for (const code of ['too_many_shops', 'too_many_staff', 'too_many_versions'] as const) {
+      expect(mapError({ message: code, code: '22023' })).toEqual({ code });
+    }
+  });
+
   it('maps the stage 3 owner save and history errors', () => {
     for (const code of ['bad_inputs', 'config_mismatch', 'no_closing_day', 'idempotency_conflict', 'bad_range'] as const) {
       expect(mapError({ message: code })).toEqual({ code });

@@ -19,6 +19,9 @@ export type OwnerError =
   | { code: 'idempotency_conflict' }
   | { code: 'bad_range' }
   | { code: 'draft_changed' }
+  | { code: 'too_many_shops' }
+  | { code: 'too_many_staff' }
+  | { code: 'too_many_versions' }
   | { code: 'bad_name' }
   | { code: 'invalid_credentials' }
   | { code: 'email_not_confirmed' }
@@ -50,7 +53,8 @@ export function mapError(err: unknown): OwnerError {
   if (message === 'bad_inputs' || message === 'config_mismatch' || message === 'no_closing_day' || message === 'idempotency_conflict' || message === 'bad_range' || message === 'draft_changed') {
     return { code: message };
   }
-  if (message === 'not_owner' || message === 'staff_name_taken' || message === 'bad_pin_format' || message === 'bad_config' || message === 'bad_field' || message === 'too_many_expenses' || message === 'wrong_day') {
+  if (message === 'not_owner' || message === 'staff_name_taken' || message === 'bad_pin_format' || message === 'bad_config' || message === 'bad_field' || message === 'too_many_expenses' || message === 'wrong_day'
+      || message === 'too_many_shops' || message === 'too_many_staff' || message === 'too_many_versions') {
     return { code: message };
   }
   switch (code) {
