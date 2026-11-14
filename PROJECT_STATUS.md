@@ -308,6 +308,14 @@ Branch `legal-fixes`. Findings: `LEGAL_FINDINGS_2026-11-14.md`; plan: `docs/supe
 | LG10 | Brand and product names | Trademark conflict for the commercial name | open — A3 (register check) |
 | LG11 | Selling needs a registered business | Invoicing and VAT before the first charge | open — A4 |
 
+Final-review fixes: a deleted shop's phone users are no longer deleted at once (the phone's stored token would make its
+next join fail with «Κάτι πήγε στραβά» for up to an hour; the purge removes them later); `owner_erase_staff` locks the
+shop `for no key update` (no deadlock with a concurrent sign-in). Deferred minors: a deleted shop's cached snapshot and
+queue stay in its phones' localStorage (only the owner's browser runs `clearShop`); the phone of a deleted shop sees
+«Ζήτα τον νέο σύνδεσμο»; `owner_delete_shop` can deadlock with a concurrent phone write (one side is aborted, nothing
+half-done); a retry after a timed-out but committed shop delete answers `not_owner`; `160` T11 inserts only four
+columns into `auth.sessions` (check the table on dev).
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped

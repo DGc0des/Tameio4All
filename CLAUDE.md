@@ -112,8 +112,10 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
  requires `erased_at is null`; `set_staff_pin`/`unlock_staff` answer `not_owner`); it still counts toward the 100-staff
  cap. Cross-file invariant: the placeholder text is produced only in SQL; the client never builds it. `closings` rows
  leave the database only with their whole shop: `owner_delete_shop(shop, typed name)` (`confirm_mismatch` 22023 unless
- the trimmed name matches exactly) and `owner_delete_account()` go through `private.delete_shop`, which also deletes the
- shop's anonymous phone users. The daily `pg_cron` job `purge_stale` (03:30 UTC, `private.purge_stale`) deletes staff
+ the trimmed name matches exactly) and `owner_delete_account()` go through `private.delete_shop`. It keeps the shop's
+ anonymous phone users (a phone reuses its stored token; with its user deleted its next `join_shop` would fail on
+ `devices.user_id`); the purge removes them once storeless and idle. `owner_erase_staff` locks the shop `for no key
+ update` (a concurrent `staff_sign_in` holds device + staff and needs a key-share lock on the shop). The daily `pg_cron` job `purge_stale` (03:30 UTC, `private.purge_stale`) deletes staff
  sessions older than 90 days and anonymous users older than 30 days with no `devices` row and no auth session used in
  30 days. Residual: realtime broadcast payloads (`updated_by_name`, `staff_name`) already sent stay in
  `realtime.messages` until Supabase drops the partition; free-text expense descriptions are not scanned.

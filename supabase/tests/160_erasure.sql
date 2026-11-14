@@ -1,6 +1,6 @@
 -- 160 — erasure and deletion (LG2, L81): owner_erase_staff (tombstone row, no copy of the old name left, live
 -- sessions dead, the erased author's lines still submittable), owner_delete_shop (typed-name confirmation, every
--- row of the shop gone, its anonymous phones gone), owner_delete_account, private.purge_stale, grants.
+-- row of the shop gone, its anonymous phones kept and able to join elsewhere), owner_delete_account, private.purge_stale, grants.
 -- One transaction, ends in ROLLBACK. Row checks and private.* calls run as the migration owner.
 -- T9 deletes owner A's account, so it is the last block.
 begin;
@@ -292,9 +292,9 @@ begin
   if exists (select 1 from public.closings where shop_id = v_shop) then raise exception 'T6 closings rows left'; end if;
 end $$;
 
--- T7 the shop's anonymous phone identity is gone; owner A and shop A are untouched
+-- T7 the shop's anonymous phone identity stays (purge_stale removes it later); owner A and shop A are untouched
 do $$ begin
-  if exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000d2') then raise exception 'T7 phone d2 auth user left'; end if;
+  if not exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000d2') then raise exception 'T7 phone d2 auth user deleted at once'; end if;
   if not exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000a1') then raise exception 'T7 owner A auth user deleted'; end if;
   if not exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000d1') then raise exception 'T7 a phone of shop A was deleted'; end if;
   if (select count(*) from public.staff where shop_id = current_setting('t.shop')::uuid) <> 2 then raise exception 'T7 shop A staff touched'; end if;
@@ -307,6 +307,20 @@ set local role authenticated;
 do $$ begin
   if exists (select 1 from public.device_context()) then raise exception 'T8 device_context still answers for a deleted shop'; end if;
   if exists (select 1 from public.list_staff()) then raise exception 'T8 list_staff still answers for a deleted shop'; end if;
+end $$;
+reset role;
+-- … and the same phone identity can join another store (no switch needed: it is in no live store)
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+select set_config('t.key_b', public.owner_get_join_key(current_setting('t.shop_b')::uuid), true);
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
+set local role authenticated;
+do $$ begin
+  perform public.join_shop(current_setting('t.key_b'), 'T8', false);
+  if (select shop_id from public.device_context()) is distinct from current_setting('t.shop_b')::uuid then
+    raise exception 'T8 phone of a deleted shop could not join another store';
+  end if;
 end $$;
 reset role;
 
@@ -410,8 +424,11 @@ do $$ begin
   if exists (select 1 from public.shops where owner_id = '00000000-0000-0000-0000-0000000000a1') then raise exception 'T9 owner A shops left'; end if;
   if exists (select 1 from public.closings where shop_id = current_setting('t.shop')::uuid) then raise exception 'T9 shop A closings left'; end if;
   if exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000a1') then raise exception 'T9 owner A auth user left'; end if;
-  if exists (select 1 from auth.users where id in ('00000000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-0000000000d3')) then
-    raise exception 'T9 shop A phones left';
+  if exists (select 1 from public.devices where user_id in ('00000000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-0000000000d3')) then
+    raise exception 'T9 shop A devices rows left';
+  end if;
+  if not exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000d1') then
+    raise exception 'T9 a phone identity was deleted at once';
   end if;
   if not exists (select 1 from public.shops where id = current_setting('t.shop_b')::uuid) then raise exception 'T9 owner B shop deleted'; end if;
   if not exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000b1') then raise exception 'T9 owner B auth user deleted'; end if;

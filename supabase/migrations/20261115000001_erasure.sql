@@ -68,7 +68,8 @@ begin
     raise exception 'not_owner' using errcode = '42501';
   end if;
   perform private.require_owner(v_shop);
-  perform 1 from public.shops where id = v_shop for update;
+  -- no key update: a staff_sign_in holding the device and staff rows only needs a key-share lock on the shop
+  perform 1 from public.shops where id = v_shop for no key update;
   perform 1 from public.devices where shop_id = v_shop and last_staff_id = p_staff_id for update;
   select erased_at into v_erased from public.staff where id = p_staff_id for update;
   if v_erased is not null then return; end if;
@@ -96,23 +97,21 @@ begin
                   where c.shop_id = v_shop and c.staff_id = p_staff_id and c.id::text = oc.last_submit ->> 'closing_id');
 end $$;
 
--- 5. Delete one shop and everything in it, then the anonymous phone identities that were joined to it.
+-- 5. Delete one shop and everything in it. The phones' anonymous identities stay: a phone keeps using its stored
+--    access token, so deleting the user would make its next join_shop fail on devices.user_id; purge_stale removes
+--    them once they have no store and no use for 30 days.
 --    Explicit order (closings → open closings → devices → staff sessions → staff → the rest via the shop row), so
 --    no FK without a cascade (closings.staff_id/config_id/corrects_closing_id, open_closings.config_id,
 --    open_closing_fields.updated_by_staff) is ever checked against a row deleted out of order.
 create function private.delete_shop(p_shop_id uuid) returns void
 language plpgsql security definer set search_path = '' as $$
-declare
-  v_users uuid[];
 begin
-  select coalesce(array_agg(user_id), '{}') into v_users from public.devices where shop_id = p_shop_id;
   delete from public.closings where shop_id = p_shop_id;
   delete from public.open_closings where shop_id = p_shop_id;
   delete from public.devices where shop_id = p_shop_id;
   delete from public.staff_sessions where shop_id = p_shop_id;
   delete from public.staff where shop_id = p_shop_id;
   delete from public.shops where id = p_shop_id;
-  delete from auth.users where id = any(v_users) and is_anonymous;
 end $$;
 revoke all on function private.delete_shop(uuid) from public, anon, authenticated;
 
