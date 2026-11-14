@@ -255,6 +255,41 @@ Branch `fix/review-2026-11-11`. Continues the severity scheme above.
 | L92 | GET table reads (owner settings/staff/devices reads) time out after ≈ 67 s, not 15 s, because postgrest-js retries a timed-out GET 3× (1/2/4 s waits) | Options: `db: { retry: false }` (also drops 503/520 retries) or accept | open |
 | L91 | An owner opening «Σήμερα» offline sees no cached numbers (accepted trade-off of L87) | Accepted | open — accepted |
 
+## Security review 2026-11-14
+Branch `fix/security-2026-11-14` (from `c940354`). Findings: `SECURITY_FINDINGS_2026-11-14.md`; plan: `docs/superpowers/plans/2026-11-14-security-fixes.md`. Continues the severity scheme above. Migrations `20261114000001`…`…0007` are applied to dev (`fstfuhogvsdaiwpfdmep`, 2026-11-14).
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| H23 | `expense_suggestion_data()` returned 180 days of expense history to any device with the store link, no PIN | takes the staff token (`expense_suggestion_data(p_token text)`), checks the live staff session; client passes it | fixed — `7faf149` |
+| H24 | 4-digit PIN guessable in days | per-trusted-phone escalating lockout (`3dc0caa`), then **6-digit PINs with a hard cutover** (`5f73b07`, `c4942d4`; user decision after the plan: all dev PINs cleared, every live staff session revoked, owner sees «Χωρίς PIN — όρισε νέο»). Residual: with 6 digits an outsider gets ~35–40 guesses in the first ~32 h, then 5/day per cashier — a negligible chance, but attacks are silent to the owner (owner-visible alert, e.g. `lock_level` ≥ 2, is a follow-up) | fixed — `3dc0caa`, `5f73b07`, `c4942d4`; residual open |
+| M39 | One hostile phone could lock a cashier out for everyone | the lock is per device (`device_staff_trust`); a phone that already signed that cashier in keeps working while the cashier is locked elsewhere; the lock end time is shown (`a61aea8`: «αύριο στις HH:MM» when it ends on another Athens day) | fixed — `3dc0caa`, `a61aea8` |
+| M40 | A cashier could attribute an expense to a colleague / a line not in the live closing | `submit_closing` accepts only expense lines of the live closing, with the stored author | fixed — `1a719d9` |
+| M41 | No limit on shops, staff or config versions | caps 20 shops/owner, 100 staff/shop, 50 versions/shop (`bfb1962`); server clamp of `maxExpenses` (`check_config` rejects ∉ 0..30, `private.max_expenses`) so the M42 cap is meaningful (`4357798`) | fixed — `bfb1962`, `4357798`; volume residual open |
+| M42 | No limit on fields in a live closing | `write_closing_field` limits field keys to the pinned config (denominations, channels) and caps `e:` rows at 5 × `maxExpenses` (≤ 150); never raises on a junk config | fixed — `4f05911`, `4357798` |
+| L93 | `verify_staff_pin` leftover callable | dropped (the PIN check is `private.check_staff_pin` only) | fixed — `3dc0caa` |
+| L94 | Leaked-password protection off | Supabase dashboard → Authentication → enable leaked-password protection | **open — user action** |
+| L95 | No CSP / security headers at the host | `vercel.json` headers + CSP | fixed in code — `dce826e`; not verified on a real deployment |
+
+Test-only fix `3f614be`: two pre-existing SQL test bugs (`100` T9 assumed every `closings` row is a staff row; `110` T15 called `private.current_closing` as `authenticated`). Final-review fixes: `4357798` (I1 server clamp), `a61aea8` (I2, I3 lock time and owner hint on a locked phone), `5fcc5a9` (docs), `c4942d4` (migration 6 re-creates the PIN checks before the cutover update).
+
+**Deploy order:** the new client must be deployed together with the DB. The old build cannot load suggestions (H23) and has a 4-digit PIN pad (H24). After deploy every owner must set a new 6-digit PIN for every cashier («Χωρίς PIN — όρισε νέο»); until then nobody can sign in.
+
+**SQL run:** per-task runs (T1: 130/040/070 PASS, 100/110 failed on the pre-existing test bugs, PASS after `3f614be`; T2: 040/070/090/100/110/130; T3: 140/030/060/120/050), then `010`–`140` all 14 PASS on dev (~00:23 UTC, after migrations 1–5), then `010`–`150` all 15 PASS (2026-11-14 17:20:05 UTC, after migrations 1–7; `realtime.messages` has 7 partitions, so the realtime blocks ran, not SKIPPED). New/extended files: `130` (suggestions), `140` (lockout), `150` (6-digit PINs), plus `020`, `040`, `050`, `060`, `070`, `080`, `090`, `100`, `110`, `120`.
+**Advisors after 1–7:** only the known «authenticated can execute SECURITY DEFINER» (24; `verify_staff_pin` gone; `expense_suggestion_data(p_token text)`), «RLS enabled no policy» (5, now incl. `device_staff_trust`), the anonymous-policy warnings, and leaked-password protection (L94).
+**App:** `npm test -- --exclude '.claude/**'` 62 files / 841 tests pass, `npm run typecheck` clean, `npm run build` ok.
+
+**Open / residual**
+| ID | What | Status |
+|---|---|---|
+| L94 | leaked-password protection (dashboard) | open — user action |
+| L96 | H24 residual: attacks stay silent to the owner (follow-up: owner-visible alert at `lock_level` ≥ 2) | open |
+| L97 | Device locks are invisible in the owner UI (only the «Αφαίρεση» way out, hinted on the phone); «Προσωπικό» «Κλειδωμένος έως» now blocks untrusted phones only | open |
+| L98 | A locked trusted phone can shed its lock by clearing site data / switching shop (lands on the cashier track) | open — accepted |
+| L99 | `pin_not_set` is reported before `staff_locked`, so a link holder learns which cashiers have no PIN | open — low value |
+| L100 | M41 volume: 20 shops × 50 versions × 64 KB/day per account; `owner_save_closing` and cashier resubmits are uncapped | open |
+| L101 | `submit_closing` accepts the same expense id twice in one `inputs`; amounts in a submit are still not proven equal to the live fields (accepted trust) | open |
+| L102 | Deferred minors: `check_config` accepts a missing `maxExpenses` key (read as 0) but rejects JSON `5.0`/`30.0` that TS accepts; `SignInScreen` imports `PIN_LENGTH` from `owner/model`; `020` T12 checks `sqlerrm` only; a duplicate staff name at exactly 100 staff reports `too_many_staff`; `130` lacks deactivated-staff/stale-date token cases; `T-M40-5` does not assert the repeat's `closing_id`; `070` T7 and `090` lost some cross-cashier / expense-line coverage; historical specs still say 4 digits | open |
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped
@@ -351,3 +386,10 @@ CI now runs the production build (`npm run build`) as well, after test.
     5. Five tabs and the day detail on a real phone (360 px wide).
     6. A year-long range on a shop with real data (response size, render time).
 - Realtime partitions are created by the Realtime service, not by us: if it is idle for days (free tier), `realtime.send` would only WARN and broadcasts would silently stop until traffic recreates them. Not observed; re-check with the 080 skip NOTICE (`select count(*) from pg_inherits where inhparent = 'realtime.messages'::regclass`).
+- Security review 2026-11-14, NOT verified:
+  - The CSP (`vercel.json`, L95) on a real Vercel deployment: share card, QR, print, and the realtime websocket under the policy.
+  - A real-device check that five wrong PINs lock the phone and the screen shows the end time (and «αύριο στις» for a long lock).
+  - Real-device 6-digit sign-in, and an owner resetting PINs after the cutover («Χωρίς PIN — όρισε νέο»).
+  - The lock / advisory-lock races: a SQL file is one transaction, so two interleaved sessions were never tested.
+  - Supabase dashboard settings: leaked-password protection (L94), email confirmation for sign-up, the anonymous sign-in rate limit / captcha.
+  - The deployed client together with the DB (deploy order above); nothing was tried against a production build.

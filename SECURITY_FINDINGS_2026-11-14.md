@@ -1,6 +1,6 @@
 # Security findings — 2026-11-14
 
-Audit of branch `fix/review-2026-11-11` at `c940354`. All of these are **open**; nothing was changed.
+Audit of branch `fix/review-2026-11-11` at `c940354`. Status below (branch `fix/security-2026-11-14`, applied to dev 2026-11-14): everything is fixed except L94, which is a dashboard action for the user. Details: `PROJECT_STATUS.md` «Security review 2026-11-14» and `WORK_LOG_2026-11-14.md`.
 IDs continue the scheme in `PROJECT_STATUS.md` (last used: H22, M38, L92).
 
 **How it was checked:** every file in `supabase/migrations/` was read, and the function grants, table
@@ -14,17 +14,17 @@ it has it, so does anyone who photographed the printed QR, and a former employee
 
 ## Summary
 
-| ID | Severity | Issue | Who can exploit it |
-|---|---|---|---|
-| H23 | High | Expense history readable without a PIN | Anyone with the store link |
-| H24 | High | 4-digit PIN guessable in days | Anyone with the store link |
-| M39 | Medium | Every cashier can be kept locked out | Anyone with the store link |
-| M40 | Medium | A cashier can attribute an expense to a colleague | Signed-in cashier |
-| M41 | Medium | No limit on shops, staff or config versions | Any signed-up owner account |
-| M42 | Medium | No limit on fields in a live closing | Signed-in cashier |
-| L93 | Low | `verify_staff_pin` leftover still callable | Anyone with the store link |
-| L94 | Low | Leaked-password protection is off | — (dashboard setting) |
-| L95 | Low | No Content-Security-Policy at the host | — (hardening) |
+| ID | Severity | Issue | Who can exploit it | Status |
+|---|---|---|---|---|
+| H23 | High | Expense history readable without a PIN | Anyone with the store link | fixed — `7faf149` |
+| H24 | High | 4-digit PIN guessable in days | Anyone with the store link | fixed — `3dc0caa`, `5f73b07`, `c4942d4` (residual open) |
+| M39 | Medium | Every cashier can be kept locked out | Anyone with the store link | fixed — `3dc0caa`, `a61aea8` |
+| M40 | Medium | A cashier can attribute an expense to a colleague | Signed-in cashier | fixed — `1a719d9` |
+| M41 | Medium | No limit on shops, staff or config versions | Any signed-up owner account | fixed — `bfb1962`, `4357798` |
+| M42 | Medium | No limit on fields in a live closing | Signed-in cashier | fixed — `4f05911`, `4357798` |
+| L93 | Low | `verify_staff_pin` leftover still callable | Anyone with the store link | fixed — `3dc0caa` |
+| L94 | Low | Leaked-password protection is off | — (dashboard setting) | **open — user action** |
+| L95 | Low | No Content-Security-Policy at the host | — (hardening) | fixed — `dce826e` (not verified on Vercel) |
 
 ---
 
@@ -56,6 +56,8 @@ screen, so it is by design, but it is what a link holder can see.
 
 ## H24 — 4-digit PIN guessable in days
 
+**Status:** fixed. The design (per-trusted-phone escalating lockout, `device_staff_trust`) is in the plan's Task 3, `docs/superpowers/plans/2026-11-14-security-fixes.md`, and it wins over the «Fix» bullets below. On the user's decision after the plan, PINs also became 6 digits with a hard cutover (`5f73b07`, `c4942d4`): all dev PINs cleared, live staff sessions revoked. Residual: attacks stay silent to the owner.
+
 **Where:** `private.check_staff_pin` (latest body in
 `supabase/migrations/20260929000005_hardening.sql`), reached through `staff_sign_in` and
 `verify_staff_pin`.
@@ -77,6 +79,8 @@ and submit closings as that cashier.
   inputs all carry the `^[0-9]{4}$` rule (cross-file — change together).
 
 ## M39 — Every cashier can be kept locked out
+
+**Status:** fixed with H24 (`3dc0caa`); design in the plan's Task 3 (the lock is per device; a trusted phone still signs the cashier in), plus the 6-digit cutover (`5f73b07`).
 
 **Where:** same function as H24.
 
