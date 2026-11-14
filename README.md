@@ -17,6 +17,7 @@ Requires Node 22.12+ (or 24+).
 3. Register `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in Vercel before the first deploy
    (the build ships with them `undefined` otherwise; see the dashboard section).
 4. Deploy. Every push to `main` redeploys.
+5. Security headers (CSP, nosniff, no-referrer, X-Frame-Options) come from `vercel.json`; a new external origin needs a CSP entry there. `connect-src` allows `*.supabase.co` only: a Supabase custom domain would need adding. `style-src` keeps `'unsafe-inline'` because React `style` attributes need it; nothing else is widened (fonts are bundled, the share card uses blob:/data: only).
 
 ## Database
 Supabase (dev project `fstfuhogvsdaiwpfdmep`). Migrations: `supabase/migrations/` (apply in order).

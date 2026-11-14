@@ -405,6 +405,8 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   payload's `current_id` (the editor offers «Αποθήκευση πάνω της» only with an id).
 - `private.current_closing` and `private.closing_version_json` are `private.*` helpers: no client execute.
 
+- Response headers (CSP etc.) come from `vercel.json`; a new external origin needs a CSP entry there.
+
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.
 - `npm test`, `npm run typecheck` must pass before every commit.
