@@ -134,6 +134,11 @@ describe('gateReducer — transitions', () => {
     }
   });
 
+  it('server_error pin_not_set changes nothing (the sign-in screen shows the message)', () => {
+    expect(gateReducer(signedOut, { t: 'server_error', error: { code: 'pin_not_set' } })).toBe(signedOut);
+    expect(gateReducer(ready, { t: 'server_error', error: { code: 'pin_not_set' } })).toBe(ready);
+  });
+
   it('server_error device_revoked from ready → unpaired (Review Focus 4)', () => {
     expect(gateReducer(ready, { t: 'server_error', error: { code: 'device_revoked' } })).toEqual({
       s: 'unpaired',

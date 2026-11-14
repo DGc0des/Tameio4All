@@ -11,15 +11,15 @@ insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1}')::text, true);
-select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
-select set_config('t.eleni', public.create_staff(current_setting('t.shop_a')::uuid, 'ΕΛΕΝΗ', '5678')::text, true);
+select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '123456')::text, true);
+select set_config('t.eleni', public.create_staff(current_setting('t.shop_a')::uuid, 'ΕΛΕΝΗ', '567890')::text, true);
 select set_config('t.code', public.owner_get_join_key(current_setting('t.shop_a')::uuid), true);
 select set_config('t.cfg_a', (select id::text from public.shop_configs where shop_id = current_setting('t.shop_a')::uuid), true);
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.shop_b', public.create_shop('Shop B', '{"schema":1}')::text, true);
-select set_config('t.nikos', public.create_staff(current_setting('t.shop_b')::uuid, 'ΝΙΚΟΣ', '1234')::text, true);
+select set_config('t.nikos', public.create_staff(current_setting('t.shop_b')::uuid, 'ΝΙΚΟΣ', '123456')::text, true);
 select set_config('t.cfg_b', (select id::text from public.shop_configs where shop_id = current_setting('t.shop_b')::uuid), true);
 reset role;
 
@@ -27,7 +27,7 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 select public.join_shop(current_setting('t.code'), 'Ταμείο');
-select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
 select public.get_open_closing(current_setting('t.token'));   -- creates today's open closing (revision 0)
 reset role;
 select set_config('t.bd', private.business_date(current_setting('t.shop_a')::uuid)::text, true);
@@ -157,7 +157,7 @@ reset role;
 -- date is still wrong_day.
 update public.closings set business_date = business_date - 1 where id = current_setting('t.closing')::uuid;
 set local role authenticated;
-select set_config('t.token3', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select set_config('t.token3', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
 do $$
 declare r jsonb;
 begin

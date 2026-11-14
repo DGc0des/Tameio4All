@@ -82,15 +82,15 @@ describe('PhoneApp', () => {
     expect(await screen.findByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
     expect(api.join).toHaveBeenCalledWith(K, LABEL, undefined);
 
-    await signIn('9999');
+    await signIn('999999');
     expect(await screen.findByText('Λάθος PIN.')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
 
-    type('PIN', '1234');
+    type('PIN', '123456');
     fireEvent.click(button('Είσοδος'));
     expect(await screen.findByLabelText('100€')).toBeTruthy();
     expect(within(screen.getByRole('banner')).getByText('Σαβ 07/11 · ΜΑΡΙΑ')).toBeTruthy();
-    expect(api.signIn).toHaveBeenLastCalledWith('staff-maria', '1234');
+    expect(api.signIn).toHaveBeenLastCalledWith('staff-maria', '123456');
     expect(loadStaffSession(store)).toEqual(SESSION);
   });
 
@@ -165,7 +165,7 @@ describe('PhoneApp', () => {
     expect(join).toHaveBeenLastCalledWith(K, LABEL, { switchShop: true });
     expect(join).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(loadStaffSession(store)).toBeNull();
+    await waitFor(() => expect(loadStaffSession(store)).toBeNull()); // cleared by an effect after the render
   });
 
   it('«Άκυρο» on the switch sheet keeps the register', async () => {
@@ -246,7 +246,7 @@ describe('PhoneApp', () => {
     saveStaffSession(store, { ...SESSION, businessDate: '2026-11-06' });
     start(fakeDeviceApi(), store);
     expect(await screen.findByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
-    expect(loadStaffSession(store)).toBeNull();
+    await waitFor(() => expect(loadStaffSession(store)).toBeNull());
   });
 
   it('asks before signing an owner out, then joins with force', async () => {
@@ -281,13 +281,13 @@ describe('PhoneApp', () => {
     start(fakeDeviceApi({ context: vi.fn(() => fail<DeviceContext | null>({ code: 'device_revoked' })) }), store);
     expect(await screen.findByText('Η συσκευή αποσυνδέθηκε από τον ιδιοκτήτη.')).toBeTruthy();
     expect(screen.getByRole('heading', ENTRY)).toBeTruthy();
-    expect(loadStaffSession(store)).toBeNull();
+    await waitFor(() => expect(loadStaffSession(store)).toBeNull());
   });
 
   it('a locked phone stays on the sign-in screen and says until when (Review Focus 1)', async () => {
     const signInFn = vi.fn<DeviceApi['signIn']>(() => fail<StaffSession>({ code: 'device_locked', lockedUntil: '2026-11-07T21:15:00Z' }));
     start(fakeDeviceApi({ signIn: signInFn }));
-    await signIn('1234');
+    await signIn('123456');
     expect(await screen.findByText('Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά στις 23:15.')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
     expect(screen.queryByRole('heading', ENTRY)).toBeNull();
@@ -295,9 +295,40 @@ describe('PhoneApp', () => {
     expect(signInFn).toHaveBeenCalledTimes(1);
   });
 
+  it('the PIN is 6 digits: Είσοδος is enabled only at 6, extra digits and non-digits are dropped', async () => {
+    const api = fakeDeviceApi();
+    start(api);
+    fireEvent.click(await screen.findByRole('radio', { name: 'ΜΑΡΙΑ' }));
+    const pin = screen.getByLabelText('PIN') as HTMLInputElement;
+    expect(pin.maxLength).toBe(6);
+    type('PIN', '1234');
+    expect(button('Είσοδος').disabled).toBe(true);
+    type('PIN', '12345');
+    expect(button('Είσοδος').disabled).toBe(true);
+    fireEvent.click(button('Είσοδος'));
+    expect(api.signIn).not.toHaveBeenCalled();
+    type('PIN', '12a34567');
+    expect(pin.value).toBe('123456');
+    expect(button('Είσοδος').disabled).toBe(false);
+    fireEvent.click(button('Είσοδος'));
+    expect(await screen.findByLabelText('100€')).toBeTruthy();
+    expect(api.signIn).toHaveBeenCalledWith('staff-maria', '123456');
+  });
+
+  it('a cashier with no PIN stays on the sign-in screen and is told to ask the owner', async () => {
+    const signInFn = vi.fn<DeviceApi['signIn']>(() => fail<StaffSession>({ code: 'pin_not_set' }));
+    start(fakeDeviceApi({ signIn: signInFn }));
+    await signIn('123456');
+    expect(await screen.findByText('Δεν έχει οριστεί PIN. Ζήτα από τον ιδιοκτήτη να ορίσει νέο PIN 6 ψηφίων.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Ποιος είσαι;' })).toBeTruthy();
+    expect(screen.queryByRole('heading', ENTRY)).toBeNull();
+    expect(screen.queryByLabelText('100€')).toBeNull();
+    expect((screen.getByLabelText('PIN') as HTMLInputElement).value).toBe('');
+  });
+
   it('a revoked phone found while signing in goes to the entry screen', async () => {
     start(fakeDeviceApi({ signIn: vi.fn(() => fail<StaffSession>({ code: 'device_revoked' })) }));
-    await signIn('1234');
+    await signIn('123456');
     expect(await screen.findByText('Η συσκευή αποσυνδέθηκε από τον ιδιοκτήτη.')).toBeTruthy();
     expect(screen.getByRole('heading', ENTRY)).toBeTruthy();
   });
@@ -338,7 +369,7 @@ describe('PhoneApp', () => {
     const signInFn = vi.fn<DeviceApi['signIn']>(() => ok({ ...SESSION, shopId: '' }));
     start(fakeDeviceApi({ context, signIn: signInFn }), store);
     expect(await screen.findByText('Εκτός σύνδεσης')).toBeTruthy();
-    await signIn('1234');
+    await signIn('123456');
     expect(await screen.findByLabelText('100€')).toBeTruthy();
     expect(context).toHaveBeenCalledTimes(2);
     expect(within(screen.getByRole('banner')).getByText('Σαβ 07/11 · ΜΑΡΙΑ')).toBeTruthy();
@@ -367,8 +398,8 @@ describe('PhoneApp', () => {
     start(api, store);
     expect(await screen.findByRole('heading', ENTRY)).toBeTruthy();
     expect(api.context).not.toHaveBeenCalled();
-    expect(loadStaffSession(store)).toBeNull();
-    expect(loadCachedContext(store)).toBeNull();
+    await waitFor(() => expect(loadStaffSession(store)).toBeNull());
+    await waitFor(() => expect(loadCachedContext(store)).toBeNull());
   });
 
   it('offline with an expired access token: the failed session lookup opens the cached register, caches kept', async () => {

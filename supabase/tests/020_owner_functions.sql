@@ -52,15 +52,27 @@ do $$ begin
   raise exception 'T3b expected version_conflict';
 end $$;
 
--- T4 create_staff: 4-digit PIN only, stored hashed, names unique per shop (case/space-insensitive)
-select set_config('t.staff_a', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
-do $$ begin
-  begin perform public.create_staff(current_setting('t.shop_a')::uuid, 'ΝΙΚΟΣ', '12a4');
-  exception when others then if sqlerrm not like '%bad_pin_format%' then raise exception 'T4 wrong error: %', sqlerrm; end if; return; end;
-  raise exception 'T4 expected bad_pin_format';
+-- T4 create_staff: 6-digit PIN only (4- and 5-digit PINs are a bad format), stored hashed, names unique per shop
+-- (case/space-insensitive)
+select set_config('t.staff_a', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '123456')::text, true);
+do $$
+declare
+  p text;
+  refused boolean;
+begin
+  foreach p in array array['12a456', '1234', '12345', '1234567'] loop
+    refused := false;
+    begin
+      perform public.create_staff(current_setting('t.shop_a')::uuid, 'ΝΙΚΟΣ', p);
+    exception when others then
+      if sqlerrm <> 'bad_pin_format' then raise exception 'T4 wrong error for %: %', p, sqlerrm; end if;
+      refused := true;
+    end;
+    if not refused then raise exception 'T4 PIN % accepted', p; end if;
+  end loop;
 end $$;
 do $$ begin
-  begin perform public.create_staff(current_setting('t.shop_a')::uuid, ' μαρια ', '5678');
+  begin perform public.create_staff(current_setting('t.shop_a')::uuid, ' μαρια ', '567890');
   exception when others then if sqlerrm not like '%staff_name_taken%' then raise exception 'T4b wrong error: %', sqlerrm; end if; return; end;
   raise exception 'T4b expected staff_name_taken';
 end $$;
@@ -70,8 +82,8 @@ reset role;
 
 -- T6 PIN is stored hashed only (checked as the migration owner)
 do $$ begin
-  if (select pin_hash from public.staff where id = current_setting('t.staff_a')::uuid) = '1234' then raise exception 'T6 PIN stored in plain text'; end if;
-  if (select extensions.crypt('1234', pin_hash) = pin_hash from public.staff where id = current_setting('t.staff_a')::uuid) is not true then raise exception 'T6 PIN hash does not verify'; end if;
+  if (select pin_hash from public.staff where id = current_setting('t.staff_a')::uuid) = '123456' then raise exception 'T6 PIN stored in plain text'; end if;
+  if (select extensions.crypt('123456', pin_hash) = pin_hash from public.staff where id = current_setting('t.staff_a')::uuid) is not true then raise exception 'T6 PIN hash does not verify'; end if;
 end $$;
 
 -- T7 owner B cannot touch shop A through any owner function
@@ -80,9 +92,9 @@ set local role authenticated;
 do $$ begin
   begin perform public.publish_config(current_setting('t.shop_a')::uuid, 2, '{"schema":1}');
   exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7 publish wrong error: %', sqlerrm; end if; end;
-  begin perform public.create_staff(current_setting('t.shop_a')::uuid, 'Z', '1111');
+  begin perform public.create_staff(current_setting('t.shop_a')::uuid, 'Z', '111111');
   exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7 staff wrong error: %', sqlerrm; end if; end;
-  begin perform public.set_staff_pin(current_setting('t.staff_a')::uuid, '1111');
+  begin perform public.set_staff_pin(current_setting('t.staff_a')::uuid, '111111');
   exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7 pin wrong error: %', sqlerrm; end if; end;
   begin perform public.owner_get_join_key(current_setting('t.shop_a')::uuid);
   exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7 join key wrong error: %', sqlerrm; end if; end;
@@ -90,7 +102,7 @@ end $$;
 
 -- T7b set_staff_pin on a non-existent staff id also raises not_owner (never reveals existence)
 do $$ begin
-  begin perform public.set_staff_pin('00000000-0000-0000-0000-00000000dead', '1111');
+  begin perform public.set_staff_pin('00000000-0000-0000-0000-00000000dead', '111111');
   exception when others then if sqlerrm not like '%not_owner%' then raise exception 'T7b wrong error: %', sqlerrm; end if; return; end;
   raise exception 'T7b expected not_owner';
 end $$;
@@ -115,10 +127,10 @@ reset role;
 update public.staff set failed_attempts = 3, locked_until = now() + interval '10 minutes' where id = current_setting('t.staff_a')::uuid;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
-select public.set_staff_pin(current_setting('t.staff_a')::uuid, '9876');
+select public.set_staff_pin(current_setting('t.staff_a')::uuid, '987654');
 reset role;
 do $$ begin
-  if (select extensions.crypt('9876', pin_hash) = pin_hash and failed_attempts = 0 and locked_until is null
+  if (select extensions.crypt('987654', pin_hash) = pin_hash and failed_attempts = 0 and locked_until is null
       from public.staff where id = current_setting('t.staff_a')::uuid) is not true then raise exception 'T9 PIN not reset'; end if;
 end $$;
 
@@ -134,7 +146,7 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 do $$ begin
-  begin perform private.check_pin('1234'); exception when insufficient_privilege then return; end;
+  begin perform private.check_pin('123456'); exception when insufficient_privilege then return; end;
   raise exception 'T11 owner A can execute private.check_pin';
 end $$;
 reset role;
@@ -154,9 +166,9 @@ begin
   exception when others then if sqlerrm not like '%too_many_shops%' then raise exception 'T12 wrong shop error: %', sqlerrm; end if; end;
   -- staff: shop_a has 1 (staff_a); add 99 → 100, the 101st raises
   v_shop := current_setting('t.shop_a')::uuid;
-  for n in 1..99 loop perform public.create_staff(v_shop, 'Cap staff ' || n, '1234'); end loop;
+  for n in 1..99 loop perform public.create_staff(v_shop, 'Cap staff ' || n, '123456'); end loop;
   begin
-    perform public.create_staff(v_shop, 'Cap staff over', '1234');
+    perform public.create_staff(v_shop, 'Cap staff over', '123456');
     raise exception 'T12 101st staff allowed';
   exception when others then if sqlerrm not like '%too_many_staff%' then raise exception 'T12 wrong staff error: %', sqlerrm; end if; end;
 end $$;

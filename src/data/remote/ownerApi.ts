@@ -29,6 +29,8 @@ export interface StaffRow {
   name: string;
   active: boolean;
   lockedUntil: string | null;
+  /** false = no PIN set (staff.has_pin): the cashier cannot sign in until the owner sets one. */
+  hasPin: boolean;
 }
 
 export interface DeviceRow {

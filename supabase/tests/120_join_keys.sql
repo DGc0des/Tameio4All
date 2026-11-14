@@ -14,7 +14,7 @@ insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1}')::text, true);
-select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
+select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '123456')::text, true);
 
 -- T1 the key has the store-key format and is stable across calls
 select set_config('t.key_a', public.owner_get_join_key(current_setting('t.shop_a')::uuid), true);
@@ -101,7 +101,7 @@ end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
-  if public.staff_sign_in(current_setting('t.maria')::uuid, '0000') ->> 'error' is distinct from 'bad_pin' then raise exception 'T7 wrong PIN not bad_pin'; end if;
+  if public.staff_sign_in(current_setting('t.maria')::uuid, '000000') ->> 'error' is distinct from 'bad_pin' then raise exception 'T7 wrong PIN not bad_pin'; end if;
 end $$;
 reset role;
 do $$ begin
@@ -109,7 +109,7 @@ do $$ begin
 end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
-select set_config('t.tok1', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select set_config('t.tok1', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
 reset role;
 do $$ begin
   if coalesce(current_setting('t.tok1'), '') = '' then raise exception 'T7 correct PIN refused'; end if;
@@ -156,7 +156,7 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 select public.join_shop(current_setting('t.key_a'), 'Android');
-select set_config('t.s2', public.staff_sign_in(current_setting('t.maria')::uuid, '1234')::text, true);
+select set_config('t.s2', public.staff_sign_in(current_setting('t.maria')::uuid, '123456')::text, true);
 select set_config('t.tok2', current_setting('t.s2')::jsonb ->> 'token', true);
 select set_config('t.date', current_setting('t.s2')::jsonb ->> 'business_date', true);
 reset role;
@@ -223,7 +223,7 @@ end $$;
 -- T9 rotation: new key, every device of the shop gone, sessions ended, old key refused, new key joins
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
-select set_config('t.tok1', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select set_config('t.tok1', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;

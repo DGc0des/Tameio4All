@@ -10,12 +10,12 @@ insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created
   ('00000000-0000-0000-0000-0000000000d3', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now()),
   ('00000000-0000-0000-0000-0000000000d4', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', null, true, now(), now());
 
--- Owner A: shop, cashiers S1 (1111) and S2 (2222), the store key. Owner B: a second shop (for T12).
+-- Owner A: shop, cashiers S1 (111111) and S2 (222222), the store key. Owner B: a second shop (for T12).
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.shop', public.create_shop('Shop A', '{"schema":1}')::text, true);
-select set_config('t.s1', public.create_staff(current_setting('t.shop')::uuid, 'ΜΑΡΙΑ', '1111')::text, true);
-select set_config('t.s2', public.create_staff(current_setting('t.shop')::uuid, 'ΝΙΚΟΣ', '2222')::text, true);
+select set_config('t.s1', public.create_staff(current_setting('t.shop')::uuid, 'ΜΑΡΙΑ', '111111')::text, true);
+select set_config('t.s2', public.create_staff(current_setting('t.shop')::uuid, 'ΝΙΚΟΣ', '222222')::text, true);
 select set_config('t.key', public.owner_get_join_key(current_setting('t.shop')::uuid), true);
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
@@ -30,7 +30,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 select public.join_shop(current_setting('t.key'), 'Ταμείο');
 do $$ begin
-  if (public.staff_sign_in(current_setting('t.s1')::uuid, '1111') ->> 'ok')::boolean is not true then raise exception 'setup S1 on d1 failed'; end if;
+  if (public.staff_sign_in(current_setting('t.s1')::uuid, '111111') ->> 'ok')::boolean is not true then raise exception 'setup S1 on d1 failed'; end if;
 end $$;
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
@@ -45,8 +45,8 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 select public.join_shop(current_setting('t.key'), 'Τέταρτο');
 do $$ begin
-  if (public.staff_sign_in(current_setting('t.s1')::uuid, '1111') ->> 'ok')::boolean is not true then raise exception 'setup S1 on d4 failed'; end if;
-  if (public.staff_sign_in(current_setting('t.s2')::uuid, '2222') ->> 'ok')::boolean is not true then raise exception 'setup S2 on d4 failed'; end if;
+  if (public.staff_sign_in(current_setting('t.s1')::uuid, '111111') ->> 'ok')::boolean is not true then raise exception 'setup S1 on d4 failed'; end if;
+  if (public.staff_sign_in(current_setting('t.s2')::uuid, '222222') ->> 'ok')::boolean is not true then raise exception 'setup S2 on d4 failed'; end if;
 end $$;
 reset role;
 do $$ begin
@@ -63,10 +63,10 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 do $$ declare r jsonb; begin
   for i in 1..4 loop
-    r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+    r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
     if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_pin') then raise exception 'T1 attempt % expected bad_pin: %', i, r; end if;
   end loop;
-  r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+  r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
   if r ->> 'error' is distinct from 'staff_locked' then raise exception 'T1 5th attempt expected staff_locked: %', r; end if;
   if (r ->> 'locked_until')::timestamptz is distinct from now() + interval '15 minutes' then raise exception 'T1 locked_until not now + 15 min: %', r; end if;
 end $$;
@@ -84,7 +84,7 @@ end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ declare r jsonb; begin
-  r := public.staff_sign_in(current_setting('t.s1')::uuid, '1111');
+  r := public.staff_sign_in(current_setting('t.s1')::uuid, '111111');
   if r ->> 'error' is distinct from 'staff_locked' or r ->> 'locked_until' is null then raise exception 'T2 correct PIN while locked: %', r; end if;
 end $$;
 reset role;
@@ -97,7 +97,7 @@ end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ declare r jsonb; begin
-  r := public.staff_sign_in(current_setting('t.s1')::uuid, '1111');
+  r := public.staff_sign_in(current_setting('t.s1')::uuid, '111111');
   if (r ->> 'ok')::boolean is not true or r ->> 'token' !~ '^[0-9a-f]{64}$' then raise exception 'T3 trusted phone refused while cashier locked: %', r; end if;
 end $$;
 reset role;
@@ -115,10 +115,10 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 do $$ declare r jsonb; begin
   for i in 1..4 loop
-    r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+    r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
     if r ->> 'error' is distinct from 'bad_pin' then raise exception 'T4 attempt % expected bad_pin: %', i, r; end if;
   end loop;
-  r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+  r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
   if r ->> 'error' is distinct from 'staff_locked' or (r ->> 'locked_until')::timestamptz is distinct from now() + interval '30 minutes' then
     raise exception 'T4 second lock not 30 min: %', r;
   end if;
@@ -133,10 +133,10 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 do $$ declare r jsonb; begin
   for i in 1..4 loop
-    r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+    r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
     if r ->> 'error' is distinct from 'bad_pin' then raise exception 'T4 (decay) attempt % expected bad_pin: %', i, r; end if;
   end loop;
-  r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+  r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
   if r ->> 'error' is distinct from 'staff_locked' or (r ->> 'locked_until')::timestamptz is distinct from now() + interval '15 minutes' then
     raise exception 'T4 lock after 7 quiet days not 15 min: %', r;
   end if;
@@ -153,7 +153,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 do $$ declare r jsonb; begin
   for i in 1..4 loop
-    r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+    r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
     if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_pin') then raise exception 'T5 attempt % expected bad_pin: %', i, r; end if;
   end loop;
 end $$;
@@ -169,11 +169,11 @@ end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ declare r jsonb; begin
-  r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+  r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
   if r ->> 'error' is distinct from 'device_locked' or (r ->> 'locked_until')::timestamptz is distinct from now() + interval '15 minutes' then
     raise exception 'T5 5th attempt expected device_locked for 15 min: %', r;
   end if;
-  r := public.staff_sign_in(current_setting('t.s2')::uuid, '2222');
+  r := public.staff_sign_in(current_setting('t.s2')::uuid, '222222');
   if r ->> 'error' is distinct from 'device_locked' or r ->> 'locked_until' is null then raise exception 'T5 S2 signed in on a locked phone: %', r; end if;
 end $$;
 reset role;
@@ -189,7 +189,7 @@ end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d3","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ declare r jsonb; begin
-  r := public.staff_sign_in(current_setting('t.s2')::uuid, '2222');
+  r := public.staff_sign_in(current_setting('t.s2')::uuid, '222222');
   if (r ->> 'ok')::boolean is not true then raise exception 'T5 S2 refused on another phone: %', r; end if;
 end $$;
 reset role;
@@ -200,12 +200,12 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 do $$ declare r jsonb; begin
   for i in 1..4 loop
-    r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+    r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
     if r ->> 'error' is distinct from 'bad_pin' then raise exception 'T6 attempt % expected bad_pin: %', i, r; end if;
   end loop;
-  r := public.staff_sign_in(current_setting('t.s2')::uuid, '2222');
+  r := public.staff_sign_in(current_setting('t.s2')::uuid, '222222');
   if (r ->> 'ok')::boolean is not true then raise exception 'T6 S2 refused on d4: %', r; end if;
-  r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+  r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
   if r ->> 'error' is distinct from 'device_locked' then raise exception 'T6 S2 success reset S1 trust counter: %', r; end if;
 end $$;
 reset role;
@@ -223,7 +223,7 @@ end $$;
 update public.staff set failed_attempts = 3, locked_until = now() + interval '1 hour', lock_level = 4 where id = current_setting('t.s1')::uuid;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
-select public.set_staff_pin(current_setting('t.s1')::uuid, '1111');
+select public.set_staff_pin(current_setting('t.s1')::uuid, '111111');
 reset role;
 do $$ begin
   if (select failed_attempts <> 0 or locked_until is not null or lock_level <> 0 from public.staff where id = current_setting('t.s1')::uuid) then
@@ -243,7 +243,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 select public.join_shop(current_setting('t.key'), 'Ταμείο');
 do $$ declare r jsonb; begin
-  r := public.staff_sign_in(current_setting('t.s1')::uuid, '0000');
+  r := public.staff_sign_in(current_setting('t.s1')::uuid, '000000');
   if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_pin') then raise exception 'T8 re-joined phone: %', r; end if;
 end $$;
 reset role;

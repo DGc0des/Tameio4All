@@ -24,6 +24,8 @@ export function deviceErrorMessage(e: DeviceError): string {
       return 'Δεν βρέθηκε ο υπάλληλος.';
     case 'bad_pin':
       return 'Λάθος PIN.';
+    case 'pin_not_set':
+      return 'Δεν έχει οριστεί PIN. Ζήτα από τον ιδιοκτήτη να ορίσει νέο PIN 6 ψηφίων.';
     case 'staff_locked':
       return `Κλείδωσε μετά από 5 λάθος PIN. Δοκίμασε ξανά ${retryAt(e.lockedUntil)}.`;
     case 'device_locked':

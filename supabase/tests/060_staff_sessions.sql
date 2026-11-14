@@ -12,13 +12,13 @@ insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1}')::text, true);
-select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
+select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '123456')::text, true);
 select set_config('t.code', public.owner_get_join_key(current_setting('t.shop_a')::uuid), true);
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.shop_b', public.create_shop('Shop B', '{"schema":1}')::text, true);
-select set_config('t.nikos', public.create_staff(current_setting('t.shop_b')::uuid, 'ΝΙΚΟΣ', '1234')::text, true);
+select set_config('t.nikos', public.create_staff(current_setting('t.shop_b')::uuid, 'ΝΙΚΟΣ', '123456')::text, true);
 reset role;
 
 -- Phone D1 pairs with shop A; phone D2 stays unpaired.
@@ -33,7 +33,7 @@ set local role authenticated;
 do $$
 declare r jsonb;
 begin
-  r := public.staff_sign_in(current_setting('t.maria')::uuid, '1234');
+  r := public.staff_sign_in(current_setting('t.maria')::uuid, '123456');
   if (r ->> 'ok')::boolean is not true then raise exception 'T1 sign-in failed: %', r; end if;
   if r ->> 'token' !~ '^[0-9a-f]{64}$' then raise exception 'T1 token not 64 hex: %', r; end if;
   if r ->> 'staff_id' <> current_setting('t.maria') or r ->> 'name' <> 'ΜΑΡΙΑ' then raise exception 'T1 wrong staff: %', r; end if;
@@ -67,7 +67,7 @@ end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d2","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
-  if public.staff_sign_in(current_setting('t.maria')::uuid, '1234') is distinct from jsonb_build_object('ok', false, 'error', 'not_a_device') then
+  if public.staff_sign_in(current_setting('t.maria')::uuid, '123456') is distinct from jsonb_build_object('ok', false, 'error', 'not_a_device') then
     raise exception 'T3 unpaired phone signed in';
   end if;
 end $$;
@@ -75,7 +75,7 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
-  if public.staff_sign_in(current_setting('t.nikos')::uuid, '1234') is distinct from jsonb_build_object('ok', false, 'error', 'staff_not_found') then
+  if public.staff_sign_in(current_setting('t.nikos')::uuid, '123456') is distinct from jsonb_build_object('ok', false, 'error', 'staff_not_found') then
     raise exception 'T3 other shop staff signed in';
   end if;
 end $$;
@@ -124,12 +124,12 @@ do $$
 declare r jsonb;
 begin
   for i in 1..4 loop
-    r := public.staff_sign_in(current_setting('t.maria')::uuid, '9999');
+    r := public.staff_sign_in(current_setting('t.maria')::uuid, '999999');
     if r is distinct from jsonb_build_object('ok', false, 'error', 'bad_pin') then raise exception 'T4 attempt % expected bad_pin: %', i, r; end if;
   end loop;
-  r := public.staff_sign_in(current_setting('t.maria')::uuid, '9999');
+  r := public.staff_sign_in(current_setting('t.maria')::uuid, '999999');
   if r ->> 'error' is distinct from 'staff_locked' or r ->> 'locked_until' is null then raise exception 'T4 5th attempt expected staff_locked: %', r; end if;
-  r := public.staff_sign_in(current_setting('t.maria')::uuid, '1234');
+  r := public.staff_sign_in(current_setting('t.maria')::uuid, '123456');
   if r ->> 'error' is distinct from 'staff_locked' then raise exception 'T4 correct PIN while locked: %', r; end if;
 end $$;
 reset role;
@@ -151,7 +151,7 @@ reset role;
 -- T7 a revoked d1 → device_revoked; owner deactivates maria → session_invalid
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
-select set_config('t.token2', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select set_config('t.token2', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
 reset role;
 -- Nothing in the app sets revoked_at any more (stage 4); set it as the migration owner to keep the check.
 update public.devices set revoked_at = now() where user_id = '00000000-0000-0000-0000-0000000000d1';
@@ -284,7 +284,7 @@ do $$ begin
   raise exception 'T11 anon can read staff_sessions';
 end $$;
 do $$ begin
-  begin perform public.staff_sign_in(current_setting('t.maria')::uuid, '1234'); exception when insufficient_privilege then return; end;
+  begin perform public.staff_sign_in(current_setting('t.maria')::uuid, '123456'); exception when insufficient_privilege then return; end;
   raise exception 'T11 anon can call staff_sign_in';
 end $$;
 reset role;
@@ -309,8 +309,8 @@ end $$;
 
 -- T13 one cashier per phone: a new sign-in ends the phone's earlier live session
 set local role authenticated;
-select set_config('t.tok_first', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
-select set_config('t.tok_second', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select set_config('t.tok_first', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
+select set_config('t.tok_second', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
 reset role;
 do $$ begin
   if private.staff_session(current_setting('t.tok_first')) is distinct from jsonb_build_object('ok', false, 'error', 'session_invalid') then

@@ -22,7 +22,12 @@ cashier is locked, per-cashier trust counters, `unlock_staff`/`set_staff_pin` re
 with `owner_remove_device` and a shop switch, `private.lock_duration`, `verify_staff_pin` gone, grants, the
 back-fill statement; T4/T11 write as the migration owner; uses phones `…d1`–`…d4`). Since that migration `030` T5
 runs the lock sequence before the phone is trusted and T7 checks the phone-track counter, and `060` T4 drops d1's
-trust row first so it still tests the cashier track. `060`/`070` also create a throwaway phone `…d1`; `060` uses `…d2` as an unpaired phone.
+trust row first so it still tests the cashier track. `150` 6-digit PINs, hard cutover (H24: `create_staff`/
+`set_staff_pin` refuse 4- and 5-digit PINs as `bad_pin_format`; a cashier with `pin_hash` null gets `pin_not_set` on
+any phone and nothing is counted, locked or trusted; `device_locked` comes first; the owner's `has_pin` column and its
+grants; the migration's cutover statements run verbatim — on every staff row, rolled back, so it is the last block;
+T2/T4/T6 write as the migration owner; uses phones `…d1`, `…d2`). Since that migration every file uses 6-digit PINs;
+the bad-format cases (020 T4, 030 T7, 150 T1–T3) use 4- and 5-digit strings. `060`/`070` also create a throwaway phone `…d1`; `060` uses `…d2` as an unpaired phone.
 
 `080` and `090` also assert the Realtime side: `realtime.send` swallows insert errors (it only logs a
 WARNING) and, on a project whose `realtime.messages` has no partitions (the Realtime service creates the daily

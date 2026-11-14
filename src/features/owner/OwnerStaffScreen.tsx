@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { OwnerApi, StaffRow } from '../../data/remote/ownerApi';
 import { Card } from '../../ui/Card';
-import { checkName, isPin, STAFF_NAME_MAX } from './model/limits';
+import { checkName, isPin, PIN_LENGTH, STAFF_NAME_MAX } from './model/limits';
 import { nameProblemMessage, ownerErrorMessage } from './model/messages';
 import { formatClock, isLocked } from './model/time';
 import { ErrorText } from './OwnerUi';
@@ -15,7 +15,7 @@ interface Props {
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; staff: StaffRow[] };
 
-const PIN_HINT = 'Το PIN πρέπει να είναι 4 ψηφία.';
+const PIN_HINT = `Το PIN πρέπει να είναι ${PIN_LENGTH} ψηφία.`;
 
 function StaffEditor({ api, person, now, onChanged }: { api: OwnerApi; person: StaffRow; now: () => Date; onChanged: () => void }) {
   const [mode, setMode] = useState<'view' | 'rename' | 'pin'>('view');
@@ -48,6 +48,7 @@ function StaffEditor({ api, person, now, onChanged }: { api: OwnerApi; person: S
       <div className="row">
         <span className="row-label">
           <b>{person.name}</b>
+          {!person.hasPin && <span className="row-hint err"> · Χωρίς PIN — όρισε νέο</span>}
           {locked && person.lockedUntil !== null && <span className="row-hint err"> · Κλειδωμένος έως {formatClock(person.lockedUntil)}</span>}
         </span>
         <label className="check">
@@ -83,7 +84,7 @@ function StaffEditor({ api, person, now, onChanged }: { api: OwnerApi; person: S
       )}
       {mode === 'pin' && (
         <form className="row" onSubmit={savePin} noValidate>
-          <input className="field" aria-label={`Νέο PIN ${person.name}`} type="password" inputMode="numeric" autoComplete="off" maxLength={4} value={text} onChange={(e) => setText(e.target.value)} />
+          <input className="field" aria-label={`Νέο PIN ${person.name}`} type="password" inputMode="numeric" autoComplete="off" maxLength={PIN_LENGTH} value={text} onChange={(e) => setText(e.target.value)} />
           <button type="submit" className="btn btn-primary" aria-label="Αποθήκευση PIN" disabled={action.busy}>
             OK
           </button>
@@ -143,7 +144,7 @@ export function OwnerStaffScreen({ api, shopId, now }: Props) {
       <Card title="Νέο άτομο">
         <form className="form" onSubmit={submit} noValidate>
           <input className="text-field" aria-label="Όνομα νέου ατόμου" placeholder="Όνομα" value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="text-field" aria-label="PIN νέου ατόμου" placeholder="PIN (4 ψηφία)" type="password" inputMode="numeric" autoComplete="off" maxLength={4} value={pin} onChange={(e) => setPin(e.target.value)} />
+          <input className="text-field" aria-label="PIN νέου ατόμου" placeholder={`PIN (${PIN_LENGTH} ψηφία)`} type="password" inputMode="numeric" autoComplete="off" maxLength={PIN_LENGTH} value={pin} onChange={(e) => setPin(e.target.value)} />
           <p className="notice-soft">Πες το PIN στο άτομο — δεν εμφανίζεται ξανά.</p>
           <button type="submit" className="btn btn-primary" disabled={add.busy}>
             Προσθήκη

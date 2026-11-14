@@ -10,7 +10,7 @@ insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1}')::text, true);
-select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
+select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '123456')::text, true);
 select set_config('t.code', public.owner_get_join_key(current_setting('t.shop_a')::uuid), true);
 select set_config('t.cfg_a', (select id::text from public.shop_configs where shop_id = current_setting('t.shop_a')::uuid), true);
 reset role;
@@ -29,7 +29,7 @@ update public.shop_configs set config = '{"schema":1,"maxExpenses":5}' where id 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 select public.join_shop(current_setting('t.code'), 'Ταμείο');
-select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
 select public.get_open_closing(current_setting('t.token'));
 do $$
 declare r jsonb;

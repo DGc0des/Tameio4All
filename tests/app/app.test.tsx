@@ -242,7 +242,7 @@ describe('register flows', () => {
     await submitClosing();
     fireEvent.click(await screen.findByRole('radio', { name: 'ΜΑΡΙΑ' }));
     expect(loadStaffSession(store)).toBeNull();
-    type('PIN', '1234');
+    type('PIN', '123456');
     fireEvent.click(button('Είσοδος'));
     expect(((await screen.findByLabelText('100€')) as HTMLInputElement).value).toBe('1500');
   });
@@ -395,7 +395,7 @@ describe('navigation', () => {
     type('100€', '1500');
     await submitClosing();
     fireEvent.click(await screen.findByRole('radio', { name: 'ΜΑΡΙΑ' }));
-    type('PIN', '1234');
+    type('PIN', '123456');
     fireEvent.click(button('Είσοδος'));
     expect(await screen.findByRole('button', { name: 'Κυρ 08/11 · ΜΑΡΙΑ' })).toBeTruthy();
     // The cached 07/11 closing is not shown on the new day (M2): the boxes appear with the 08/11 load.

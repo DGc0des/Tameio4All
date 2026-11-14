@@ -108,10 +108,13 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
     },
     setDayChange: (shopId, time) => run(client.rpc('set_day_change_time', { p_shop_id: shopId, p_time: time })),
     async listStaff(shopId) {
-      const r = await run(client.from('staff').select('id, name, active, locked_until').eq('shop_id', shopId).order('name'));
+      const r = await run(client.from('staff').select('id, name, active, locked_until, has_pin').eq('shop_id', shopId).order('name'));
       if (!r.ok) return r;
-      const rows = (r.data ?? []) as { id: string; name: string; active: boolean; locked_until: string | null }[];
-      return { ok: true, data: rows.map((s): StaffRow => ({ id: s.id, name: s.name, active: s.active, lockedUntil: s.locked_until })) };
+      const rows = (r.data ?? []) as { id: string; name: string; active: boolean; locked_until: string | null; has_pin: boolean }[];
+      return {
+        ok: true,
+        data: rows.map((s): StaffRow => ({ id: s.id, name: s.name, active: s.active, lockedUntil: s.locked_until, hasPin: s.has_pin === true })),
+      };
     },
     createStaff: (shopId, name, pin) => run(client.rpc('create_staff', { p_shop_id: shopId, p_name: name, p_pin: pin })),
     setStaffPin: async (staffId, pin) => done(await run(client.rpc('set_staff_pin', { p_staff_id: staffId, p_pin: pin }))),

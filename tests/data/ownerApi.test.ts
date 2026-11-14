@@ -49,8 +49,8 @@ describe('createOwnerApi', () => {
   it('uses the right parameter names for every owner function', async () => {
     const { api, calls } = fake({ data: 'x', error: null });
     await api.createShop('Shop', newShopConfig());
-    await api.createStaff('s1', 'ΜΑΡΙΑ', '1234');
-    await api.setStaffPin('st1', '9876');
+    await api.createStaff('s1', 'ΜΑΡΙΑ', '123456');
+    await api.setStaffPin('st1', '987654');
     await api.unlockStaff('st1');
     await api.joinKey('s1');
     await api.rotateJoinKey('s1');
@@ -128,10 +128,23 @@ describe('createOwnerApi', () => {
   });
 
   it('lists staff without ever selecting pin_hash', async () => {
-    const { api, calls } = fake({ data: [{ id: 'a', name: 'ΜΑΡΙΑ', active: true, locked_until: null }], error: null });
-    expect(await api.listStaff('s1')).toEqual({ ok: true, data: [{ id: 'a', name: 'ΜΑΡΙΑ', active: true, lockedUntil: null }] });
+    const { api, calls } = fake({
+      data: [
+        { id: 'a', name: 'ΜΑΡΙΑ', active: true, locked_until: null, has_pin: true },
+        { id: 'b', name: 'ΝΙΚΟΣ', active: true, locked_until: null, has_pin: false },
+      ],
+      error: null,
+    });
+    expect(await api.listStaff('s1')).toEqual({
+      ok: true,
+      data: [
+        { id: 'a', name: 'ΜΑΡΙΑ', active: true, lockedUntil: null, hasPin: true },
+        { id: 'b', name: 'ΝΙΚΟΣ', active: true, lockedUntil: null, hasPin: false },
+      ],
+    });
     const select = calls.find((c) => c[0] === 'select');
     expect(String(select?.[1])).not.toContain('pin_hash');
+    expect(String(select?.[1])).toContain('has_pin');
   });
 
   it('returns the latest config row or null', async () => {

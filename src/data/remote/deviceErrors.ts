@@ -14,6 +14,7 @@ const PLAIN = [
   'device_revoked',
   'staff_not_found',
   'bad_pin',
+  'pin_not_set',
   'session_invalid',
   'wrong_day',
   'config_mismatch',

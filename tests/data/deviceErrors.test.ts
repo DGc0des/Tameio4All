@@ -50,6 +50,7 @@ describe('fromServerResult', () => {
   });
   it('maps known codes and sends unknown/garbage to unknown', () => {
     expect(fromServerResult({ ok: false, error: 'bad_pin' })).toEqual({ code: 'bad_pin' });
+    expect(fromServerResult({ ok: false, error: 'pin_not_set' })).toEqual({ code: 'pin_not_set' });
     expect(fromServerResult({ ok: false, error: 'nope' })).toEqual({ code: 'unknown', detail: 'nope' });
     expect(fromServerResult('x')?.code).toBe('unknown');
     expect(fromServerResult(null)?.code).toBe('unknown');
@@ -65,13 +66,14 @@ describe('deviceErrorMessage', () => {
     { code: 'network' }, { code: 'unknown', detail: 'x' },
     { code: 'stale', current: { key: 'c:a', value: null, version: 0, updatedByName: '', updatedAt: '' } }, { code: 'bad_field' },
     { code: 'too_many_expenses' }, { code: 'draft_changed', revision: 3 }, { code: 'other_shop' },
-    { code: 'device_locked', lockedUntil: null },
+    { code: 'device_locked', lockedUntil: null }, { code: 'pin_not_set' },
   ];
   it('has a non-empty message for every code', () => {
     for (const e of all) expect(deviceErrorMessage(e).length).toBeGreaterThan(0);
   });
   it('uses the agreed wording', () => {
     expect(deviceErrorMessage({ code: 'bad_pin' })).toBe('Λάθος PIN.');
+    expect(deviceErrorMessage({ code: 'pin_not_set' })).toBe('Δεν έχει οριστεί PIN. Ζήτα από τον ιδιοκτήτη να ορίσει νέο PIN 6 ψηφίων.');
     expect(deviceErrorMessage({ code: 'network' })).toBe('Δεν υπάρχει σύνδεση.');
     expect(deviceErrorMessage({ code: 'invalid_code' })).toBe('Ο κωδικός καταστήματος δεν ισχύει. Ζήτα τον νέο σύνδεσμο.');
     expect(deviceErrorMessage({ code: 'not_a_device' })).toBe('Αυτή η συσκευή δεν είναι σε κατάστημα. Άνοιξε τον σύνδεσμο του καταστήματος.');

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { DeviceApi, DeviceError, StaffSession } from '../../data/remote/deviceApi';
 import { Card } from '../../ui/Card';
+import { PIN_LENGTH } from '../owner/model/limits';
 import { deviceErrorMessage } from './model/messages';
 
 interface Props {
@@ -14,7 +15,6 @@ interface Props {
 
 type StaffList = { s: 'loading' } | { s: 'error'; message: string } | { s: 'ok'; staff: { id: string; name: string }[] };
 
-const PIN_LENGTH = 4;
 const unpairs = (e: DeviceError): boolean => e.code === 'device_revoked' || e.code === 'not_a_device';
 
 /** Paired phone, nobody signed in: names and a PIN only — never a number from the register. */

@@ -114,14 +114,14 @@ describe('createDeviceApi', () => {
       },
     });
     const api = createDeviceApi(good.client);
-    const before = await api.signIn('p1', '1234');
+    const before = await api.signIn('p1', '123456');
     expect(before).toMatchObject({ ok: true, data: { shopId: '' } });
     await api.context();
-    expect(await api.signIn('p1', '1234')).toEqual({
+    expect(await api.signIn('p1', '123456')).toEqual({
       ok: true,
       data: { token: 't', staffId: 'p1', name: 'ΜΑΡΙΑ', businessDate: '2026-11-07', shopId: 's1' },
     });
-    expect(good.rpc).toHaveBeenCalledWith('staff_sign_in', { p_staff_id: 'p1', p_pin: '1234' });
+    expect(good.rpc).toHaveBeenCalledWith('staff_sign_in', { p_staff_id: 'p1', p_pin: '123456' });
 
     const locked = stub({ rpc: { staff_sign_in: { data: { ok: false, error: 'staff_locked', locked_until: 'T' }, error: null } } });
     expect(await createDeviceApi(locked.client).signIn('p1', '0')).toEqual({

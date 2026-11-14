@@ -9,7 +9,7 @@ export const fail = <T,>(error: DeviceError): Promise<DResult<T>> => Promise.res
 
 export const FAKE_SHOP_ID = 'shop-1';
 export const FAKE_CONFIG_ID = 'config-1';
-export const FAKE_PIN = '1234';
+export const FAKE_PIN = '123456';
 export const FAKE_DATE = '2026-11-07';
 export const FAKE_STAFF = [
   { id: 'staff-maria', name: 'ΜΑΡΙΑ' },
@@ -147,7 +147,7 @@ export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'conf
 }
 
 /**
- * A paired phone for shop «Join Juice»; PIN 1234 signs in. Every method is a vi.fn. The live-closing
+ * A paired phone for shop «Join Juice»; PIN 123456 signs in. Every method is a vi.fn. The live-closing
  * calls go to `server` (a fresh one unless shared, e.g. by two phones in one test).
  */
 export function fakeDeviceApi(overrides: Partial<DeviceApi> = {}, server: FakeServer = fakeServer()): DeviceApi {

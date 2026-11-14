@@ -12,8 +12,8 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 select set_config('t.shop', public.create_shop('Shop A', '{"schema":1}')::text, true);
 select public.publish_config(current_setting('t.shop')::uuid, 1, '{"schema":1,"floatCents":100000}');
-select set_config('t.maria', public.create_staff(current_setting('t.shop')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
-select set_config('t.nikos', public.create_staff(current_setting('t.shop')::uuid, 'ΝΙΚΟΣ', '5555')::text, true);
+select set_config('t.maria', public.create_staff(current_setting('t.shop')::uuid, 'ΜΑΡΙΑ', '123456')::text, true);
+select set_config('t.nikos', public.create_staff(current_setting('t.shop')::uuid, 'ΝΙΚΟΣ', '555555')::text, true);
 update public.staff set active = false where id = current_setting('t.nikos')::uuid;
 select set_config('t.code', public.owner_get_join_key(current_setting('t.shop')::uuid), true);
 
@@ -32,7 +32,7 @@ set local role authenticated;
 -- T2 before joining: no context, not a device
 do $$ begin
   if (select count(*) from public.device_context()) <> 0 then raise exception 'T2 unpaired phone has context'; end if;
-  if public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'error' <> 'not_a_device' then raise exception 'T2 expected not_a_device'; end if;
+  if public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'error' <> 'not_a_device' then raise exception 'T2 expected not_a_device'; end if;
 end $$;
 
 -- T3 join works with lowercase and spaces
@@ -53,12 +53,12 @@ end $$;
 -- correct PIN while locked → still locked. The trusted-phone track is covered by 140.
 do $$ declare r jsonb; begin
   for i in 1..4 loop
-    r := public.staff_sign_in(current_setting('t.maria')::uuid, '0000');
+    r := public.staff_sign_in(current_setting('t.maria')::uuid, '000000');
     if r ->> 'error' <> 'bad_pin' then raise exception 'T5 attempt % expected bad_pin, got %', i, r; end if;
   end loop;
-  r := public.staff_sign_in(current_setting('t.maria')::uuid, '0000');
+  r := public.staff_sign_in(current_setting('t.maria')::uuid, '000000');
   if r ->> 'error' <> 'staff_locked' then raise exception 'T5 5th attempt expected staff_locked, got %', r; end if;
-  r := public.staff_sign_in(current_setting('t.maria')::uuid, '1234');
+  r := public.staff_sign_in(current_setting('t.maria')::uuid, '123456');
   if r ->> 'error' <> 'staff_locked' then raise exception 'T5 correct PIN while locked should stay locked, got %', r; end if;
 end $$;
 reset role;
@@ -71,14 +71,14 @@ do $$ begin
 end $$;
 
 -- T7 after the lock expires, the correct PIN works and resets the cashier counter (D1 becomes trusted for ΜΑΡΙΑ,
--- so the later malformed PIN counts on the phone's track); the expired lock is not cleared
+-- so the later malformed 4-digit PIN counts on the phone's track); the expired lock is not cleared
 update public.staff set locked_until = now() - interval '1 second', failed_attempts = 2 where id = current_setting('t.maria')::uuid;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 do $$ begin
-  if (public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'ok')::boolean is not true then raise exception 'T7 correct PIN refused after lock expired'; end if;
-  if public.staff_sign_in(current_setting('t.nikos')::uuid, '5555') ->> 'error' <> 'staff_not_found' then raise exception 'T7 inactive staff accepted'; end if;
-  if public.staff_sign_in(current_setting('t.maria')::uuid, '12') ->> 'error' <> 'bad_pin' then raise exception 'T7 malformed PIN not bad_pin'; end if;
+  if (public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'ok')::boolean is not true then raise exception 'T7 correct PIN refused after lock expired'; end if;
+  if public.staff_sign_in(current_setting('t.nikos')::uuid, '555555') ->> 'error' <> 'staff_not_found' then raise exception 'T7 inactive staff accepted'; end if;
+  if public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'error' <> 'bad_pin' then raise exception 'T7 malformed (4-digit) PIN not bad_pin'; end if;
 end $$;
 reset role;
 do $$ begin
@@ -107,7 +107,7 @@ set local role authenticated;
 do $$ begin
   if (select count(*) from public.device_context()) <> 0 then raise exception 'T9 revoked phone has context'; end if;
   if (select count(*) from public.list_staff()) <> 0 then raise exception 'T9 revoked phone lists staff'; end if;
-  if public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'error' <> 'device_revoked' then raise exception 'T9 expected device_revoked'; end if;
+  if public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'error' <> 'device_revoked' then raise exception 'T9 expected device_revoked'; end if;
 end $$;
 reset role;
 

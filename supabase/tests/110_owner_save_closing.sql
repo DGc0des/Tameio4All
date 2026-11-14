@@ -13,8 +13,8 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1}')::text, true);
 select set_config('t.shop_c', public.create_shop('Shop C', '{"schema":1}')::text, true);
-select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
-select set_config('t.eleni', public.create_staff(current_setting('t.shop_a')::uuid, 'ΕΛΕΝΗ', '4321')::text, true);
+select set_config('t.maria', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '123456')::text, true);
+select set_config('t.eleni', public.create_staff(current_setting('t.shop_a')::uuid, 'ΕΛΕΝΗ', '432109')::text, true);
 select set_config('t.code', public.owner_get_join_key(current_setting('t.shop_a')::uuid), true);
 select set_config('t.cfg_a', (select id::text from public.shop_configs where shop_id = current_setting('t.shop_a')::uuid), true);
 select set_config('t.cfg_c', (select id::text from public.shop_configs where shop_id = current_setting('t.shop_c')::uuid), true);
@@ -22,14 +22,14 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.shop_b', public.create_shop('Shop B', '{"schema":1}')::text, true);
-select set_config('t.nikos', public.create_staff(current_setting('t.shop_b')::uuid, 'ΝΙΚΟΣ', '1111')::text, true);
+select set_config('t.nikos', public.create_staff(current_setting('t.shop_b')::uuid, 'ΝΙΚΟΣ', '111111')::text, true);
 select set_config('t.cfg_b', (select id::text from public.shop_configs where shop_id = current_setting('t.shop_b')::uuid), true);
 reset role;
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
 select public.join_shop(current_setting('t.code'), 'Ταμείο');
-select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
 reset role;
 select set_config('t.bd', private.business_date(current_setting('t.shop_a')::uuid)::text, true);
 
@@ -321,7 +321,7 @@ end $$;
 update public.staff set active = true where id = current_setting('t.maria')::uuid;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
-select set_config('t.stok', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select set_config('t.stok', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
 do $$ begin
   if not exists (select 1 from public.expense_suggestion_data(current_setting('t.stok')) where description = 'Ιδιοκτήτης έξοδο' and business_date = current_setting('t.bd')::date - 1) then
     raise exception 'T11 suggestions miss the corrected day';
@@ -402,7 +402,7 @@ end $$;
 update public.staff set active = true where id = current_setting('t.maria')::uuid;  -- deactivated in T9
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d1","role":"authenticated","is_anonymous":true}', true);
 set local role authenticated;
-select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '1234') ->> 'token', true);
+select set_config('t.token', public.staff_sign_in(current_setting('t.maria')::uuid, '123456') ->> 'token', true);
 do $$
 declare r jsonb;
 begin

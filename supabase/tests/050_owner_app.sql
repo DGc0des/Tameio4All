@@ -17,7 +17,7 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.shop_a', public.create_shop('Shop A', '{"schema":1}')::text, true);
-select set_config('t.staff_a', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '1234')::text, true);
+select set_config('t.staff_a', public.create_staff(current_setting('t.shop_a')::uuid, 'ΜΑΡΙΑ', '123456')::text, true);
 
 -- T1 owner A renames their own shop
 do $$ declare n int; begin
@@ -97,7 +97,7 @@ set local role authenticated;
 select public.unlock_staff(current_setting('t.staff_a')::uuid);
 reset role;
 do $$ begin
-  if (select failed_attempts = 0 and locked_until is null and extensions.crypt('1234', pin_hash) = pin_hash
+  if (select failed_attempts = 0 and locked_until is null and extensions.crypt('123456', pin_hash) = pin_hash
       from public.staff where id = current_setting('t.staff_a')::uuid) is not true then
     raise exception 'T7 not unlocked or PIN changed';
   end if;

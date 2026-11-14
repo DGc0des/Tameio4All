@@ -13,6 +13,8 @@ export type DeviceError =
   | { code: 'owner_signed_in' }
   | { code: 'staff_not_found' }
   | { code: 'bad_pin' }
+  /** The cashier has no PIN (cleared by the 6-digit cutover): the owner must set one. Never counted. */
+  | { code: 'pin_not_set' }
   /** Too many wrong PINs for this cashier from phones they never signed in on. */
   | { code: 'staff_locked'; lockedUntil: string | null }
   /** Too many wrong PINs on this phone (for a cashier who signed in here before): locked for everyone on it. */

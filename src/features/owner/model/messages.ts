@@ -15,7 +15,7 @@ export function ownerErrorMessage(e: OwnerError): string {
     case 'staff_name_taken':
       return 'Υπάρχει ήδη άτομο με αυτό το όνομα.';
     case 'bad_pin_format':
-      return 'Το PIN πρέπει να είναι 4 ψηφία.';
+      return 'Το PIN πρέπει να είναι 6 ψηφία.';
     case 'bad_config':
       return 'Ο διακομιστής απέρριψε τις ρυθμίσεις.';
     case 'bad_field':

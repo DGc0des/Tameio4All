@@ -21,5 +21,7 @@ export function checkLabel(raw: string, max: number): { ok: true; value: string 
   return length(value) > max ? { ok: false, problem: 'too_long' } : { ok: true, value };
 }
 
-export const isPin = (s: string): boolean => /^[0-9]{4}$/.test(s);
+/** Staff PINs are exactly 6 ASCII digits. Cross-file: private.check_pin, the regex in private.check_staff_pin, the PIN inputs. */
+export const PIN_LENGTH = 6;
+export const isPin = (s: string): boolean => /^[0-9]{6}$/.test(s);
 export const isEmail = (s: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);

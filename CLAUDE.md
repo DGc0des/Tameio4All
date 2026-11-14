@@ -158,6 +158,16 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   must keep that order. Residual, accepted: an outsider can keep a cashier locked on phones that cashier has never
   used (the way out is «Νέος σύνδεσμος»); a phone locked for a long time is freed by «Αφαίρεση» (it re-joins
   untrusted).
+- **Staff PIN = exactly 6 digits** (migration `20261114000006_six_digit_pins`, H24). Cross-file invariant: the format
+  `^[0-9]{6}$` lives in `private.check_pin` (used by `create_staff`/`set_staff_pin` → `bad_pin_format`), in the regex
+  inside `private.check_staff_pin`, and in the client (`isPin`/`PIN_LENGTH` in `src/features/owner/model/limits.ts`,
+  used by `OwnerStaffScreen` and `SignInScreen`) — change them together. `staff.pin_hash` null = no PIN set:
+  `check_staff_pin` answers `pin_not_set` right after the `device_locked` check, before any comparison (required:
+  `crypt(pin, null)` is null and would fall through to the correct-PIN path) and never counts, locks or trusts; the
+  phone stays on the sign-in screen («Δεν έχει οριστεί PIN…»). The owner sees it through the generated column
+  `staff.has_pin` (column select grant like the other staff columns; `pin_hash` stays unreadable) as «Χωρίς PIN —
+  όρισε νέο». The 2026-11-14 cutover cleared every PIN and revoked every live staff session (trust rows, lock times
+  and levels kept): the owner sets a new PIN for each cashier.
 - Owner screens never call supabase directly — only through `OwnerApi`; UI tests use
   `tests/features/owner/fakeApi.ts` and never load supabase-js.
 - Auth uses PKCE with `detectSessionInUrl: false`; email links return as `?auth=signup|recovery&code=…`

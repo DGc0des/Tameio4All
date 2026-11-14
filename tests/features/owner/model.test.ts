@@ -21,10 +21,14 @@ describe('limits', () => {
   });
 
   it('checks PINs and emails', () => {
-    expect(isPin('0123')).toBe(true);
-    expect(isPin('123')).toBe(false);
-    expect(isPin('12a4')).toBe(false);
-    expect(isPin('١٢٣٤')).toBe(false);
+    expect(isPin('012345')).toBe(true);
+    expect(isPin('123456')).toBe(true);
+    expect(isPin('1234')).toBe(false);
+    expect(isPin('12345')).toBe(false);
+    expect(isPin('1234567')).toBe(false);
+    expect(isPin('12a456')).toBe(false);
+    expect(isPin('١٢٣٤٥٦')).toBe(false);
+    expect(isPin('123456\n')).toBe(false);
     expect(isEmail('owner@shop.gr')).toBe(true);
     expect(isEmail('owner@shop')).toBe(false);
     expect(isEmail(' owner@shop.gr')).toBe(false);
