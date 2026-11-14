@@ -37,6 +37,20 @@ do $$ begin
   raise exception 'T2c expected bad_config';
 end $$;
 
+-- T2d maxExpenses, when present, must be a JSON integer 0..30 (final review I1; mirrors validateConfig)
+do $$
+declare v text;
+begin
+  foreach v in array array['31', '"5"', '2.5', '-1', 'null', '1e12', '[5]'] loop
+    begin
+      perform public.create_shop('X', ('{"schema":1,"maxExpenses":' || v || '}')::jsonb);
+      raise exception 'T2d create_shop accepted maxExpenses %', v;
+    exception when others then
+      if sqlerrm not like '%bad_config%' then raise exception 'T2d create_shop maxExpenses % wrong error: %', v, sqlerrm; end if;
+    end;
+  end loop;
+end $$;
+
 -- T3 publish_config: expected version → next version; stale version → version_conflict
 do $$ begin
   if public.publish_config(current_setting('t.shop_a')::uuid, 1, '{"schema":1,"floatCents":50000}') <> 2 then raise exception 'T3 not version 2'; end if;
@@ -50,6 +64,20 @@ do $$ begin
   begin perform public.publish_config(current_setting('t.shop_a')::uuid, null, '{"schema":1}');
   exception when others then if sqlerrm not like '%version_conflict%' then raise exception 'T3b wrong error: %', sqlerrm; end if; return; end;
   raise exception 'T3b expected version_conflict';
+end $$;
+
+-- T3c publish_config refuses a bad maxExpenses (with the right expected version, so only the config can fail)
+do $$
+declare v text;
+begin
+  foreach v in array array['31', '"5"', '2.5'] loop
+    begin
+      perform public.publish_config(current_setting('t.shop_a')::uuid, 2, ('{"schema":1,"maxExpenses":' || v || '}')::jsonb);
+      raise exception 'T3c publish_config accepted maxExpenses %', v;
+    exception when others then
+      if sqlerrm not like '%bad_config%' then raise exception 'T3c publish_config maxExpenses % wrong error: %', v, sqlerrm; end if;
+    end;
+  end loop;
 end $$;
 
 -- T4 create_staff: 6-digit PIN only (4- and 5-digit PINs are a bad format), stored hashed, names unique per shop
@@ -197,6 +225,15 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 do $$ begin
   if public.publish_config(current_setting('t.shop_a')::uuid, 50, '{"schema":1}') <> 51 then raise exception 'T12 publish after 25 h failed'; end if;
+end $$;
+reset role;
+
+-- T13 maxExpenses 0 and 30 are accepted (owner B, whose shop count T12 does not assert)
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$ begin
+  perform public.create_shop('B max 0', '{"schema":1,"maxExpenses":0}');
+  perform public.create_shop('B max 30', '{"schema":1,"maxExpenses":30}');
 end $$;
 reset role;
 

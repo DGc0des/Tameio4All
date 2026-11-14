@@ -27,7 +27,10 @@ trust row first so it still tests the cashier track. `150` 6-digit PINs, hard cu
 any phone and nothing is counted, locked or trusted; `device_locked` comes first; the owner's `has_pin` column and its
 grants; the migration's cutover statements run verbatim — on every staff row, rolled back, so it is the last block;
 T2/T4/T6 write as the migration owner; uses phones `…d1`, `…d2`). Since that migration every file uses 6-digit PINs;
-the bad-format cases (020 T4, 030 T7, 150 T1–T3) use 4- and 5-digit strings. `060`/`070` also create a throwaway phone `…d1`; `060` uses `…d2` as an unpaired phone.
+the bad-format cases (020 T4, 030 T7, 150 T1–T3) use 4- and 5-digit strings. `060`/`070` also create a throwaway phone `…d1`; `060` uses `…d2` as an unpaired phone. `20261114000007_max_expenses_clamp` (final review I1): `020` T2d/T3c (`create_shop`/`publish_config` refuse a
+`maxExpenses` that is not a JSON integer 0..30 as `bad_config`) and T13 (0 and 30 accepted, owner B); `080` T-M42-5 (a
+junk/huge stored `maxExpenses` → cap 0, `too_many_expenses`, no exception; config written as the migration owner),
+T-M42-6 (a stored 100 behaves as 30) and T-M42-7 (`private.max_expenses` values and grants). Written, not yet run.
 
 `080` and `090` also assert the Realtime side: `realtime.send` swallows insert errors (it only logs a
 WARNING) and, on a project whose `realtime.messages` has no partitions (the Realtime service creates the daily

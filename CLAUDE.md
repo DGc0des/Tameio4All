@@ -232,10 +232,18 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   `20261114000005_closing_field_limits`) now rejects non-canonical and out-of-config `d:`/`c:` keys (`bad_field`: the
   denomination must be in the pinned config's `denominations`, the channel id in its `channels`; junk config JSON
   accepts nothing) and caps total `e:<id>` lines at `maxExpenses × 5` including removed ones (`too_many_expenses`).
+- **Cross-file invariant: `maxExpenses` is a JSON integer 0..30.** The rule lives in `validateConfig`
+  (`src/core/config.ts`, `bad_max_expenses`) AND in `private.check_config` (`bad_config` from `create_shop`/
+  `publish_config`; a config without the key is still accepted there and read as 0) — change them together (migration
+  `20261114000007_max_expenses_clamp`). Stored configs are untrusted (older rows, rows written as the migration owner):
+  the server reads `maxExpenses` only through `private.max_expenses(config)` (never raises; a JSON integer of at most
+  9 digits → clamped to 0..30, anything else → 0), which `write_closing_field` uses for both caps (visible lines ≤ max,
+  all `e:<id>` rows ≤ max × 5). Its `jsonb_array_elements` calls take `[]` unless the config value is an array, so no
+  junk config makes a field write raise.
 - **One write path.** Phones write only through `set_closing_field(token, date, key, value, base_version)`, owners
   through `owner_set_closing_field(shop, date, key, value, base_version)` (migration `…0003_live_fixes`; the date is
   the snapshot's — the day on screen — and anything but the shop's business date is `wrong_day`, like the phone).
-  Both go through `private.write_closing_field` (latest body: `…0003`), which validates, stamps the author
+  Both go through `private.write_closing_field` (latest body: `20261114000007_max_expenses_clamp`), which validates, stamps the author
   (expense `addedBy` is set server-side on creation and kept on later writes), bumps the field `version` and the
   closing `revision`, returns `{ok:true, version, revision, value}` — `value` is what was **stored** (the client's
   ack applies it, never only what it sent: the author may differ) — and broadcasts a `field` event on `shop:<shopId>` **inside the function** (`realtime.send`,

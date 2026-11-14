@@ -482,4 +482,66 @@ begin
 end $$;
 reset role;
 
+-- T-M42-5 (final review I1): a junk/huge `maxExpenses` in the pinned config (written as the migration owner, which
+-- check_config cannot stop) means cap 0: a new line answers too_many_expenses, never an exception.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+do $$
+declare
+  shop uuid := current_setting('t.shop_m')::uuid; bd date := current_setting('t.bd_m')::date; r jsonb; v jsonb;
+begin
+  foreach v in array array['"abc"', '2.5', '1e12', '-3', 'null', '2147483648']::jsonb[] loop
+    update public.shop_configs set config = jsonb_set(config, '{maxExpenses}', v) where shop_id = shop;
+    execute 'set local role authenticated';
+    begin
+      r := public.owner_set_closing_field(shop, bd, 'e:j1', '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', null);
+    exception when others then
+      raise exception 'T-M42-5 maxExpenses % raised: % %', v, sqlstate, sqlerrm;
+    end;
+    execute 'reset role';
+    if r is distinct from '{"ok":false,"error":"too_many_expenses"}'::jsonb then
+      raise exception 'T-M42-5 maxExpenses %: %', v, r;
+    end if;
+  end loop;
+end $$;
+reset role;
+
+-- T-M42-6 a stored maxExpenses above 30 behaves as 30 for the visible-line cap. Shop M has 1 visible line (e:m1)
+-- and 10 e:<id> rows; 29 more make 30 visible (39 rows < 30 * 5), the next one is refused.
+update public.shop_configs set config = jsonb_set(config, '{maxExpenses}', '100') where shop_id = current_setting('t.shop_m')::uuid;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$
+declare
+  shop uuid := current_setting('t.shop_m')::uuid; bd date := current_setting('t.bd_m')::date; r jsonb; i int;
+begin
+  for i in 1..29 loop
+    r := public.owner_set_closing_field(shop, bd, 'e:n' || i, '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', null);
+    if (r ->> 'ok')::boolean is not true then raise exception 'T-M42-6 line % refused under the cap: %', i, r; end if;
+  end loop;
+  r := public.owner_set_closing_field(shop, bd, 'e:n30', '{"addedBy":{"kind":"owner"},"order":1,"removed":false}', null);
+  if r is distinct from '{"ok":false,"error":"too_many_expenses"}'::jsonb then raise exception 'T-M42-6 31st visible line accepted: %', r; end if;
+end $$;
+reset role;
+
+-- T-M42-7 private.max_expenses: values (as the migration owner) and grants.
+do $$
+declare c record;
+begin
+  for c in select * from (values
+      ('{"maxExpenses":0}'::jsonb, 0), ('{"maxExpenses":5}', 5), ('{"maxExpenses":30}', 30), ('{"maxExpenses":31}', 30),
+      ('{"maxExpenses":999999999}', 30), ('{"maxExpenses":1e12}', 0), ('{"maxExpenses":-3}', 0),
+      ('{"maxExpenses":2.5}', 0), ('{"maxExpenses":"5"}', 0), ('{"maxExpenses":null}', 0), ('{"schema":1}', 0),
+      ('[1,2]', 0), ('"x"', 0)) t(cfg, want) loop
+    if private.max_expenses(c.cfg) is distinct from c.want then
+      raise exception 'T-M42-7 max_expenses(%) = %, want %', c.cfg, private.max_expenses(c.cfg), c.want;
+    end if;
+  end loop;
+  if private.max_expenses(null) is distinct from 0 then raise exception 'T-M42-7 max_expenses(null) not 0'; end if;
+  if has_function_privilege('authenticated', 'private.max_expenses(jsonb)', 'execute')
+     or has_function_privilege('anon', 'private.max_expenses(jsonb)', 'execute')
+     or has_function_privilege('public', 'private.max_expenses(jsonb)', 'execute') then
+    raise exception 'T-M42-7 private.max_expenses is executable by a client role';
+  end if;
+end $$;
+
 rollback;
