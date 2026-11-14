@@ -101,6 +101,18 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   (`{kind:'staff',id: uuid of a staff of the shop}` or `{kind:'owner'}`); `submit_closing` further requires each line to
   be a live, not removed `e:<id>` field with that same author (`owner_save_closing` checks a stored author only for today's lines that exist as an `e:<id>` field; for past days and for today's lines with no `e:<id>` field it keeps the staff-of-the-shop rule, owner lines allowed). Change one side and the other needs a
   migration/commit in the same change.
+- **Erasure** (migration `20261115000001_erasure`, LG2). `owner_erase_staff(staff)` keeps the staff row as a
+ permanent tombstone (closings reference it): name «Διαγραμμένος υπάλληλος <first 8 hex of the id>», `pin_hash` null,
+ inactive, lock state cleared, `erased_at` set; its sessions and trust rows are deleted, `devices.last_staff_id` cleared,
+ and `last_submit.staff_name` of its submits rewritten. An erased row is never updated again (`staff_owner_update`
+ requires `erased_at is null`; `set_staff_pin`/`unlock_staff` answer `not_owner`); it still counts toward the 100-staff
+ cap. Cross-file invariant: the placeholder text is produced only in SQL; the client never builds it. `closings` rows
+ leave the database only with their whole shop: `owner_delete_shop(shop, typed name)` (`confirm_mismatch` 22023 unless
+ the trimmed name matches exactly) and `owner_delete_account()` go through `private.delete_shop`, which also deletes the
+ shop's anonymous phone users. The daily `pg_cron` job `purge_stale` (03:30 UTC, `private.purge_stale`) deletes staff
+ sessions older than 90 days and anonymous users older than 30 days with no `devices` row and no auth session used in
+ 30 days. Residual: realtime broadcast payloads (`updated_by_name`, `staff_name`) already sent stay in
+ `realtime.messages` until Supabase drops the partition; free-text expense descriptions are not scanned.
 - Internal `private.*` helpers are not callable by clients, except `private.is_shop_owner` and
   `private.can_use_shop_topic` (both executable by `authenticated`; row-level security / realtime policies need
   them; each only answers a boolean about the caller's own access).

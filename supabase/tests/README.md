@@ -32,6 +32,15 @@ the bad-format cases (020 T4, 030 T7, 150 T1–T3) use 4- and 5-digit strings. `
 junk/huge stored `maxExpenses` → cap 0, `too_many_expenses`, no exception; config written as the migration owner),
 T-M42-6 (a stored 100 behaves as 30) and T-M42-7 (`private.max_expenses` values and grants). Written, not yet run.
 
+`160` erasure and deletion (`20261115000001_erasure`, LG2/L81): `owner_erase_staff` (tombstone row, the old name in no
+row of the shop incl. `last_submit`, a pre-erase token dead, the erased author's line still submittable, the erased row
+not updatable/re-PINable/unlockable), `owner_delete_shop` (typed-name confirmation, every table empty for the shop, its
+anonymous phone users gone), `owner_delete_account`, `private.purge_stale` (90-day sessions, 30-day unused anonymous
+users; writes `auth.sessions` as the migration owner), grants and the `purge_stale` cron job; T9 deletes owner A, so it
+is the last block; uses phones `…d1`–`…d3`, `…d5`, `…d6`. **Written, not yet applied or run** (the migration needs the
+privilege probe of plan `2026-11-14-legal-fixes` Task 3 Step 1 first). After applying, also re-run `020`, `060`, `110`,
+`140`, `150` (they touch `staff`).
+
 `080` and `090` also assert the Realtime side: `realtime.send` swallows insert errors (it only logs a
 WARNING) and, on a project whose `realtime.messages` has no partitions (the Realtime service creates the daily
 partitions once it is used), the broadcast/policy assertions cannot run. In that case the tests raise a
