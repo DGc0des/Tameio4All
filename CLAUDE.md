@@ -51,7 +51,7 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   `#/owner/shop/<id>/history` and `…/history/<YYYY-MM-DD>` (`router.ts`; a malformed date segment is dropped).
 - `src/features/phone/` — phone shell (lazy `PhoneEntry` builds the real `DeviceApi`): `model/gate.ts` is the
   pure gate reducer (loading → unconfigured | offline_no_cache | load_error | unpaired → signed_out → ready); `PhoneApp`
-  renders only from it; `JoinScreen` (name + PIN after a link, or typing the store code), `SignInScreen`.
+  renders only from it; `JoinScreen` (the entry screen: tries a link's key once, or the typed store code; no name/PIN — that is `SignInScreen`), `SignInScreen`.
   `model/load.ts` (`loadGate`, the one load path), `model/join.ts` (`joinStore`, the one join path),
   `model/platform.ts` (`platformLabel`, the default device label). `src/app/joinKey.ts`: `parseJoinKey`,
   `formatJoinKey`, `joinLink`, `parseJoinRoute` (the `#/join/<key>` route). App tests pass `deviceApi={fakeDeviceApi()}`.
@@ -62,6 +62,7 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   one rolled-back transaction each (see its README).
 
 ## Invariants
+- Response headers (CSP etc.) come from `vercel.json`; a new external origin needs a CSP entry there.
 - Every Supabase request goes through `timeoutFetch` (set once in `client.ts`). The 15 s is per attempt: RPC calls (POST) fail as `network` after 15 s; GET table reads are retried by postgrest-js
   up to 3× (1/2/4 s waits) and give up after ≈ 67 s. A timeout rejects with the fixed
   message `request_timeout`, which both `mapDeviceError` and `mapError` map to `network` (cross-file: the message in
@@ -98,7 +99,7 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
 - Schema 2 is a cross-file invariant: `validateClosingInputs` and `private.inputs_shape_ok` both accept 1|2;
   `submit_closing` accepts only 2 (`bad_inputs` otherwise); schema-2 expenses need `id` (1–64 chars) and `addedBy`
   (`{kind:'staff',id: uuid of a staff of the shop}` or `{kind:'owner'}`); `submit_closing` further requires each line to
-  be a live, not removed `e:<id>` field with that same author (`owner_save_closing` for past days keeps the staff-of-the-shop rule). Change one side and the other needs a
+  be a live, not removed `e:<id>` field with that same author (`owner_save_closing` checks a stored author only for today's lines that exist as an `e:<id>` field; for past days and for today's lines with no `e:<id>` field it keeps the staff-of-the-shop rule, owner lines allowed). Change one side and the other needs a
   migration/commit in the same change.
 - Internal `private.*` helpers are not callable by clients, except `private.is_shop_owner` and
   `private.can_use_shop_topic` (both executable by `authenticated`; row-level security / realtime policies need
@@ -159,7 +160,9 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   `check_staff_pin` locks the `devices` row `FOR UPDATE` first, then the `staff` row; any function that locks both
   must keep that order. Residual, accepted: an outsider can keep a cashier locked on phones that cashier has never
   used (the way out is «Νέος σύνδεσμος»); a phone locked for a long time is freed by «Αφαίρεση» (it re-joins
-  untrusted).
+  untrusted); a locked trusted phone can also shed its lock by clearing its site data or switching to another shop and
+  back (a new device row, no trust rows), after which its tries count on the cashier track — no better for an attacker
+  than the outsider path, so accepted.
 - **Staff PIN = exactly 6 digits** (migration `20261114000006_six_digit_pins`, H24). Cross-file invariant: the format
   `^[0-9]{6}$` lives in `private.check_pin` (used by `create_staff`/`set_staff_pin` → `bad_pin_format`), in the regex
   inside `private.check_staff_pin`, and in the client (`isPin`/`PIN_LENGTH` in `src/features/owner/model/limits.ts`,
@@ -324,7 +327,9 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
 - Expense suggestions come from `DeviceApi.suggestionData(token)` (refetched after each successful submit); the owner
   Today view has no suggestion history. `expense_suggestion_data(p_token)` checks `private.staff_session` first and returns
   no rows (never raises) without a live session; the shop comes from the session. Without a live staff session a phone can
-  read only the shop name, the config and the staff names. A suggestion failure never blocks the register.
+  read only the shop name, the config and the staff names. An `unknown` or `network` suggestion failure never blocks the register (the gate ignores both, e.g. an old build calling
+  the dropped zero-argument form); `session_invalid`/`wrong_day`/`not_a_device`/`device_revoked` from it go to the gate like
+  any other phone call.
 - **Owner «Σήμερα»** shows the same boxes, totals and Φάκελος as the register: it reuses `LiveClosingView`, the
  register's `BottomBar` (without `onSubmit` there is no Υποβολή button) and `EnvelopeSheet` over the same
  `deriveClosing` → `planEnvelope` result. No Υποβολή from the owner; once a cashier has submitted, the owner can
@@ -424,8 +429,6 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   `mapError` alone gives `closing_changed` a null `currentId`; `saveClosing` in `owner.ts` builds it from the
   payload's `current_id` (the editor offers «Αποθήκευση πάνω της» only with an id).
 - `private.current_closing` and `private.closing_version_json` are `private.*` helpers: no client execute.
-
-- Response headers (CSP etc.) come from `vercel.json`; a new external origin needs a CSP entry there.
 
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.
