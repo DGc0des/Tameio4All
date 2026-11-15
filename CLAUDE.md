@@ -1,5 +1,7 @@
 # Tameio4All
 
+Project notes: read project-notes/index.md first.
+
 Configurable, sellable version of tameioV2 (cash-register closing). Design:
 `docs/superpowers/specs/2026-09-28-tameio4all-v1-design.md` (v1) and
 `docs/superpowers/specs/2026-11-07-live-closing-and-history-design.md` (stage 2 live closing; its «History

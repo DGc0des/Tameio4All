@@ -231,7 +231,7 @@ Whole-branch review after Tasks 1–6 (one fix pass, commit `39c5652`). Continue
 | M35 | A phone that lost its store (`not_a_device` mid-use) and could not return silently landed on the entry screen with no explanation | Gate: `loading` carries the notice, the entry screen shows it | fixed |
 | M36 | A malformed join link opened on a phone already in a store was dropped silently | «Ο σύνδεσμος δεν είναι σωστός.» | fixed |
 | M37 | Anyone with the link (no PIN) can read the shop name, settings and staff names and trigger PIN lockouts | Accepted by design: the link is the store's door. Remedy: «Νέος σύνδεσμος» | open — accepted |
-| L81 | Anonymous `auth.users` rows of removed / pruned / rotated-out devices are never deleted | `private.purge_stale()` (daily `pg_cron` job `purge_stale`, 03:30 UTC) deletes anonymous users older than 30 days with no `devices` row and no auth session used in 30 days; shop/account deletion deletes the shop's phone users at once (migration `20261115000001_erasure`, branch `legal-fixes`) | fixed in code — **written, not applied to dev, `160` not run** |
+| L81 | Anonymous `auth.users` rows of removed / pruned / rotated-out devices are never deleted | `private.purge_stale()` (daily `pg_cron` job `purge_stale`, 03:30 UTC) deletes anonymous users older than 30 days with no `devices` row and no auth session used in 30 days; shop/account deletion keeps the shop's phone users for that purge (migration `20261115000001_erasure`, branch `legal-fixes`) | fixed — applied to dev 2026-11-16, `160` passes |
 | L82 | A removed phone already joined to the realtime channel keeps receiving broadcasts until it rejoins or its token refreshes (the existing realtime known limit; writes stop at once) | Known limit | open |
 | L83 | Offline join of *another* store's link on a phone already in a store loses that key (the hash is already cleared); the cashier opens the link again | Deferred minor | open |
 | L84 | A reload loop is possible only if the server is inconsistent (a phone function keeps raising 42501 while `device_context` succeeds) | Deferred minor | open |
@@ -297,7 +297,7 @@ Branch `legal-fixes`. Findings: `LEGAL_FINDINGS_2026-11-14.md`; plan: `docs/supe
 | ID | Issue | Why it matters | Status |
 |---|---|---|---|
 | LG1 | No privacy notice, terms or provider identity | GDPR Art. 13 notice at collection; a B2B seller must say who it is | open — Task 5 (legal pages) waits for the provider details and the LG4 answer |
-| LG2 | Nothing can be deleted | GDPR Art. 17 / 5(1)(e): erasure and limited retention | fixed in code — migration `20261115000001_erasure` + owner buttons; **not applied to dev, `160` not run** |
+| LG2 | Nothing can be deleted | GDPR Art. 17 / 5(1)(e): erasure and limited retention | fixed in code — migration `20261115000001_erasure` + owner buttons; applied to dev 2026-11-16, `160` passes; manual owner check pending |
 | LG3 | No data processing agreements | We process each shop's staff data (Art. 28); Supabase and Vercel are sub-processors | open — DPA text in Task 5; sub-processor DPAs are A2 |
 | LG4 | Ownership of tameioV2 undocumented | An employer may own a program written for it (Law 2121/1993 Art. 40) | open — A1 (written confirmation) |
 | LG5 | Employee monitoring | Per-cashier authorship and lockouts; the shop must inform its staff | open — terms/DPA text and the «Προσωπικό» notice in Task 5 |
@@ -346,16 +346,17 @@ https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
 CI now runs the production build (`npm run build`) as well, after test.
 
 ## Not verified
-- Legal fixes (branch `legal-fixes`), NOT verified: migration `20261115000001_erasure` is written but **not applied** to
-  dev and `supabase/tests/160_erasure.sql` was never run (no database access in that session). Before applying, run the
-  privilege probe of plan `2026-11-14-legal-fixes` Task 3 Step 1 (can a `security definer` function delete from
-  `auth.users`?); if it is refused, account and phone-user deletion need an Edge Function. After applying: run `160`,
-  then `020`, `060`, `110`, `140`, `150`. The real column names of `auth.sessions` used by `private.purge_stale`
-  (`user_id`, `created_at`, `updated_at`) were not checked. The manual owner check of Task 4 Step 5 (erase a cashier →
-  history shows «Διαγραμμένος υπάλληλος …»; delete a shop while a phone is open → entry screen; delete the account →
-  login screen, the email can sign up again) was not done. **Do not deploy the client before the migration**: the three
-  buttons call functions that do not exist yet, and `listStaff` filters on `erased_at`, a column that does not exist
-  yet (the «Προσωπικό» tab would fail to load).
+- Legal fixes (branch `legal-fixes`). Done 2026-11-16 on dev via the connector: the privilege probe of plan
+  `2026-11-14-legal-fixes` Task 3 Step 1 passed (a `security definer` function called as `authenticated` deleted an
+  `auth.users` row; rolled back), so no Edge Function is needed; the `auth.sessions` columns `user_id`, `created_at`,
+  `updated_at` exist; migration `20261115000001_erasure` applied (remote version `20261115…`, name
+  `20261115000001_erasure`); `160` run whole — all of T1–T12 pass, nothing left behind; `pg_cron` job `purge_stale`
+  scheduled `30 3 * * *`, active. Security advisors: one new category, `cron.job`/`cron.job_run_details` "anonymous
+  access policies" — pg_cron's own `username = current_user` policies; `anon`/`authenticated` have no `usage` on
+  schema `cron`, so not reachable (accepted). NOT verified: the regression re-runs `020`, `060`, `110`, `140`, `150`
+  after the migration; the first real nightly run of `purge_stale` (check `cron.job_run_details`); the manual owner
+  check of Task 4 Step 5 (erase a cashier → history shows «Διαγραμμένος υπάλληλος …»; delete a shop while a phone is
+  open → entry screen; delete the account → login screen, the email can sign up again).
   Also not verified: a phone whose anonymous identity was purged after 30 idle days (expected: the sign-in fails, a new
   anonymous session is created and the stored key re-joins silently — never seen on a device); lawyer review of the
   texts (A5); the Supabase and Vercel DPAs (A2); the ownership letter for tameioV2 (A1).
