@@ -1,5 +1,8 @@
 -- 100 — stage 3 history: closings as a version log (seq), owner_list_closings, owner_get_closing_day,
 -- expense_suggestion_data on the current version. One transaction, ends in ROLLBACK.
+-- Since 20261117000002 the payloads are per closing: a list day carries `closings:[entry…]` and the day detail
+-- `closings:[{closing_no, versions, open}]`; every day here is a 1-closing day, so the checks read closing 1
+-- (`closings[0]`). private.current_closing takes the closing number.
 begin;
 insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created_at, updated_at) values
   ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'a1@test.local', false, now(), now()),
@@ -33,7 +36,7 @@ do $$ begin
      or has_function_privilege('anon', 'public.owner_get_closing_day(uuid,date)', 'execute') then
     raise exception 'T0 wrong execute privileges on the public history functions';
   end if;
-  if has_function_privilege('authenticated', 'private.current_closing(uuid,date)', 'execute')
+  if has_function_privilege('authenticated', 'private.current_closing(uuid,date,int)', 'execute')
      or has_function_privilege('authenticated', 'private.closing_version_json(public.closings)', 'execute') then
     raise exception 'T0 private helpers executable by authenticated';
   end if;
@@ -96,7 +99,7 @@ do $$ begin
     raise exception 'T1 setup: second submission is not older by created_at';
   end if;
   if (select count(distinct seq) from public.closings) <> (select count(*) from public.closings) then raise exception 'T1 seq not unique'; end if;
-  if (select id from private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date)) is distinct from current_setting('t.c2')::uuid then
+  if (select id from private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date, 1)) is distinct from current_setting('t.c2')::uuid then
     raise exception 'T1 current_closing is not the second submission';
   end if;
 end $$;
@@ -115,7 +118,7 @@ begin
   if r ->> 'ok' <> 'true' or (r ->> 'today')::date <> bd or (r ->> 'to')::date <> bd or (r ->> 'from')::date <> bd - 29 then
     raise exception 'T2 wrong envelope: %', r - 'days' - 'configs';
   end if;
-  select x into d from jsonb_array_elements(r -> 'days') x where (x ->> 'business_date')::date = bd;
+  select x -> 'closings' -> 0 into d from jsonb_array_elements(r -> 'days') x where (x ->> 'business_date')::date = bd;
   if d is null or d ->> 'status' <> 'submitted' or (d ->> 'version_count')::int <> 2
      or d #>> '{current,id}' <> current_setting('t.c2') or d #>> '{current,kind}' <> 'staff'
      or d #>> '{current,author_name}' <> 'ΜΑΡΙΑ' or d #> '{current,inputs}' is distinct from current_setting('t.in2')::jsonb then
@@ -123,14 +126,15 @@ begin
   end if;
   if not (r -> 'configs') ? (d #>> '{current,config_id}') then raise exception 'T2 configs misses the current config'; end if;
   -- T3
-  select x into d from jsonb_array_elements(r -> 'days') x where (x ->> 'business_date')::date = bd - 1;
+  select x -> 'closings' -> 0 into d from jsonb_array_elements(r -> 'days') x where (x ->> 'business_date')::date = bd - 1;
   if d is null or d ->> 'status' <> 'unsubmitted' or jsonb_path_query_first(d, '$.open.fields[*] ? (@.key == "d:10000")') is null then
     raise exception 'T3 yesterday not an unsubmitted day with d:10000: %', d;
   end if;
   if exists (select 1 from jsonb_array_elements(r -> 'days') x where (x ->> 'business_date')::date = bd - 2) then
     raise exception 'T3 a day without fields is listed';
   end if;
-  if exists (select 1 from jsonb_array_elements(r -> 'days') x where (x ->> 'business_date')::date = bd and x ->> 'status' = 'unsubmitted') then
+  if exists (select 1 from jsonb_array_elements(r -> 'days') x, jsonb_array_elements(x -> 'closings') e
+              where (x ->> 'business_date')::date = bd and e ->> 'status' = 'unsubmitted') then
     raise exception 'T3 today is unsubmitted';
   end if;
   prev := null;
@@ -147,16 +151,19 @@ begin
   if r ->> 'ok' <> 'true' or r -> 'days' <> '[]'::jsonb then raise exception 'T5 range before data: %', r; end if;
   -- T6
   r := public.owner_get_closing_day(shop, bd);
-  if r ->> 'ok' <> 'true' or jsonb_array_length(r -> 'versions') <> 2 or r #>> '{versions,0,id}' <> current_setting('t.c2')
-     or r #>> '{versions,1,id}' <> current_setting('t.c1')
-     or r -> 'staff_names' ->> current_setting('t.maria') <> 'ΜΑΡΙΑ' or r -> 'open' <> 'null'::jsonb or (r ->> 'today')::date <> bd then
+  if r ->> 'ok' <> 'true' or jsonb_array_length(r -> 'closings') <> 1
+     or jsonb_array_length(r #> '{closings,0,versions}') <> 2 or r #>> '{closings,0,versions,0,id}' <> current_setting('t.c2')
+     or r #>> '{closings,0,versions,1,id}' <> current_setting('t.c1')
+     or r -> 'staff_names' ->> current_setting('t.maria') <> 'ΜΑΡΙΑ' or r #> '{closings,0,open}' <> 'null'::jsonb or (r ->> 'today')::date <> bd then
     raise exception 'T6 wrong today detail: %', r;
   end if;
   r := public.owner_get_closing_day(shop, bd - 1);
-  if r -> 'versions' <> '[]'::jsonb or r -> 'open' = 'null'::jsonb then raise exception 'T6 wrong yesterday detail: %', r; end if;
+  if jsonb_array_length(r -> 'closings') <> 1 or r #> '{closings,0,versions}' <> '[]'::jsonb or r #> '{closings,0,open}' = 'null'::jsonb then
+    raise exception 'T6 wrong yesterday detail: %', r;
+  end if;
   foreach d in array array[to_jsonb(bd - 2), to_jsonb(bd + 5), 'null'::jsonb] loop
     r := public.owner_get_closing_day(shop, nullif(d #>> '{}', '')::date);
-    if r ->> 'ok' <> 'true' or r -> 'versions' <> '[]'::jsonb or r -> 'open' <> 'null'::jsonb then
+    if r ->> 'ok' <> 'true' or r -> 'closings' <> '[]'::jsonb then
       raise exception 'T6 wrong empty detail for %: %', d, r;
     end if;
   end loop;
@@ -170,7 +177,7 @@ do $$
 declare d jsonb; r jsonb;
 begin
   r := public.owner_list_closings(current_setting('t.shop_a')::uuid, null, null);
-  select x into d from jsonb_array_elements(r -> 'days') x where (x ->> 'business_date')::date = current_setting('t.bd')::date;
+  select x -> 'closings' -> 0 into d from jsonb_array_elements(r -> 'days') x where (x ->> 'business_date')::date = current_setting('t.bd')::date;
   if (d ->> 'version_count')::int <> 1 or d #>> '{current,id}' <> current_setting('t.c1') then raise exception 'T4 void not handled: %', d; end if;
 end $$;
 reset role;

@@ -200,9 +200,10 @@ begin
   if d -> 'staff_names' ->> current_setting('t.x') is distinct from current_setting('t.placeholder') then
     raise exception 'T5 staff_names does not carry the placeholder: %', d -> 'staff_names';
   end if;
-  if jsonb_array_length(d -> 'versions') <> 2 or d #>> '{versions,1,author_name}' is distinct from current_setting('t.placeholder')
-     or d #>> '{versions,0,author_name}' is distinct from 'ΝΙΚΟΣ' then
-    raise exception 'T5 version authors wrong: %', d -> 'versions';
+  -- since 20261117000002 the versions are per closing (a 1-closing day: closings[0])
+  if jsonb_array_length(d #> '{closings,0,versions}') <> 2 or d #>> '{closings,0,versions,1,author_name}' is distinct from current_setting('t.placeholder')
+     or d #>> '{closings,0,versions,0,author_name}' is distinct from 'ΝΙΚΟΣ' then
+    raise exception 'T5 version authors wrong: %', d -> 'closings';
   end if;
 end $$;
 reset role;

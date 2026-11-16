@@ -36,12 +36,14 @@ select set_config('t.good', jsonb_build_object(
 )::text, true);
 
 
--- T0 the stage-1 5-arg signature is gone; the 6-arg one is executable by authenticated only.
+-- T0 the stage-1 5-arg signature is gone; since 20261117000001 the 6-arg one is too (a trailing p_closing_no was
+-- added); the 7-arg one is executable by authenticated only.
 do $$ begin
   if to_regprocedure('public.submit_closing(text,uuid,date,jsonb,text)') is not null then raise exception 'T0 5-arg submit_closing still exists'; end if;
-  if not has_function_privilege('authenticated', 'public.submit_closing(text,uuid,date,jsonb,bigint,text)', 'execute')
-     or has_function_privilege('anon', 'public.submit_closing(text,uuid,date,jsonb,bigint,text)', 'execute') then
-    raise exception 'T0 wrong execute privileges on 6-arg submit_closing';
+  if to_regprocedure('public.submit_closing(text,uuid,date,jsonb,bigint,text)') is not null then raise exception 'T0 6-arg submit_closing still exists'; end if;
+  if not has_function_privilege('authenticated', 'public.submit_closing(text,uuid,date,jsonb,bigint,text,int)', 'execute')
+     or has_function_privilege('anon', 'public.submit_closing(text,uuid,date,jsonb,bigint,text,int)', 'execute') then
+    raise exception 'T0 wrong execute privileges on 7-arg submit_closing';
   end if;
 end $$;
 
@@ -69,7 +71,8 @@ begin
      or r #>> '{closing,last_submit,staff_name}' is distinct from 'ΜΑΡΙΑ'
      or r #>> '{closing,last_submit,at}' is null
      or r #>> '{closing,last_submit,revision}' is distinct from '1'
-     or (select count(*) from jsonb_object_keys(r #> '{closing,last_submit}')) <> 4 then
+     or r #> '{closing,last_submit,closing_no}' is distinct from '1'::jsonb
+     or (select count(*) from jsonb_object_keys(r #> '{closing,last_submit}')) <> 5 then  -- + closing_no since 20261117000001
     raise exception 'T1 last_submit wrong: %', r #> '{closing,last_submit}';
   end if;
   if (r #>> '{closing,revision}')::bigint is distinct from 1::bigint then raise exception 'T1 revision changed by submit: %', r #>> '{closing,revision}'; end if;

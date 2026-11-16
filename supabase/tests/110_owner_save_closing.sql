@@ -1,7 +1,9 @@
 -- 110 — stage 3 owner corrections: owner_save_closing (a correction is a NEW closings row, guarded on the
 -- current version; the original rows and open_closings.revision are never touched). Since
 -- 20261111000003: a save of TODAY needs the live revision (draft_changed otherwise), checks live line authors,
--- and records last_submit; a past-day save leaves open_closings alone (T13–T16).
+-- and records last_submit; a past-day save leaves open_closings alone (T13–T16). Since 20261117000002 the save
+-- takes a trailing p_closing_no (default 1: every call here is closing 1 of a 1-closing day), the day detail and
+-- list are per closing (`closings[0]`), and private.current_closing takes the closing number.
 -- One transaction, ends in ROLLBACK.
 begin;
 insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created_at, updated_at) values
@@ -35,8 +37,8 @@ select set_config('t.bd', private.business_date(current_setting('t.shop_a')::uui
 
 -- T0 privileges (before anything else is exercised)
 do $$ begin
-  if not has_function_privilege('authenticated', 'public.owner_save_closing(uuid,date,uuid,jsonb,uuid,text,bigint)', 'execute')
-     or has_function_privilege('anon', 'public.owner_save_closing(uuid,date,uuid,jsonb,uuid,text,bigint)', 'execute') then
+  if not has_function_privilege('authenticated', 'public.owner_save_closing(uuid,date,uuid,jsonb,uuid,text,bigint,int)', 'execute')
+     or has_function_privilege('anon', 'public.owner_save_closing(uuid,date,uuid,jsonb,uuid,text,bigint,int)', 'execute') then
     raise exception 'T0 wrong execute privileges on owner_save_closing';
   end if;
 end $$;
@@ -128,9 +130,9 @@ set local role authenticated;
 do $$
 declare r jsonb := public.owner_get_closing_day(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date);
 begin
-  if jsonb_array_length(r -> 'versions') <> 2 or r #>> '{versions,0,kind}' <> 'owner_correction'
-     or r #>> '{versions,0,author_name}' <> 'Ιδιοκτήτης' or r #>> '{versions,0,id}' <> current_setting('t.corr') then
-    raise exception 'T3 wrong day: %', r -> 'versions';
+  if jsonb_array_length(r #> '{closings,0,versions}') <> 2 or r #>> '{closings,0,versions,0,kind}' <> 'owner_correction'
+     or r #>> '{closings,0,versions,0,author_name}' <> 'Ιδιοκτήτης' or r #>> '{closings,0,versions,0,id}' <> current_setting('t.corr') then
+    raise exception 'T3 wrong day: %', r -> 'closings';
   end if;
 end $$;
 reset role;
@@ -188,7 +190,7 @@ declare s jsonb := current_setting('t.r6s')::jsonb;
 begin
   if s ->> 'ok' <> 'true' then raise exception 'T6 resubmit failed: %', s; end if;
   perform set_config('t.c3', s ->> 'closing_id', true);
-  if current_setting('t.r6d')::jsonb #>> '{versions,0,id}' <> s ->> 'closing_id' then raise exception 'T6 resubmission is not [0]'; end if;
+  if current_setting('t.r6d')::jsonb #>> '{closings,0,versions,0,id}' <> s ->> 'closing_id' then raise exception 'T6 resubmission is not [0]'; end if;
   if current_setting('t.r6o')::jsonb <> jsonb_build_object('ok', false, 'error', 'closing_changed', 'current_id', s ->> 'closing_id') then
     raise exception 'T6 owner save after resubmit: %', current_setting('t.r6o');
   end if;
@@ -311,7 +313,7 @@ begin
   if c.kind <> 'owner_correction' or c.corrects_closing_id is not null or c.business_date <> current_setting('t.bd')::date - 1 then
     raise exception 'T11 wrong row: %', to_jsonb(c);
   end if;
-  select x into d from jsonb_array_elements(current_setting('t.r11l')::jsonb -> 'days') x
+  select x -> 'closings' -> 0 into d from jsonb_array_elements(current_setting('t.r11l')::jsonb -> 'days') x
    where (x ->> 'business_date')::date = current_setting('t.bd')::date - 1;
   if d ->> 'status' <> 'submitted' then raise exception 'T11 day not submitted: %', d; end if;
 end $$;
@@ -415,7 +417,7 @@ begin
 end $$;
 reset role;
 do $$ begin
-  if (private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date)).id::text <> current_setting('t.c15') then
+  if (private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date, 1)).id::text <> current_setting('t.c15') then
     raise exception 'T15 resubmit is not current';
   end if;
 end $$;

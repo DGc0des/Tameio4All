@@ -55,6 +55,25 @@ the migration owner, like 060 T8); grants and dropped overloads; T11 the `field`
 After that migration two `090` checks must be updated: T0 (checks the 6-argument `submit_closing`; now 7 arguments)
 and T1 (expects 4 `last_submit` keys; now 5 with `closing_no`). **Written, not yet applied or run.**
 
+`180` history, corrections and suggestions per closing (`20261117000002_multi_closing_history`, stage 5 part 2):
+`owner_list_closings` days with `cash_mode`/`closings_planned`/`closings:[entry…]` (an old-style day without an open
+closing reads `'separate'`, plan 1; three closings of a plan-3 day with a correction on closing 2; an unsubmitted
+closing 3 after two submitted ones; newest day first); `owner_get_closing_day` per closing (`versions` each, `open`
+only for the unsubmitted one, `live_closing_no` null for a past day and 2 for today with closing 2 live, an empty day);
+`private.current_closing(shop, date, closing_no)`; `owner_save_closing(…, p_closing_no)` for a past closing
+(`corrects_closing_id`, `closing_changed` when guarded on another closing's current, the same key naming another
+closing is `idempotency_conflict`, closing numbers 0/7/null are `bad_inputs`), for an earlier closing of today (no
+revision needed, no open closing changed) and for the live closing (`draft_changed`, then `last_submit` with
+`closing_no` on that closing only); suggestions for a `'separate'` day (every closing) and a `'running'` day (only the
+last closing); grants and the dropped 7-argument `owner_save_closing` / 2-argument `current_closing`. Past days are
+written as the migration owner (back-dated `closings`/`open_closings` rows, like 100). Uses phone `…d1`.
+Older files adjusted to the two stage-5 migrations (assertions changed only as far as the new contract requires):
+`090` T0 (7-argument `submit_closing`; the 6-argument one is gone) and T1 (5 `last_submit` keys incl. `closing_no`);
+`100` T0/T1 (3-argument `current_closing`), T2–T4 (a list day's entry is `closings[0]`), T6 (the detail's
+`closings[0].versions`/`open`; an empty day has `closings: []`); `110` T0 (8-argument `owner_save_closing`), T3/T6
+(detail `closings[0].versions`), T11 (list `closings[0]`), T15 (3-argument `current_closing`); `160` T5 (detail
+`closings[0].versions`). **Written, not yet applied or run.**
+
 `080` and `090` also assert the Realtime side: `realtime.send` swallows insert errors (it only logs a
 WARNING) and, on a project whose `realtime.messages` has no partitions (the Realtime service creates the daily
 partitions once it is used), the broadcast/policy assertions cannot run. In that case the tests raise a
