@@ -185,7 +185,8 @@ export function snapshotFromInputs(a: {
 
   return {
     id: 'local', businessDate: a.businessDate, configId: a.configId, config: a.config,
-    revision: 0, lastSubmit: null, fields,
+    // A local editing copy: which closing it belongs to does not matter here (it is never sent as fields).
+    revision: 0, closingNo: 1, closingsPlanned: 1, cashMode: 'separate', lastSubmit: null, fields,
   };
 }
 

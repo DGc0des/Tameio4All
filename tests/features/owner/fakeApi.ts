@@ -39,7 +39,7 @@ export function fakeApi(overrides: Partial<OwnerApi> = {}): OwnerApi {
     renameDevice: vi.fn(() => ok(undefined)),
     removeDevice: vi.fn(() => ok(undefined)),
     todayClosing: vi.fn(() =>
-      ok({ id: 'oc-1', businessDate: '2026-11-07', configId: 'config-1', config: {}, revision: 0, lastSubmit: null, fields: {} }),
+      ok({ id: 'oc-1', businessDate: '2026-11-07', configId: 'config-1', config: {}, revision: 0, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {} }),
     ),
     setTodayField: vi.fn(() => ok({ version: 1, revision: 1 })),
     listClosings: vi.fn(() => ok({ today: '2026-11-11', from: '2026-10-13', to: '2026-11-11', configs: {}, days: [] })),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  amountValue, channelKey, denomKey, denomValue, expenseAmountKey, expenseMetaValue, textValue, expenseDescKey, expenseKey, isFieldKey, isFieldValue, KEY_RE, parseKey,
+  amountValue, channelKey, denomKey, denomValue, expenseAmountKey, expenseMetaValue, textValue, expenseDescKey, expenseKey, isFieldKey, isFieldValue, KEY_RE, parseKey, sameClosing,
 } from '../../../../src/features/register/live/fields';
 
 describe('key builders', () => {
@@ -85,5 +85,15 @@ describe('value builders', () => {
     const long = 'α'.repeat(250);
     expect([...textValue(long).text]).toHaveLength(200);
     expect(isFieldValue('e:x1:d', textValue(long))).toBe(true);
+  });
+});
+
+describe('sameClosing', () => {
+  it('is true only when the business date and the closing number both match', () => {
+    const a = { businessDate: '2026-11-17', closingNo: 1 };
+    expect(sameClosing(a, { businessDate: '2026-11-17', closingNo: 1 })).toBe(true);
+    expect(sameClosing(a, { businessDate: '2026-11-17', closingNo: 2 })).toBe(false);
+    expect(sameClosing(a, { businessDate: '2026-11-18', closingNo: 1 })).toBe(false);
+    expect(sameClosing(a, { businessDate: '2026-11-18', closingNo: 2 })).toBe(false);
   });
 });

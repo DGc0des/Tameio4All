@@ -21,7 +21,7 @@ afterEach(cleanup);
 
 const SHOP = '3f2c1a9e-5b7d-4c8e-9f10-112233445566';
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
-  id: 'oc-1', businessDate: '2026-11-07', configId: 'c1', config: juiceBarPreset, revision: 0, lastSubmit: null, fields: {}, ...over,
+  id: 'oc-1', businessDate: '2026-11-07', configId: 'c1', config: juiceBarPreset, revision: 0, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {}, ...over,
 });
 
 function setup(over: Parameters<typeof fakeApi>[0] = {}, store = memoryStore()) {
@@ -47,7 +47,7 @@ const type = (value: string) => {
   fireEvent.change(box('100€'), { target: { value } });
   fireEvent.blur(box('100€'));
 };
-const FIELD = { key: 'd:10000', value: { text: '300', mode: 'amount' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T20:00:00Z', revision: 1, businessDate: '2026-11-07' };
+const FIELD = { key: 'd:10000', value: { text: '300', mode: 'amount' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T20:00:00Z', revision: 1, businessDate: '2026-11-07', closingNo: 1 };
 
 describe('TodayScreen', () => {
   it('shows an empty closing with the not-submitted line and no submit button', async () => {

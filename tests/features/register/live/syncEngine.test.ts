@@ -7,7 +7,10 @@ import { memoryStore, type KeyValueStore } from '../../../../src/data/local/stor
 import type { DResult, DeviceError } from '../../../../src/data/remote/deviceApi';
 import type { LiveHandlers } from '../../../../src/data/remote/live';
 import type { FieldAck, PendingEdit, ServerField, Snapshot } from '../../../../src/features/register/live/fields';
-import { SIGN_OUT_DRAIN_MS, WRITE_DEBOUNCE_MS, WRONG_DAY_NOTICE, type Writer } from '../../../../src/features/register/live/syncEngine';
+import {
+  initialEngineState, isDrained, nextToSend, reduceBroadcast, reduceEdit, reduceLoaded, reduceWriteResult, SIGN_OUT_DRAIN_MS, visibleDraft,
+  WRITE_DEBOUNCE_MS, WRONG_CLOSING_NOTICE, WRONG_DAY_NOTICE, type EngineState, type Writer,
+} from '../../../../src/features/register/live/syncEngine';
 import { useLiveClosing } from '../../../../src/features/register/live/useLiveClosing';
 import { fakeLive, type FakeLive } from '../../phone/fakeDeviceApi';
 
@@ -22,6 +25,7 @@ const field = (key: string, text: string, version: number, by = 'ΝΙΚΟΣ'): S
 function snap(fields: ServerField[] = [], over: Partial<Snapshot> = {}): Snapshot {
   return {
     id: 'oc-1', businessDate: DAY, configId: 'config-1', config: juiceBarPreset, revision: 1, lastSubmit: null,
+    closingNo: 1, closingsPlanned: 1, cashMode: 'separate',
     fields: Object.fromEntries(fields.map((f) => [f.key, f])), ...over,
   };
 }
@@ -123,13 +127,13 @@ describe('Review Focus 1 — same box typed on two clients', () => {
 
     act(() => t.r.edit('c:wolt', { text: '5' }));
     // A broadcast while the edit is still debouncing: local text stays.
-    act(() => t.ch.emitField({ ...field('c:wolt', '9', 2), revision: 2, businessDate: DAY }));
+    act(() => t.ch.emitField({ closingNo: 1, ...field('c:wolt', '9', 2), revision: 2, businessDate: DAY }));
     expect(wolt(t.r)).toBe('5');
     act(() => t.r.flush('c:wolt'));
     await settle();
     expect(t.writer.write).toHaveBeenCalledTimes(1);
     // ...and while it is in flight.
-    act(() => t.ch.emitField({ ...field('c:wolt', '8', 3), revision: 3, businessDate: DAY }));
+    act(() => t.ch.emitField({ closingNo: 1, ...field('c:wolt', '8', 3), revision: 3, businessDate: DAY }));
     expect(wolt(t.r)).toBe('5');
 
     await act(async () => { ack.resolve(okR({ version: 4, revision: 4 })); });
@@ -139,10 +143,10 @@ describe('Review Focus 1 — same box typed on two clients', () => {
     expect(t.r.state.snapshot?.fields['c:wolt']).toMatchObject({ version: 4, updatedByName: ME.name });
 
     // Older than the snapshot: ignored, no flip-flop.
-    act(() => t.ch.emitField({ ...field('c:wolt', '8', 3), revision: 3, businessDate: DAY }));
+    act(() => t.ch.emitField({ closingNo: 1, ...field('c:wolt', '8', 3), revision: 3, businessDate: DAY }));
     expect(wolt(t.r)).toBe('5');
     // Newer from another phone: wins.
-    act(() => t.ch.emitField({ ...field('c:wolt', '7', 5), revision: 5, businessDate: DAY }));
+    act(() => t.ch.emitField({ closingNo: 1, ...field('c:wolt', '7', 5), revision: 5, businessDate: DAY }));
     expect(wolt(t.r)).toBe('7');
     expect(t.r.state.snapshot?.revision).toBe(5);
   });
@@ -156,7 +160,7 @@ describe('Review Focus 1 — same box typed on two clients', () => {
     // Ours landed as v2 (rev 2), the other phone's as v3 (rev 3) — its broadcast arrives before our ack.
     t.state.server = snap([field('c:wolt', '9', 3)], { revision: 3 });
     const loads = t.writer.load.mock.calls.length;
-    act(() => t.ch.emitField({ ...field('c:wolt', '9', 3), revision: 3, businessDate: DAY }));
+    act(() => t.ch.emitField({ closingNo: 1, ...field('c:wolt', '9', 3), revision: 3, businessDate: DAY }));
     // rev 3 while at 1 is a gap (rev 2 not seen yet): field applied, revision kept, resync asked.
     expect(t.r.state.snapshot?.revision).toBe(1);
     await act(async () => { ack.resolve(okR({ version: 2, revision: 2 })); });
@@ -237,7 +241,7 @@ describe('wrong day', () => {
     const t = await mount(snap());
     const loads = t.writer.load.mock.calls.length;
     t.state.server = snap([], { id: 'oc-2', businessDate: '2026-11-08' });
-    act(() => t.ch.emitField({ ...field('c:wolt', '1', 1), revision: 1, businessDate: '2026-11-08' }));
+    act(() => t.ch.emitField({ closingNo: 1, ...field('c:wolt', '1', 1), revision: 1, businessDate: '2026-11-08' }));
     await settle();
     expect(t.writer.load.mock.calls.length).toBe(loads + 1);
     expect(t.r.state.snapshot?.businessDate).toBe('2026-11-08');
@@ -324,7 +328,7 @@ describe('persistence and lifecycle', () => {
   it('a remounted queue is sent once the new mount is live', async () => {
     const store = memoryStore();
     saveSnapshot(store, SHOP, snap());
-    savePending(store, SHOP, ME.id, [{ author: ME.id, key: 'c:wolt', value: { text: '42' }, businessDate: DAY, baseVersion: 0, queuedOffline: true, seq: 3 }]);
+    savePending(store, SHOP, ME.id, [{ author: ME.id, key: 'c:wolt', value: { text: '42' }, businessDate: DAY, closingNo: 1, baseVersion: 0, queuedOffline: true, seq: 3 }]);
     const t = await mount(snap(), { store });
     await settle();
     expect(t.writer.write).toHaveBeenCalledTimes(1);
@@ -429,7 +433,7 @@ describe('fix round 1', () => {
     const store = memoryStore();
     saveSnapshot(store, SHOP, snap([field('c:wolt', '10', 1)]));
     // Typed online (or in flight / mid-debounce) when the register unmounted.
-    savePending(store, SHOP, ME.id, [{ author: ME.id, key: 'c:wolt', value: { text: '20' }, businessDate: DAY, baseVersion: null, queuedOffline: false, seq: 1 }]);
+    savePending(store, SHOP, ME.id, [{ author: ME.id, key: 'c:wolt', value: { text: '20' }, businessDate: DAY, closingNo: 1, baseVersion: null, queuedOffline: false, seq: 1 }]);
     // Meanwhile ΝΙΚΟΣ changed WOLT on the server.
     const t = await mount(snap([field('c:wolt', '30', 2)], { revision: 2 }), { store });
     await settle();
@@ -442,7 +446,7 @@ describe('fix round 1', () => {
 
   it('a replayed item without a cached snapshot gets base version 0', async () => {
     const store = memoryStore();
-    savePending(store, SHOP, ME.id, [{ author: ME.id, key: 'c:wolt', value: { text: '20' }, businessDate: DAY, baseVersion: null, queuedOffline: false, seq: 1 }]);
+    savePending(store, SHOP, ME.id, [{ author: ME.id, key: 'c:wolt', value: { text: '20' }, businessDate: DAY, closingNo: 1, baseVersion: null, queuedOffline: false, seq: 1 }]);
     const t = await mount(snap(), { store });
     await settle();
     expect(t.writer.write.mock.calls[0]![0]).toMatchObject({ baseVersion: 0, queuedOffline: true });
@@ -569,7 +573,7 @@ describe('I2 — the revision follows the +1 rule (no submit past a write we hav
     const load = deferred<DResult<Snapshot>>();
     t.writer.load.mockImplementationOnce(() => load.promise);
     const loads = t.writer.load.mock.calls.length;
-    act(() => t.ch.emitField({ ...field('c:wolt', '2', 1), revision: 6, businessDate: DAY }));
+    act(() => t.ch.emitField({ closingNo: 1, ...field('c:wolt', '2', 1), revision: 6, businessDate: DAY }));
     expect(wolt(t.r)).toBe('2');
     expect(t.r.state.snapshot?.revision).toBe(4);
     expect(t.writer.load.mock.calls.length).toBe(loads + 1);
@@ -581,8 +585,8 @@ describe('I2 — the revision follows the +1 rule (no submit past a write we hav
   it('in order (5 then 6) the revision advances with no resync', async () => {
     const t = await mount(snap([], { revision: 4 }));
     const loads = t.writer.load.mock.calls.length;
-    act(() => t.ch.emitField({ ...field('c:efood', '7', 1), revision: 5, businessDate: DAY }));
-    act(() => t.ch.emitField({ ...field('c:wolt', '2', 1), revision: 6, businessDate: DAY }));
+    act(() => t.ch.emitField({ closingNo: 1, ...field('c:efood', '7', 1), revision: 5, businessDate: DAY }));
+    act(() => t.ch.emitField({ closingNo: 1, ...field('c:wolt', '2', 1), revision: 6, businessDate: DAY }));
     await settle();
     expect(t.r.state.snapshot?.revision).toBe(6);
     expect(t.writer.load.mock.calls.length).toBe(loads);
@@ -590,7 +594,7 @@ describe('I2 — the revision follows the +1 rule (no submit past a write we hav
 
   it('a late superseded broadcast (rev + 1, older field version) still advances the revision', async () => {
     const t = await mount(snap([field('c:wolt', '9', 3)], { revision: 4 }));
-    act(() => t.ch.emitField({ ...field('c:wolt', '8', 2), revision: 5, businessDate: DAY }));
+    act(() => t.ch.emitField({ closingNo: 1, ...field('c:wolt', '8', 2), revision: 5, businessDate: DAY }));
     expect(wolt(t.r)).toBe('9');
     expect(t.r.state.snapshot?.revision).toBe(5);
   });
@@ -599,7 +603,7 @@ describe('I2 — the revision follows the +1 rule (no submit past a write we hav
 describe('I1 — the queue is per author', () => {
   const nikosEdit = (over: Partial<PendingEdit> = {}): PendingEdit => ({
     author: 'staff-nikos', key: 'e:n1', value: { addedBy: { kind: 'staff', id: 'staff-nikos' }, removed: false, order: 1 },
-    businessDate: DAY, baseVersion: 0, queuedOffline: true, seq: 1, ...over,
+    businessDate: DAY, closingNo: 1, baseVersion: 0, queuedOffline: true, seq: 1, ...over,
   });
 
   it("another cashier's stored edits are neither shown nor sent, and stay stored", async () => {
@@ -690,5 +694,96 @@ describe('drain (sign-out)', () => {
     act(() => { void t.r.drain(SIGN_OUT_DRAIN_MS).then((v) => { off = v; }); });
     await settle();
     expect(off).toBe(false);
+  });
+});
+
+describe('closing number (stage 5)', () => {
+  const edit = (over: Partial<PendingEdit> = {}): PendingEdit => ({
+    author: ME.id, key: 'c:wolt', value: { text: '1' }, businessDate: DAY, closingNo: 1, baseVersion: 0, queuedOffline: true, seq: 1, ...over,
+  });
+  const liveState = (snapshot: Snapshot, pending: PendingEdit[] = []): EngineState =>
+    ({ ...initialEngineState(snapshot, pending, ME.id), channel: 'live', fresh: true });
+
+  it('reduceEdit stamps the snapshot\'s closing number on a new edit', () => {
+    const s = reduceEdit(liveState(snap([], { closingNo: 2, closingsPlanned: 3 })), 'c:wolt', { text: '5' });
+    expect(s.pending).toMatchObject([{ key: 'c:wolt', businessDate: DAY, closingNo: 2 }]);
+  });
+
+  it('visibleDraft / nextToSend / isDrained ignore an edit of the same date but another closing', () => {
+    const s = liveState(snap([], { closingNo: 2 }), [edit({ closingNo: 1, value: { text: '9' } })]);
+    expect(visibleDraft(s)?.channels.wolt).toBeUndefined();
+    expect(nextToSend(s)).toBeNull();
+    expect(isDrained(s)).toBe(true);
+    const same = liveState(snap([], { closingNo: 2 }), [edit({ closingNo: 2, value: { text: '9' } })]);
+    expect(visibleDraft(same)?.channels.wolt).toBe('9');
+    expect(nextToSend(same)?.closingNo).toBe(2);
+    expect(isDrained(same)).toBe(false);
+  });
+
+  it('a broadcast of the same date but another closing is not applied: resync', () => {
+    const s = liveState(snap());
+    const out = reduceBroadcast(s, { ...field('c:wolt', '1', 1), revision: 2, businessDate: DAY, closingNo: 2 });
+    expect(out.resync).toBe(true);
+    expect(out.state).toBe(s);
+  });
+
+  it('a load of the next closing drops the previous closing\'s edits with the wrong-closing notice', () => {
+    const s = liveState(snap(), [edit(), edit({ key: 'c:efood', seq: 2 })]);
+    const next = reduceLoaded(s, snap([], { id: 'oc-2', closingNo: 2, closingsPlanned: 2 }));
+    expect(next.pending).toEqual([]);
+    expect(next.notice).toBe(WRONG_CLOSING_NOTICE);
+    expect(WRONG_CLOSING_NOTICE).toBe('Ξεκίνησε νέο κλείσιμο — οι αλλαγές σου στο προηγούμενο δεν αποθηκεύτηκαν');
+    expect(reduceLoaded(liveState(snap()), snap([], { id: 'oc-2', closingNo: 2 })).notice).toBeNull();
+    // A date change is still the wrong-day notice.
+    expect(reduceLoaded(s, snap([], { id: 'oc-3', businessDate: '2026-11-08' })).notice).toBe(WRONG_DAY_NOTICE);
+  });
+
+  it('a load of another closing does not merge the old closing\'s fields', () => {
+    const s = liveState(snap([field('c:wolt', '5', 3)], { revision: 9 }));
+    const next = reduceLoaded(s, snap([], { closingNo: 2, revision: 0 }));
+    expect(next.snapshot?.fields).toEqual({});
+    expect(next.snapshot?.revision).toBe(0);
+  });
+
+  it('wrong_closing drops the edits of that date + closing, shows the notice and resyncs', () => {
+    const item = edit();
+    const s = { ...liveState(snap(), [item, edit({ key: 'c:efood', seq: 2 }), edit({ key: 'c:efood', seq: 3, closingNo: 2 })]), inflight: 1 };
+    const out = reduceWriteResult(s, item, { ok: false, error: { code: 'wrong_closing' } }, ME.name, '');
+    expect(out.state.pending.map((p) => p.seq)).toEqual([3]);
+    expect(out.state.notice).toBe(WRONG_CLOSING_NOTICE);
+    expect(out.effect).toEqual({ kind: 'resync' });
+    expect(out.state.inflight).toBeNull();
+  });
+
+  it('startup: a persisted edit without a base gets one from the cached snapshot only for the same closing', () => {
+    const cached = snap([field('c:wolt', '5', 4)], { closingNo: 2 });
+    const st = initialEngineState(cached, [edit({ baseVersion: null, closingNo: 2, seq: 1 }), edit({ baseVersion: null, closingNo: 1, seq: 2 })], ME.id);
+    expect(st.pending.map((p) => p.baseVersion)).toEqual([4, 0]);
+  });
+
+  it('closing_started triggers one load', async () => {
+    const t = await mount(snap());
+    const loads = t.writer.load.mock.calls.length;
+    t.state.server = snap([], { id: 'oc-2', closingNo: 2, closingsPlanned: 2 });
+    act(() => t.ch.emitClosingStarted({ businessDate: DAY, closingNo: 2 }));
+    await settle();
+    expect(t.writer.load.mock.calls.length).toBe(loads + 1);
+    expect(t.r.state.snapshot?.closingNo).toBe(2);
+  });
+
+  it('a submitted broadcast of another closing does not set lastSubmit and resyncs; same or no closingNo sets it', async () => {
+    const t = await mount(snap());
+    const loads = t.writer.load.mock.calls.length;
+    act(() => t.ch.emitSubmitted({ closingId: 'cl-x', staffName: 'ΝΙΚΟΣ', at: 't', closingNo: 2 }));
+    expect(t.r.state.snapshot?.lastSubmit).toBeNull();
+    await settle();
+    expect(t.writer.load.mock.calls.length).toBe(loads + 1);
+    const same = { closingId: 'cl-1', staffName: 'ΝΙΚΟΣ', at: 't', closingNo: 1 };
+    act(() => t.ch.emitSubmitted(same));
+    expect(t.r.state.snapshot?.lastSubmit).toEqual(same);
+    const none = { closingId: 'cl-2', staffName: 'ΝΙΚΟΣ', at: 't' };
+    act(() => t.ch.emitSubmitted(none));
+    expect(t.r.state.snapshot?.lastSubmit).toEqual(none);
+    expect(t.writer.load.mock.calls.length).toBe(loads + 1);
   });
 });

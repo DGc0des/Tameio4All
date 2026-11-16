@@ -134,6 +134,14 @@ describe('gateReducer — transitions', () => {
     }
   });
 
+  it('server_error wrong_closing / not_submitted / no_more_closings changes nothing (the register handles them)', () => {
+    for (const code of ['wrong_closing', 'not_submitted', 'no_more_closings'] as const) {
+      expect(gateReducer(signedOut, { t: 'server_error', error: { code } })).toBe(signedOut);
+      expect(gateReducer(ready, { t: 'server_error', error: { code } })).toBe(ready);
+      expect(gateReducer(loading, { t: 'server_error', error: { code } })).toBe(loading);
+    }
+  });
+
   it('server_error pin_not_set changes nothing (the sign-in screen shows the message)', () => {
     expect(gateReducer(signedOut, { t: 'server_error', error: { code: 'pin_not_set' } })).toBe(signedOut);
     expect(gateReducer(ready, { t: 'server_error', error: { code: 'pin_not_set' } })).toBe(ready);

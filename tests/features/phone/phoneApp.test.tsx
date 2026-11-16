@@ -18,7 +18,7 @@ afterEach(cleanup);
 const CTX: DeviceContext = {
   shopId: FAKE_SHOP_ID, shopName: 'Δοκιμαστικό', configId: FAKE_CONFIG_ID, config: juiceBarPreset, businessDate: '2026-11-07',
 };
-const SNAPSHOT: Snapshot = { id: 'oc-1', businessDate: '2026-11-07', configId: FAKE_CONFIG_ID, config: juiceBarPreset, revision: 1, lastSubmit: null, fields: {} };
+const SNAPSHOT: Snapshot = { id: 'oc-1', businessDate: '2026-11-07', configId: FAKE_CONFIG_ID, config: juiceBarPreset, revision: 1, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {} };
 const SESSION: StaffSession = { token: 'token-1', staffId: 'staff-maria', name: 'ΜΑΡΙΑ', businessDate: '2026-11-07', shopId: FAKE_SHOP_ID };
 const K = 'ABCDEFGHJKLMNPQR';
 const LABEL = platformLabel(navigator.userAgent);

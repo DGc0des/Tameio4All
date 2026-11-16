@@ -5,7 +5,7 @@ import type { LiveHandlers } from '../../../src/data/remote/live';
 import type { Snapshot } from '../../../src/features/register/live/fields';
 import { fail, fakeApi, ok } from './fakeApi';
 
-const EDIT = { author: 'owner', key: 'c:wolt', value: { text: '5' }, businessDate: '2026-11-07', baseVersion: 3, queuedOffline: false, seq: 1 };
+const EDIT = { author: 'owner', key: 'c:wolt', value: { text: '5' }, businessDate: '2026-11-07', closingNo: 1, baseVersion: 3, queuedOffline: false, seq: 1 };
 const STALE = { key: 'c:wolt', value: { text: '9' }, version: 4, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T20:00:00Z' };
 
 describe('createTodayWriter', () => {

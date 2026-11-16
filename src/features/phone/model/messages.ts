@@ -56,6 +56,12 @@ export function deviceErrorMessage(e: DeviceError, now: Date = new Date()): stri
       return 'Τα στοιχεία του κλεισίματος δεν είναι έγκυρα.';
     case 'idempotency_conflict':
       return 'Αυτή η υποβολή έχει ήδη γίνει με άλλα στοιχεία.';
+    case 'wrong_closing':
+      return 'Ξεκίνησε νέο κλείσιμο. Το ταμείο ανανεώθηκε.';
+    case 'not_submitted':
+      return 'Κάνε πρώτα Υποβολή του κλεισίματος.';
+    case 'no_more_closings':
+      return 'Δεν υπάρχει άλλο κλείσιμο για σήμερα.';
     case 'network':
       return 'Δεν υπάρχει σύνδεση.';
     case 'unknown':

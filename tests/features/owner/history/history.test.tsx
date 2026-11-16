@@ -38,7 +38,7 @@ const list = (days: HistoryDay[], over: Partial<HistoryList> = {}): HistoryList 
   today: TODAY, from: MON, to: SUN, configs: { cfg1: juiceBarPreset, bad: {} }, days, ...over,
 });
 const openSnap = (businessDate: string): Snapshot => ({
-  id: 'oc-1', businessDate, configId: 'cfg1', config: juiceBarPreset, revision: 2, lastSubmit: null,
+  id: 'oc-1', businessDate, configId: 'cfg1', config: juiceBarPreset, revision: 2, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null,
   fields: { 'd:10000': { key: 'd:10000', value: { text: '200', mode: 'amount' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-09T20:00:00Z' } },
 });
 const cardName = (date: string) => new RegExp(`${formatWeekdayEl(date)}.*${formatDayMonthLongEl(date)}`);

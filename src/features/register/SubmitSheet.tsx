@@ -54,9 +54,10 @@ export function SubmitSheet({ config, draft, derived, revision, blocked, onSubmi
     inFlight.current = false;
     setBusy(false);
     if (!r.ok) {
-      if (r.error.code === 'draft_changed') {
+      if (r.error.code === 'draft_changed' || r.error.code === 'wrong_closing') {
+        // The register resyncs; the sheet follows the live closing so the cashier reviews it.
         setFollowing(true);
-        setMessage(DRAFT_CHANGED_MESSAGE);
+        setMessage(r.error.code === 'draft_changed' ? DRAFT_CHANGED_MESSAGE : deviceErrorMessage(r.error));
       } else {
         setMessage(deviceErrorMessage(r.error));
       }

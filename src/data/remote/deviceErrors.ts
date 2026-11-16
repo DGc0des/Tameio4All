@@ -22,6 +22,9 @@ const PLAIN = [
   'idempotency_conflict',
   'bad_field',
   'too_many_expenses',
+  'wrong_closing',
+  'not_submitted',
+  'no_more_closings',
 ] as const;
 type Plain = (typeof PLAIN)[number];
 const isPlain = (s: string): s is Plain => (PLAIN as readonly string[]).includes(s);

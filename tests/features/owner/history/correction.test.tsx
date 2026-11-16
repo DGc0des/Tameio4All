@@ -38,7 +38,7 @@ const day = (over: Partial<DayDetail> = {}): DayDetail => ({
   today: '2026-11-11', businessDate: DATE, versions: [v2, v1], configs: { cfg1: juiceBarPreset }, staffNames: NAMES, open: null, ...over,
 });
 const openSnap: Snapshot = {
-  id: 'oc-1', businessDate: DATE, configId: 'cfg-open', config: juiceBarPreset, revision: 2, lastSubmit: null,
+  id: 'oc-1', businessDate: DATE, configId: 'cfg-open', config: juiceBarPreset, revision: 2, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null,
   fields: { 'd:10000': { key: 'd:10000', value: { text: '2', mode: 'count' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-09T20:00:00Z' } },
 };
 

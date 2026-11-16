@@ -30,7 +30,7 @@ describe('DangerZoneCard (shop deletion)', () => {
     const navigate = vi.fn();
     const api = fakeApi({ latestConfig: serverAt(3) });
     const store = memoryStore();
-    saveSnapshot(store, SHOP, { id: 'oc', businessDate: '2026-09-29', configId: 'c3', config: {}, revision: 0, lastSubmit: null, fields: {} });
+    saveSnapshot(store, SHOP, { id: 'oc', businessDate: '2026-09-29', configId: 'c3', config: {}, revision: 0, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {} });
     saveOwnerDraft(store, SHOP, { config: jj(), baseVersion: 3, savedAt: 0 });
     start(api, store, navigate);
     await screen.findByText(/Έκδοση 3/);

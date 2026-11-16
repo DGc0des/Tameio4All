@@ -76,6 +76,11 @@ export function gateReducer(g: Gate, e: GateEvent): Gate {
         case 'wrong_day':
           // The day may have changed: the context is stale too.
           return g.s === 'ready' || g.s === 'signed_out' ? RELOAD : g;
+        case 'wrong_closing':
+        case 'not_submitted':
+        case 'no_more_closings':
+          // The register handles these (resync / a message); the session and the day are still fine.
+          return g;
         default:
           return g;
       }

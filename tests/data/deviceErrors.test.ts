@@ -52,6 +52,9 @@ describe('fromServerResult', () => {
     expect(fromServerResult({ ok: false, error: 'bad_pin' })).toEqual({ code: 'bad_pin' });
     expect(fromServerResult({ ok: false, error: 'pin_not_set' })).toEqual({ code: 'pin_not_set' });
     expect(fromServerResult({ ok: false, error: 'nope' })).toEqual({ code: 'unknown', detail: 'nope' });
+    for (const code of ['wrong_closing', 'not_submitted', 'no_more_closings']) {
+      expect(fromServerResult({ ok: false, error: code })).toEqual({ code });
+    }
     expect(fromServerResult('x')?.code).toBe('unknown');
     expect(fromServerResult(null)?.code).toBe('unknown');
     expect(fromServerResult({})?.code).toBe('unknown');
@@ -67,6 +70,7 @@ describe('deviceErrorMessage', () => {
     { code: 'stale', current: { key: 'c:a', value: null, version: 0, updatedByName: '', updatedAt: '' } }, { code: 'bad_field' },
     { code: 'too_many_expenses' }, { code: 'draft_changed', revision: 3 }, { code: 'other_shop' },
     { code: 'device_locked', lockedUntil: null }, { code: 'pin_not_set' },
+    { code: 'wrong_closing' }, { code: 'not_submitted' }, { code: 'no_more_closings' },
   ];
   it('has a non-empty message for every code', () => {
     for (const e of all) expect(deviceErrorMessage(e).length).toBeGreaterThan(0);
@@ -78,6 +82,9 @@ describe('deviceErrorMessage', () => {
     expect(deviceErrorMessage({ code: 'invalid_code' })).toBe('Ο κωδικός καταστήματος δεν ισχύει. Ζήτα τον νέο σύνδεσμο.');
     expect(deviceErrorMessage({ code: 'not_a_device' })).toBe('Αυτή η συσκευή δεν είναι σε κατάστημα. Άνοιξε τον σύνδεσμο του καταστήματος.');
     expect(deviceErrorMessage({ code: 'other_shop' })).toBe('Η συσκευή είναι ήδη σε άλλο κατάστημα.');
+    expect(deviceErrorMessage({ code: 'wrong_closing' })).toBe('Ξεκίνησε νέο κλείσιμο. Το ταμείο ανανεώθηκε.');
+    expect(deviceErrorMessage({ code: 'not_submitted' })).toBe('Κάνε πρώτα Υποβολή του κλεισίματος.');
+    expect(deviceErrorMessage({ code: 'no_more_closings' })).toBe('Δεν υπάρχει άλλο κλείσιμο για σήμερα.');
   });
   const DEV = 'Πολλές λάθος προσπάθειες σε αυτή τη συσκευή. Δοκίμασε ξανά ';
   const HINT = ', ή ζήτα από τον ιδιοκτήτη «Αφαίρεση» της συσκευής στις «Συσκευές».';

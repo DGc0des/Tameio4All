@@ -133,7 +133,7 @@ describe('createDeviceApi', () => {
   it('submit passes the server argument names and maps the result', async () => {
     const s = stub({ rpc: { submit_closing: { data: { ok: true, closing_id: 'cl1', repeat: true }, error: null } } });
     const inputs = { schema: 2 } as never;
-    const r = await createDeviceApi(s.client).submit('tok', 'cfg', '2026-11-07', inputs, 4, 'key');
+    const r = await createDeviceApi(s.client).submit('tok', 'cfg', '2026-11-07', 2, inputs, 4, 'key');
     expect(r).toEqual({ ok: true, data: { closingId: 'cl1', repeat: true } });
     expect(s.rpc).toHaveBeenCalledWith('submit_closing', {
       p_token: 'tok',
@@ -142,12 +142,44 @@ describe('createDeviceApi', () => {
       p_inputs: inputs,
       p_revision: 4,
       p_idempotency_key: 'key',
+      p_closing_no: 2,
     });
     const refused = stub({ rpc: { submit_closing: { data: { ok: false, error: 'wrong_day' }, error: null } } });
-    expect(await createDeviceApi(refused.client).submit('t', 'c', 'd', inputs, 4, 'k')).toEqual({
+    expect(await createDeviceApi(refused.client).submit('t', 'c', 'd', 1, inputs, 4, 'k')).toEqual({
       ok: false,
       error: { code: 'wrong_day' },
     });
+  });
+
+  it('setField sends p_closing_no', async () => {
+    const s = stub({ rpc: { set_closing_field: { data: { ok: true, version: 1, revision: 2 }, error: null } } });
+    await createDeviceApi(s.client).setField('tok', '2026-11-17', 3, 'c:wolt', { text: '1' }, null);
+    expect(s.rpc).toHaveBeenCalledWith('set_closing_field', {
+      p_token: 'tok', p_business_date: '2026-11-17', p_key: 'c:wolt', p_value: { text: '1' }, p_base_version: null, p_closing_no: 3,
+    });
+  });
+
+  it('startNextClosing calls start_next_closing and parses the new closing', async () => {
+    const closing = {
+      id: 'oc2', business_date: '2026-11-17', config_id: 'cfg', config: {}, revision: 0, last_submit: null, fields: [],
+      closing_no: 2, closings_planned: 3, cash_mode: 'running',
+    };
+    const s = stub({ rpc: { start_next_closing: { data: { ok: true, closing }, error: null } } });
+    const r = await createDeviceApi(s.client).startNextClosing('tok', '2026-11-17', 2);
+    expect(s.rpc).toHaveBeenCalledWith('start_next_closing', { p_token: 'tok', p_business_date: '2026-11-17', p_closing_no: 2 });
+    expect(r).toEqual({
+      ok: true,
+      data: {
+        id: 'oc2', businessDate: '2026-11-17', configId: 'cfg', config: {}, revision: 0, lastSubmit: null, fields: {},
+        closingNo: 2, closingsPlanned: 3, cashMode: 'running',
+      },
+    });
+    const junk = stub({ rpc: { start_next_closing: { data: { ok: true, closing: { ...closing, closing_no: 9 } }, error: null } } });
+    expect(await createDeviceApi(junk.client).startNextClosing('t', 'd', 2)).toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
+    for (const code of ['not_submitted', 'no_more_closings', 'wrong_closing']) {
+      const refused = stub({ rpc: { start_next_closing: { data: { ok: false, error: code }, error: null } } });
+      expect(await createDeviceApi(refused.client).startNextClosing('t', 'd', 2)).toEqual({ ok: false, error: { code } });
+    }
   });
 
   it('suggestionData maps rows to {description, cents, date}', async () => {

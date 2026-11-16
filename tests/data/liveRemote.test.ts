@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { createDeviceApi } from '../../src/data/remote/device';
 import { fromServerResult } from '../../src/data/remote/deviceErrors';
 import { mapError } from '../../src/data/remote/errors';
-import { openShopChannel, REMOVAL_TIMEOUT_MS, type LiveHandlers } from '../../src/data/remote/live';
+import {
+  openShopChannel, parseClosingStarted, parseFieldBroadcast, parseSnapshot, parseSubmitInfo, REMOVAL_TIMEOUT_MS, type LiveHandlers,
+} from '../../src/data/remote/live';
 import { createOwnerApi } from '../../src/data/remote/owner';
 
 const field = (key: string, over: Record<string, unknown> = {}) => ({
@@ -29,6 +31,7 @@ describe('getOpenClosing / todayClosing', () => {
       ok: true,
       data: {
         id: 'oc1', businessDate: '2026-11-07', configId: 'cfg', config: { schema: 1 }, revision: 7,
+        closingNo: 1, closingsPlanned: 1, cashMode: 'separate',
         lastSubmit: { closingId: 'cl1', staffName: 'ΝΙΚΟΣ', at: '2026-11-07T09:00:00Z' },
         fields: {
           'c:wolt': { key: 'c:wolt', value: { text: '5' }, version: 2, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T10:00:00Z' },
@@ -77,24 +80,56 @@ describe('getOpenClosing / todayClosing', () => {
   });
 });
 
+describe('closing number (stage 5)', () => {
+  it('parseSnapshot reads closing_no, closings_planned and cash_mode', () => {
+    expect(parseSnapshot(closing({ closing_no: 2, closings_planned: 3, cash_mode: 'running' }))).toMatchObject({
+      closingNo: 2, closingsPlanned: 3, cashMode: 'running',
+    });
+  });
+  it('a snapshot without the three keys (older server) is closing 1 of a 1-closing separate day', () => {
+    expect(parseSnapshot(closing())).toMatchObject({ closingNo: 1, closingsPlanned: 1, cashMode: 'separate' });
+  });
+  it('a bad closing number or cash mode makes the snapshot null', () => {
+    for (const bad of [{ closing_no: 0 }, { closing_no: 7 }, { closing_no: 1.5 }, { closing_no: '2' }, { cash_mode: 'mixed' }, { closings_planned: 0 }, { closings_planned: 7 }]) {
+      expect(parseSnapshot(closing(bad)), JSON.stringify(bad)).toBeNull();
+    }
+  });
+  it('the field broadcast carries closing_no (absent → 1; invalid → dropped)', () => {
+    const base = { ...field('c:wolt'), revision: 5, business_date: '2026-11-07' };
+    expect(parseFieldBroadcast({ ...base, closing_no: 3 })?.closingNo).toBe(3);
+    expect(parseFieldBroadcast(base)?.closingNo).toBe(1);
+    expect(parseFieldBroadcast({ ...base, closing_no: 9 })).toBeNull();
+  });
+  it('closing_started: a valid date and number only', () => {
+    expect(parseClosingStarted({ business_date: '2026-11-17', closing_no: 2 })).toEqual({ businessDate: '2026-11-17', closingNo: 2 });
+    for (const bad of [{ business_date: '2026-13-01', closing_no: 2 }, { business_date: 'd', closing_no: 2 }, { business_date: '2026-11-17', closing_no: 0 }, { business_date: '2026-11-17', closing_no: 7 }, { business_date: '2026-11-17' }, null]) {
+      expect(parseClosingStarted(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+  it('parseSubmitInfo carries closingNo when present', () => {
+    expect(parseSubmitInfo({ closing_id: 'c', staff_name: 'Μ', at: 't', closing_no: 2 })).toEqual({ closingId: 'c', staffName: 'Μ', at: 't', closingNo: 2 });
+    expect(parseSubmitInfo({ closing_id: 'c', staff_name: 'Μ', at: 't' })).toEqual({ closingId: 'c', staffName: 'Μ', at: 't' });
+  });
+});
+
 describe('setField / setTodayField', () => {
   it('device: passes the server argument names and returns version + revision (+ the stored value when sent)', async () => {
     const s = rpcClient({ ok: true, version: 3, revision: 9 });
-    const r = await createDeviceApi(s.client).setField('tok', '2026-11-07', 'c:wolt', { text: '5' }, 2);
+    const r = await createDeviceApi(s.client).setField('tok', '2026-11-07', 2, 'c:wolt', { text: '5' }, 2);
     expect(s.rpc).toHaveBeenCalledWith('set_closing_field', {
-      p_token: 'tok', p_business_date: '2026-11-07', p_key: 'c:wolt', p_value: { text: '5' }, p_base_version: 2,
+      p_token: 'tok', p_business_date: '2026-11-07', p_key: 'c:wolt', p_value: { text: '5' }, p_base_version: 2, p_closing_no: 2,
     });
     expect(r).toEqual({ ok: true, data: { version: 3, revision: 9 } });
     const stored = { addedBy: { kind: 'staff', id: 'staff-maria' }, removed: false, order: 1 };
-    const r2 = await createDeviceApi(rpcClient({ ok: true, version: 1, revision: 4, value: stored }).client).setField('t', 'd', 'e:x', {}, null);
+    const r2 = await createDeviceApi(rpcClient({ ok: true, version: 1, revision: 4, value: stored }).client).setField('t', 'd', 1, 'e:x', {}, null);
     expect(r2).toEqual({ ok: true, data: { version: 1, revision: 4, value: stored } });
-    const r3 = await createDeviceApi(rpcClient({ ok: true, version: 1.5, revision: 4 }).client).setField('t', 'd', 'e:x', {}, null);
+    const r3 = await createDeviceApi(rpcClient({ ok: true, version: 1.5, revision: 4 }).client).setField('t', 'd', 1, 'e:x', {}, null);
     expect(r3.ok).toBe(false);
   });
 
   it('device: stale becomes an error carrying the current field, filled with the request key', async () => {
     const s = rpcClient({ ok: false, error: 'stale', current: { value: { text: '9' }, version: 4, updated_by_name: 'ΝΙΚΟΣ' } });
-    const r = await createDeviceApi(s.client).setField('t', 'd', 'c:wolt', { text: '5' }, 2);
+    const r = await createDeviceApi(s.client).setField('t', 'd', 1, 'c:wolt', { text: '5' }, 2);
     expect(r).toEqual({
       ok: false,
       error: { code: 'stale', current: { key: 'c:wolt', value: { text: '9' }, version: 4, updatedByName: 'ΝΙΚΟΣ', updatedAt: '' } },
@@ -103,13 +138,13 @@ describe('setField / setTodayField', () => {
 
   it('device: stale on a never-written field (null value/name, version 0) still maps', async () => {
     const s = rpcClient({ ok: false, error: 'stale', current: { value: null, version: 0, updated_by_name: null } });
-    const r = await createDeviceApi(s.client).setField('t', 'd', 'c:x', { text: '5' }, 3);
+    const r = await createDeviceApi(s.client).setField('t', 'd', 1, 'c:x', { text: '5' }, 3);
     expect(r.ok === false && r.error).toMatchObject({ code: 'stale', current: { key: 'c:x', value: null, version: 0 } });
   });
 
   it('device: wrong_day / bad_field / too_many_expenses / session errors map', async () => {
     for (const code of ['wrong_day', 'bad_field', 'too_many_expenses', 'session_invalid', 'device_revoked']) {
-      const r = await createDeviceApi(rpcClient({ ok: false, error: code }).client).setField('t', 'd', 'c:x', {}, null);
+      const r = await createDeviceApi(rpcClient({ ok: false, error: code }).client).setField('t', 'd', 1, 'c:x', {}, null);
       expect(r).toEqual({ ok: false, error: { code } });
     }
   });
@@ -189,7 +224,7 @@ function channelClient(opts: { neverRemove?: boolean } = {}) {
   return { client: client as unknown as SupabaseClient, raw: client, created, registry, get ch() { return created[created.length - 1]!; } };
 }
 const flush = () => new Promise((r) => setTimeout(r, 20));
-const mkHandlers = () => ({ onField: vi.fn(), onSubmitted: vi.fn(), onPresence: vi.fn(), onStatus: vi.fn() }) satisfies LiveHandlers;
+const mkHandlers = () => ({ onField: vi.fn(), onSubmitted: vi.fn(), onClosingStarted: vi.fn(), onPresence: vi.fn(), onStatus: vi.fn() }) satisfies LiveHandlers;
 
 describe('openShopChannel', () => {
   it('opens a private shop topic with a random presence key, authorizes, then subscribes', async () => {
@@ -233,7 +268,7 @@ describe('openShopChannel', () => {
     const hs = c.ch.handlers;
     hs['broadcast:field']!({ payload: { ...field('c:wolt'), revision: 5, business_date: '2026-11-07' } });
     expect(h.onField).toHaveBeenCalledWith({
-      key: 'c:wolt', value: { text: '5' }, version: 2, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T10:00:00Z', revision: 5, businessDate: '2026-11-07',
+      key: 'c:wolt', value: { text: '5' }, version: 2, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T10:00:00Z', revision: 5, businessDate: '2026-11-07', closingNo: 1,
     });
     hs['broadcast:field']!({ payload: { ...field('d:0100'), revision: 5, business_date: 'd' } });
     hs['broadcast:field']!({ payload: { ...field('c:a'), business_date: 'd' } });
@@ -243,6 +278,10 @@ describe('openShopChannel', () => {
     expect(h.onSubmitted).toHaveBeenCalledWith({ closingId: 'cl', staffName: 'ΝΙΚΟΣ', at: 't' });
     hs['broadcast:submitted']!({ payload: { closing_id: 1 } });
     expect(h.onSubmitted).toHaveBeenCalledTimes(1);
+    hs['broadcast:closing_started']!({ payload: { business_date: '2026-11-17', closing_no: 2 } });
+    expect(h.onClosingStarted).toHaveBeenCalledWith({ businessDate: '2026-11-17', closingNo: 2 });
+    hs['broadcast:closing_started']!({ payload: { business_date: 'x', closing_no: 2 } });
+    expect(h.onClosingStarted).toHaveBeenCalledTimes(1);
   });
 
   it('presence sync flattens other participants and excludes self', async () => {

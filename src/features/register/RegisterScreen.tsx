@@ -17,7 +17,7 @@ import { CashierSheet, HeaderMenu } from './HeaderMenu';
 import { useLiveClosing } from './live/useLiveClosing';
 import { SIGN_OUT_DRAIN_MS, type Writer } from './live/syncEngine';
 import { LiveClosingView } from './LiveClosingView';
-import { changedSinceSubmit } from './live/fields';
+import { changedSinceSubmit, sameClosing } from './live/fields';
 import {
   CHANGED_SINCE_SUBMIT, CONNECTING_SUBMIT_REASON, HALTED_SUBMIT_REASON, INVALID_CONFIG_MESSAGE, OFFLINE_SUBMIT_REASON, PENDING_SUBMIT_REASON,
 } from './messages';
@@ -55,7 +55,7 @@ export function RegisterScreen(props: RegisterProps) {
   const writer = useMemo<Writer>(
     () => ({
       load: () => api.getOpenClosing(session.token),
-      write: (e) => api.setField(session.token, e.businessDate, e.key, e.value, e.baseVersion),
+      write: (e) => api.setField(session.token, e.businessDate, e.closingNo, e.key, e.value, e.baseVersion),
       live: (h) => api.live(ctx.shopId, { name: session.name }, h),
     }),
     [api, session.token, session.name, ctx.shopId],
@@ -205,7 +205,7 @@ export function RegisterScreen(props: RegisterProps) {
   }
 
   const envelopeDef = config.totals.find((t) => t.id === config.envelopeTotalId);
-  const unsaved = state.pending.some((p) => p.businessDate === snapshot.businessDate);
+  const unsaved = state.pending.some((p) => sameClosing(p, snapshot));
   const submitBlocked =
     submitBlockReason(derived, draft) ??
     (fatal !== null ? HALTED_SUBMIT_REASON : null) ??
@@ -223,15 +223,16 @@ export function RegisterScreen(props: RegisterProps) {
     const json = JSON.stringify(inputs);
     if (submitKey.current?.inputs !== json) submitKey.current = { key: newId(), inputs: json };
     const key = submitKey.current.key;
-    const r = await api.submit(session.token, snapshot.configId, snapshot.businessDate, inputs, revision, key);
+    const r = await api.submit(session.token, snapshot.configId, snapshot.businessDate, snapshot.closingNo, inputs, revision, key);
     if (r.ok) {
       submitKey.current = null;
       setToast('Το κλείσιμο υποβλήθηκε');
       setHistoryRound((n) => n + 1);
       // «Υποβλήθηκε …» also arrives by broadcast; the load covers a missed one.
       void resync();
-    } else if (r.error.code === 'draft_changed') {
-      // Someone changed the closing after this sheet's snapshot: fetch it; the next tap is a new submit.
+    } else if (r.error.code === 'draft_changed' || r.error.code === 'wrong_closing') {
+      // Someone changed the closing after this sheet's snapshot (or the next closing started): fetch it;
+      // the next tap is a new submit.
       submitKey.current = null;
       void resync();
     } else {

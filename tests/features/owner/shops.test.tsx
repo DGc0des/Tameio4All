@@ -58,7 +58,7 @@ describe('ShopsScreen', () => {
   it('deletes the account only after the email is typed', async () => {
     const onSignOut = vi.fn();
     const store = memoryStore();
-    saveSnapshot(store, A, { id: 'oc', businessDate: '2026-09-29', configId: 'c1', config: {}, revision: 0, lastSubmit: null, fields: {} });
+    saveSnapshot(store, A, { id: 'oc', businessDate: '2026-09-29', configId: 'c1', config: {}, revision: 0, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {} });
     const api = fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α' }])) });
     render(<ShopsScreen api={api} store={store} navigate={vi.fn()} autoOpen={false} onLoaded={vi.fn()} onSignOut={onSignOut} onExit={vi.fn()} />);
     await screen.findByRole('button', { name: 'Α' });

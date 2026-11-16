@@ -5,7 +5,7 @@ import type { DResult, DeviceError } from '../../../data/remote/deviceApi';
 import type { LiveChannel, LiveFieldEvent, LiveHandlers, LiveStatus } from '../../../data/remote/live';
 import { deviceErrorMessage } from '../../phone/model/messages';
 import type { Draft } from '../draft';
-import { isFieldKey, isFieldValue, type FieldAck, type FieldKey, type PendingEdit, type ServerField, type Snapshot } from './fields';
+import { isFieldKey, isFieldValue, sameClosing, type FieldAck, type FieldKey, type PendingEdit, type ServerField, type Snapshot } from './fields';
 import { applyServerField, draftFromFields, fieldLabel, revisionGap } from './merge';
 
 /**
@@ -34,6 +34,9 @@ import { applyServerField, draftFromFields, fieldLabel, revisionGap } from './me
  *   past `revision + 1` keeps the old revision and resyncs, so a late or lost broadcast can never let a
  *   submit pass the server's revision check without that write in the snapshot.
  * - The ack applies the value the server stored (`FieldAck.value`), never only what was sent.
+ * - Every edit belongs to one closing (business date + closing number, `sameClosing`): it is shown, sent
+ *   and merged only while the snapshot is that same closing, and dropped with a notice once it is not
+ *   (another day: WRONG_DAY_NOTICE; the next closing of the day: WRONG_CLOSING_NOTICE).
  */
 
 export const WRITE_DEBOUNCE_MS = 400;
@@ -42,6 +45,7 @@ export const NETWORK_RETRY_MS = 3000;
 /** Sign-out waits at most this long for the queue to drain before ending the staff session. */
 export const SIGN_OUT_DRAIN_MS = 3000;
 export const WRONG_DAY_NOTICE = 'Η ημέρα άλλαξε — οι αλλαγές εκτός σύνδεσης δεν αποθηκεύτηκαν';
+export const WRONG_CLOSING_NOTICE = 'Ξεκίνησε νέο κλείσιμο — οι αλλαγές σου στο προηγούμενο δεν αποθηκεύτηκαν';
 export const staleNotice = (label: string, name: string): string => `Το πεδίο ${label} άλλαξε από ${name || 'άλλον'}`;
 
 /**
@@ -105,7 +109,7 @@ export function initialEngineState(snapshot: Snapshot | null, pending: PendingEd
     .sort((a, b) => a.seq - b.seq)
     .map((p): PendingEdit => {
       if (p.baseVersion !== null) return p;
-      const base = snapshot && snapshot.businessDate === p.businessDate ? versionOf(snapshot, p.key) : 0;
+      const base = snapshot && sameClosing(snapshot, p) ? versionOf(snapshot, p.key) : 0;
       return { ...p, baseVersion: base, queuedOffline: true };
     });
   return {
@@ -125,26 +129,28 @@ export function toLiveState(s: EngineState): LiveState {
   return { snapshot: s.snapshot, pending: s.pending, status: statusOf(s), presence: s.presence, notice: s.notice };
 }
 
-/** Snapshot + this day's pending edits (edits of another business date never overlay it). */
+/** Snapshot + this closing's pending edits (edits of another day or closing never overlay it). */
 export function visibleDraft(s: Pick<EngineState, 'snapshot' | 'pending'>): Draft | null {
-  if (!s.snapshot) return null;
-  const date = s.snapshot.businessDate;
-  return draftFromFields(s.snapshot, s.pending.filter((p) => p.businessDate === date));
+  const snap = s.snapshot;
+  if (!snap) return null;
+  return draftFromFields(snap, s.pending.filter((p) => sameClosing(p, snap)));
 }
 
 export function reduceEdit(s: EngineState, key: FieldKey, value: unknown): EngineState {
   if (!s.snapshot || !isFieldKey(key) || !isFieldValue(key, value)) return s;
   const offline = statusOf(s) !== 'live';
-  const date = s.snapshot.businessDate;
-  const base = offline ? versionOf(s.snapshot, key) : null;
+  const snap = s.snapshot;
+  const base = offline ? versionOf(snap, key) : null;
   if (s.debouncing.includes(key)) {
-    const p = [...s.pending].reverse().find((x) => x.key === key && x.seq !== s.inflight && x.businessDate === date);
+    const p = [...s.pending].reverse().find((x) => x.key === key && x.seq !== s.inflight && sameClosing(x, snap));
     if (p) {
       const merged: PendingEdit = { ...p, value, queuedOffline: p.queuedOffline || offline, baseVersion: p.baseVersion ?? base };
       return { ...s, pending: s.pending.map((x) => (x === p ? merged : x)) };
     }
   }
-  const item: PendingEdit = { author: s.author, key, value, businessDate: date, baseVersion: base, queuedOffline: offline, seq: s.nextSeq };
+  const item: PendingEdit = {
+    author: s.author, key, value, businessDate: snap.businessDate, closingNo: snap.closingNo, baseVersion: base, queuedOffline: offline, seq: s.nextSeq,
+  };
   return {
     ...s,
     pending: [...s.pending, item],
@@ -162,9 +168,9 @@ export function reduceCommit(s: EngineState, key?: FieldKey): EngineState {
 
 /** The next item to send, or null when the sender must wait. */
 export function nextToSend(s: EngineState): PendingEdit | null {
-  if (!s.snapshot || s.halted || s.loading || s.inflight !== null || statusOf(s) !== 'live') return null;
-  const date = s.snapshot.businessDate;
-  return s.pending.find((p) => p.businessDate === date && !s.debouncing.includes(p.key)) ?? null;
+  const snap = s.snapshot;
+  if (!snap || s.halted || s.loading || s.inflight !== null || statusOf(s) !== 'live') return null;
+  return s.pending.find((p) => sameClosing(p, snap) && !s.debouncing.includes(p.key)) ?? null;
 }
 
 export function reduceChannelStatus(s: EngineState, st: LiveStatus): { state: EngineState; resync: boolean } {
@@ -176,13 +182,13 @@ export function reduceChannelStatus(s: EngineState, st: LiveStatus): { state: En
 }
 
 /**
- * A realtime field event. Another business date is not applied: the caller resyncs instead. A revision
+ * A realtime field event. Another business date or closing is not applied: the caller resyncs instead. A revision
  * gap (an earlier write's broadcast is late or lost) applies the field but keeps the revision, and resyncs.
  */
 export function reduceBroadcast(s: EngineState, f: LiveFieldEvent): { state: EngineState; resync: boolean } {
   if (!s.snapshot) return { state: s, resync: true };
-  if (f.businessDate !== s.snapshot.businessDate) return { state: s, resync: true };
-  const { businessDate: _d, ...field } = f;
+  if (!sameClosing(f, s.snapshot)) return { state: s, resync: true };
+  const { businessDate: _d, closingNo: _c, ...field } = f;
   const gap = revisionGap(s.snapshot, f.revision);
   const next = applyServerField(s.snapshot, field);
   return { state: next === s.snapshot ? s : { ...s, snapshot: next }, resync: gap };
@@ -192,27 +198,30 @@ export function reduceBroadcast(s: EngineState, f: LiveFieldEvent): { state: Eng
  * A loaded snapshot replaces ours (fields we already hold at a higher version — broadcasts that arrived
  * during the load — are kept). Revision: the higher of the two. Under the +1 rule ours is always complete
  * up to its number (every write up to it is in our fields), and the merge keeps those fields, so the
- * higher one is complete too. Pending edits of another business date are dropped with the wrong-day notice.
+ * higher one is complete too. Only a load of the same closing is merged. Pending edits of another closing
+ * are dropped: of another business date with the wrong-day notice, of another closing of the same day with
+ * the wrong-closing notice.
  */
 export function reduceLoaded(s: EngineState, loaded: Snapshot): EngineState {
   let snapshot = loaded;
   const old = s.snapshot;
-  if (old && old.id === loaded.id && old.businessDate === loaded.businessDate) {
+  if (old && old.id === loaded.id && sameClosing(old, loaded)) {
     const fields = { ...loaded.fields };
     for (const [k, f] of Object.entries(old.fields)) {
       if (fields[k] === undefined || fields[k].version < f.version) fields[k] = f;
     }
     snapshot = { ...loaded, fields, revision: Math.max(old.revision, loaded.revision), lastSubmit: loaded.lastSubmit ?? old.lastSubmit };
   }
-  const keep = s.pending.filter((p) => p.businessDate === snapshot.businessDate);
+  const keep = s.pending.filter((p) => sameClosing(p, snapshot));
   const dropped = keep.length !== s.pending.length;
+  const otherDay = s.pending.some((p) => p.businessDate !== snapshot.businessDate);
   return {
     ...s,
     snapshot,
     pending: dropped ? keep : s.pending,
     fresh: s.channel === 'live',
     netDown: false,
-    notice: dropped ? WRONG_DAY_NOTICE : s.notice,
+    notice: dropped ? (otherDay ? WRONG_DAY_NOTICE : WRONG_CLOSING_NOTICE) : s.notice,
   };
 }
 
@@ -254,7 +263,7 @@ function acked(
     .map((p) => (p.key === item.key && p.baseVersion !== null ? { ...p, baseVersion: version } : p));
   let snapshot = s.snapshot;
   let gap = false;
-  if (snapshot && snapshot.businessDate === item.businessDate) {
+  if (snapshot && sameClosing(snapshot, item)) {
     const value = stored !== undefined && isFieldValue(item.key, stored) ? stored : item.value;
     gap = revisionGap(snapshot, revision);
     snapshot = applyServerField(snapshot, { key: item.key, value, version, updatedByName: me, updatedAt: nowIso, revision });
@@ -288,7 +297,7 @@ export function reduceWriteResult(
       let st = drop(s);
       // Other offline edits of this box were made on the same outdated view: dropped too.
       st = { ...st, pending: st.pending.filter((p) => !(p.key === item.key && p.baseVersion !== null)) };
-      if (st.snapshot && st.snapshot.businessDate === item.businessDate) {
+      if (st.snapshot && sameClosing(st.snapshot, item)) {
         st = { ...st, snapshot: applyServerField(st.snapshot, { ...cur, revision: st.snapshot.revision }) };
       }
       const config = st.snapshot ? st.snapshot.config : null;
@@ -298,6 +307,12 @@ export function reduceWriteResult(
     case 'wrong_day':
       return {
         state: { ...s, pending: s.pending.filter((p) => p.businessDate !== item.businessDate), notice: WRONG_DAY_NOTICE },
+        effect: { kind: 'resync' },
+      };
+    case 'wrong_closing':
+      // The next closing started: this closing's edits can never be written any more.
+      return {
+        state: { ...s, pending: s.pending.filter((p) => !sameClosing(p, item)), notice: WRONG_CLOSING_NOTICE },
         effect: { kind: 'resync' },
       };
     case 'bad_field':
@@ -351,11 +366,11 @@ export interface SyncEngine {
   getState(): EngineState;
 }
 
-/** Nothing of the snapshot's day is queued or in flight. */
+/** Nothing of the snapshot's closing is queued or in flight. */
 export function isDrained(s: EngineState): boolean {
   if (s.inflight !== null) return false;
-  const date = s.snapshot?.businessDate;
-  return date === undefined ? s.pending.length === 0 : !s.pending.some((p) => p.businessDate === date);
+  const snap = s.snapshot;
+  return snap === null ? s.pending.length === 0 : !s.pending.some((p) => sameClosing(p, snap));
 }
 
 /**
@@ -495,7 +510,16 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
         },
         onSubmitted(info) {
           if (disposed || !s.snapshot) return;
+          // A submit of another closing (ours is outdated, or a late one of the previous): the load decides.
+          if (info.closingNo !== undefined && info.closingNo !== s.snapshot.closingNo) {
+            void resync();
+            return;
+          }
           set({ ...s, snapshot: { ...s.snapshot, lastSubmit: info } });
+        },
+        onClosingStarted() {
+          if (disposed) return;
+          void resync();
         },
         onPresence(p) {
           if (disposed) return;

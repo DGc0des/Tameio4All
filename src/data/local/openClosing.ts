@@ -1,6 +1,6 @@
 import type { EntryMode } from '../../core/denominations';
 import {
-  isFieldKey, isFieldValue, type PendingEdit, type ServerField, type Snapshot,
+  isCashMode, isClosingNo, isFieldKey, isFieldValue, type PendingEdit, type ServerField, type Snapshot,
 } from '../../features/register/live/fields';
 import { readJson, shopKey, writeJson, type KeyValueStore } from './storage';
 
@@ -19,11 +19,14 @@ const pendingKey = (shop: string) => shopKey(shop, 'pending');
 const snapshotKey = (shop: string) => shopKey(shop, 'snapshot');
 const entryModeKey = (shop: string) => shopKey(shop, 'entryMode');
 
-function isPendingEdit(x: unknown): x is PendingEdit {
-  return (
-    isObj(x) && isStr(x.author) && x.author !== '' && isFieldKey(x.key) && isFieldValue(x.key, x.value) && isStr(x.businessDate) &&
-    (x.baseVersion === null || isNum(x.baseVersion)) && typeof x.queuedOffline === 'boolean' && isNum(x.seq)
-  );
+/** A stored item; one from before stage 5 (no `closingNo`) is an edit of closing 1. */
+function toPendingEdit(x: unknown): PendingEdit | null {
+  if (
+    !isObj(x) || !isStr(x.author) || x.author === '' || !isFieldKey(x.key) || !isFieldValue(x.key, x.value) || !isStr(x.businessDate) ||
+    !(x.baseVersion === null || isNum(x.baseVersion)) || typeof x.queuedOffline !== 'boolean' || !isNum(x.seq)
+  ) return null;
+  if (x.closingNo !== undefined && !isClosingNo(x.closingNo)) return null;
+  return { ...(x as unknown as PendingEdit), closingNo: x.closingNo === undefined ? 1 : x.closingNo };
 }
 
 /**
@@ -34,7 +37,7 @@ function isPendingEdit(x: unknown): x is PendingEdit {
  */
 export function loadPending(store: KeyValueStore, shopId: string, author?: string): PendingEdit[] {
   const raw = readJson(store, pendingKey(shopId));
-  const all = Array.isArray(raw) ? raw.filter(isPendingEdit) : [];
+  const all = Array.isArray(raw) ? raw.map(toPendingEdit).filter((p): p is PendingEdit => p !== null) : [];
   return author === undefined ? all : all.filter((p) => p.author === author);
 }
 
@@ -56,18 +59,30 @@ function isServerField(key: string, x: unknown): x is ServerField {
   );
 }
 
-function isSnapshot(x: unknown): x is Snapshot {
-  if (!isObj(x) || !isStr(x.id) || !isStr(x.businessDate) || !isStr(x.configId) || !('config' in x) || !isNum(x.revision)) return false;
+/**
+ * A stored snapshot; one from before stage 5 (no closingNo / closingsPlanned / cashMode) is closing 1 of a
+ * 1-closing 'separate' day. A present but invalid value of those makes it unusable.
+ */
+function toSnapshot(x: unknown): Snapshot | null {
+  if (!isObj(x) || !isStr(x.id) || !isStr(x.businessDate) || !isStr(x.configId) || !('config' in x) || !isNum(x.revision)) return null;
   const ls = x.lastSubmit;
-  if (ls !== null && !(isObj(ls) && isStr(ls.closingId) && isStr(ls.staffName) && isStr(ls.at) && (ls.revision === undefined || isNum(ls.revision)))) return false;
-  if (!isObj(x.fields)) return false;
-  return Object.entries(x.fields).every(([k, f]) => isFieldKey(k) && isServerField(k, f));
+  if (
+    ls !== null &&
+    !(isObj(ls) && isStr(ls.closingId) && isStr(ls.staffName) && isStr(ls.at) && (ls.revision === undefined || isNum(ls.revision)) &&
+      (ls.closingNo === undefined || isClosingNo(ls.closingNo)))
+  ) return null;
+  if (!isObj(x.fields)) return null;
+  if (!Object.entries(x.fields).every(([k, f]) => isFieldKey(k) && isServerField(k, f))) return null;
+  const closingNo = x.closingNo === undefined ? 1 : x.closingNo;
+  const closingsPlanned = x.closingsPlanned === undefined ? 1 : x.closingsPlanned;
+  const cashMode = x.cashMode === undefined ? 'separate' : x.cashMode;
+  if (!isClosingNo(closingNo) || !isClosingNo(closingsPlanned) || !isCashMode(cashMode)) return null;
+  return { ...(x as unknown as Snapshot), closingNo, closingsPlanned, cashMode };
 }
 
 /** A snapshot with any malformed part is unusable as a whole -> null (the register then starts from the server). */
 export function loadSnapshot(store: KeyValueStore, shopId: string): Snapshot | null {
-  const raw = readJson(store, snapshotKey(shopId));
-  return isSnapshot(raw) ? raw : null;
+  return toSnapshot(readJson(store, snapshotKey(shopId)));
 }
 
 export function saveSnapshot(store: KeyValueStore, shopId: string, s: Snapshot): boolean {

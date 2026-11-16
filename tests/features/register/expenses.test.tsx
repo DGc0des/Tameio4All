@@ -16,7 +16,7 @@ afterEach(cleanup);
 let n = 0;
 const nextId = () => `e${++n}`;
 const HISTORY: SupplierHistory = { 'Ντόντης': [2400, 1800], 'Nice': [1300] };
-const EMPTY: Snapshot = { id: 'oc', businessDate: '2026-09-28', configId: 'c', config: cfg, revision: 0, lastSubmit: null, fields: {} };
+const EMPTY: Snapshot = { id: 'oc', businessDate: '2026-09-28', configId: 'c', config: cfg, revision: 0, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {} };
 
 let lastDraft: Draft | null = null;
 let edits: { key: FieldKey; value: unknown }[] = [];
@@ -30,7 +30,7 @@ function Harness({ max = 10, history = HISTORY }: { max?: number; history?: Supp
   const binding: FieldBinding = {
     edit: (key, value) => {
       edits.push({ key, value });
-      setPending((p) => [...p, { author: 'staff-maria', key, value, businessDate: EMPTY.businessDate, baseVersion: null, queuedOffline: false, seq: p.length + 1 }]);
+      setPending((p) => [...p, { author: 'staff-maria', key, value, businessDate: EMPTY.businessDate, closingNo: 1, baseVersion: null, queuedOffline: false, seq: p.length + 1 }]);
     },
     flush,
     focus: vi.fn(),

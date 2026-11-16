@@ -92,7 +92,7 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
     async signOut(token) {
       await run(client.rpc('staff_sign_out', { p_token: token }));
     },
-    async submit(token, configId, businessDate, inputs, revision, idempotencyKey) {
+    async submit(token, configId, businessDate, closingNo, inputs, revision, idempotencyKey) {
       const r = await run(
         client.rpc('submit_closing', {
           p_token: token,
@@ -101,6 +101,7 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
           p_inputs: inputs,
           p_revision: revision,
           p_idempotency_key: idempotencyKey,
+          p_closing_no: closingNo,
         }),
       );
       if (!r.ok) return r;
@@ -117,7 +118,7 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
       const snap = parseSnapshot((r.data as Record<string, unknown>).closing);
       return snap ? { ok: true, data: snap } : { ok: false, error: bad };
     },
-    async setField(token, businessDate, key, value, baseVersion) {
+    async setField(token, businessDate, closingNo, key, value, baseVersion) {
       const r = await run(
         client.rpc('set_closing_field', {
           p_token: token,
@@ -125,6 +126,7 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
           p_key: key,
           p_value: value,
           p_base_version: baseVersion,
+          p_closing_no: closingNo,
         }),
       );
       if (!r.ok) return r;
@@ -132,6 +134,14 @@ export function createDeviceApi(client: SupabaseClient): DeviceApi {
       if (failure) return { ok: false, error: failure };
       const ack = parseFieldAck(r.data);
       return ack ? { ok: true, data: ack } : { ok: false, error: bad };
+    },
+    async startNextClosing(token, businessDate, closingNo) {
+      const r = await run(client.rpc('start_next_closing', { p_token: token, p_business_date: businessDate, p_closing_no: closingNo }));
+      if (!r.ok) return r;
+      const failure = fromServerResult(r.data);
+      if (failure) return { ok: false, error: failure };
+      const snap = parseSnapshot((r.data as Record<string, unknown>).closing);
+      return snap ? { ok: true, data: snap } : { ok: false, error: bad };
     },
     live: (shop, me, h) => openShopChannel(client, shop, me, h),
     async suggestionData(token) {

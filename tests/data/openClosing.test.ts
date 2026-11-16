@@ -12,10 +12,11 @@ const throwing: KeyValueStore = {
 };
 const K = (n: string) => `tameio4all:v1:shop-1:${n}`;
 const edit = (over: Partial<PendingEdit> = {}): PendingEdit => ({
-  author: 'staff-maria', key: 'c:wolt', value: { text: '5' }, businessDate: '2026-11-07', baseVersion: 2, queuedOffline: false, seq: 1, ...over,
+  author: 'staff-maria', key: 'c:wolt', value: { text: '5' }, businessDate: '2026-11-07', closingNo: 1, baseVersion: 2, queuedOffline: false, seq: 1, ...over,
 });
 const snap: Snapshot = {
   id: 'oc1', businessDate: '2026-11-07', configId: 'cfg', config: { schema: 1 }, revision: 3,
+  closingNo: 1, closingsPlanned: 1, cashMode: 'separate',
   lastSubmit: { closingId: 'x', staffName: 'ΜΑΡΙΑ', at: '2026-11-07T10:00:00Z' },
   fields: { 'c:wolt': { key: 'c:wolt', value: { text: '5' }, version: 1, updatedByName: 'ΜΑΡΙΑ', updatedAt: '2026-11-07T10:00:00Z' } },
 };
@@ -63,6 +64,12 @@ describe('pending queue', () => {
     s.setItem(K('pending'), JSON.stringify([untagged, edit({ seq: 4 }), { ...edit(), author: '' }, { ...edit(), author: 5 }]));
     expect(loadPending(s, 'shop-1')).toEqual([edit({ seq: 4 })]);
   });
+  it('an item stored before closing numbers loads as closing 1; a bad closingNo drops the item', () => {
+    const s = memoryStore();
+    const { closingNo: _c, ...old } = edit();
+    s.setItem(K('pending'), JSON.stringify([old, { ...edit({ seq: 2 }), closingNo: 'x' }, { ...edit({ seq: 3 }), closingNo: 0 }, edit({ seq: 4, closingNo: 2 })]));
+    expect(loadPending(s, 'shop-1')).toEqual([edit({ closingNo: 1 }), edit({ seq: 4, closingNo: 2 })]);
+  });
   it('corrupt or non-array -> []', () => {
     const s = memoryStore();
     s.setItem(K('pending'), '{nope');
@@ -96,6 +103,15 @@ describe('snapshot cache', () => {
     expect(saveSnapshot(s, 'shop-1', { ...snap, lastSubmit: null })).toBe(true);
     expect(loadSnapshot(s, 'shop-1')?.lastSubmit).toBeNull();
   });
+  it('a snapshot stored before closing numbers loads as closing 1 of a 1-closing separate day', () => {
+    const s = memoryStore();
+    const { closingNo: _a, closingsPlanned: _b, cashMode: _c, ...old } = snap;
+    s.setItem(K('snapshot'), JSON.stringify(old));
+    expect(loadSnapshot(s, 'shop-1')).toEqual(snap);
+    const second: Snapshot = { ...snap, closingNo: 2, closingsPlanned: 3, cashMode: 'running', lastSubmit: { ...snap.lastSubmit!, closingNo: 2 } };
+    saveSnapshot(s, 'shop-1', second);
+    expect(loadSnapshot(s, 'shop-1')).toEqual(second);
+  });
   it('any malformed part -> null', () => {
     const s = memoryStore();
     const put = (v: unknown) => s.setItem(K('snapshot'), typeof v === 'string' ? v : JSON.stringify(v));
@@ -109,6 +125,8 @@ describe('snapshot cache', () => {
       { ...snap, fields: { 'c:wolt': { ...snap.fields['c:wolt'], key: 'c:other' } } },
       { ...snap, fields: { 'c:wolt': { ...snap.fields['c:wolt'], value: { text: 1 } } } },
       { ...snap, fields: { 'c:wolt': { ...snap.fields['c:wolt'], updatedByName: 3 } } },
+      { ...snap, closingNo: 'x' }, { ...snap, closingNo: 7 }, { ...snap, closingsPlanned: 0 }, { ...snap, cashMode: 'mixed' },
+      { ...snap, lastSubmit: { ...snap.lastSubmit, closingNo: 'x' } },
     ]) {
       put(v);
       expect(loadSnapshot(s, 'shop-1'), JSON.stringify(v)).toBeNull();

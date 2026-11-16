@@ -89,7 +89,7 @@ describe('phones on the shared live closing', () => {
     typeAndLeave(a, '100€', '500');
     await settle();
     expect(field(b, '100€').value).toBe('500');
-    expect(a.api.setField).toHaveBeenCalledWith('token-1', '2026-11-07', 'd:10000', { text: '500', mode: 'amount' }, null);
+    expect(a.api.setField).toHaveBeenCalledWith('token-1', '2026-11-07', 1, 'd:10000', { text: '500', mode: 'amount' }, null);
   });
 
   it('a mode switch on A changes only A’s view; both derive the same money (Review Focus 4)', async () => {
@@ -174,11 +174,46 @@ describe('phones on the shared live closing', () => {
     expect(screen.getByRole('dialog', { name: 'Υποβλήθηκε ✓' })).toBeTruthy();
     const calls = vi.mocked(a.api.submit).mock.calls;
     expect(calls).toHaveLength(2);
-    expect(calls[0]![4]).toBe(1);
-    expect(calls[1]![4]).toBe(server.revision);
-    expect(calls[1]![3].counts).toEqual({ '10000': 5, '5000': 2 });
-    expect(calls[1]![5]).not.toBe(calls[0]![5]);
+    expect(calls[0]![5]).toBe(1);
+    expect(calls[1]![5]).toBe(server.revision);
+    expect(calls[1]![4].counts).toEqual({ '10000': 5, '5000': 2 });
+    expect(calls[1]![6]).not.toBe(calls[0]![6]);
     expect(a.onServerError).not.toHaveBeenCalled();
+  });
+
+  it('the next closing started before A tapped Υποβολή: wrong_closing → resync to it, the sheet asks to review (stage 5)', async () => {
+    const { server, a } = await twoPhones();
+    typeAndLeave(a, '100€', '500');
+    await settle();
+    fireEvent.click(barSubmit(a));
+    // Closing 2 starts on the server (its broadcast has not reached A yet).
+    Object.assign(server, { closingNo: 2, closingsPlanned: 2, revision: 0, fields: {}, lastSubmit: null });
+    await tapSheetSubmit();
+    expect(within(dialog()).getByRole('alert').textContent).toBe('Ξεκίνησε νέο κλείσιμο. Το ταμείο ανανεώθηκε.');
+    await settle();
+    expect(vi.mocked(a.api.submit).mock.calls[0]![3]).toBe(1);
+    expect(a.onServerError).not.toHaveBeenCalled();
+    expect(vi.mocked(a.api.getOpenClosing).mock.calls.length).toBeGreaterThan(1);
+    expect(field(a, '100€').value).toBe('');
+  });
+
+  it('a closing_started broadcast reloads the phone onto the new closing (stage 5)', async () => {
+    const server = fakeServer({ closingsPlanned: 2 });
+    const a = phone(server, MARIA);
+    const b = phone(server, NIKOS);
+    await settle();
+    typeAndLeave(a, '100€', '500');
+    await settle();
+    fireEvent.click(barSubmit(a));
+    await tapSheetSubmit();
+    await settle();
+    expect((await b.api.startNextClosing('token-2', '2026-11-07', 2)).ok).toBe(true);
+    await settle();
+    expect(field(a, '100€').value).toBe('');
+    typeAndLeave(a, '100€', '300');
+    await settle();
+    expect(vi.mocked(a.api.setField).mock.calls.at(-1)).toEqual(['token-1', '2026-11-07', 2, 'd:10000', { text: '300', mode: 'amount' }, null]);
+    expect(server.fields['d:10000']?.value).toEqual({ text: '300', mode: 'amount' });
   });
 
   it('after A submits, both phones show «Υποβλήθηκε HH:MM · name» and stay editable', async () => {
@@ -190,7 +225,7 @@ describe('phones on the shared live closing', () => {
     await settle();
     expect(a.q.getByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
     expect(b.q.getByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
-    expect(vi.mocked(a.api.submit).mock.calls[0]![4]).toBe(1);
+    expect(vi.mocked(a.api.submit).mock.calls[0]![5]).toBe(1);
     expect(a.q.queryByText(CHANGED_SINCE_SUBMIT)).toBeNull();
     typeAndLeave(b, '100€', '600');
     await settle();
@@ -220,7 +255,7 @@ describe('phones on the shared live closing', () => {
   it('an edit queued for a past business day is dropped with the day-change toast', async () => {
     const store = memoryStore();
     savePending(store, FAKE_SHOP_ID, 'staff-maria', [
-      { author: 'staff-maria', key: 'd:10000', value: { text: '900', mode: 'amount' }, businessDate: '2026-11-06', baseVersion: 0, queuedOffline: true, seq: 1 },
+      { author: 'staff-maria', key: 'd:10000', value: { text: '900', mode: 'amount' }, businessDate: '2026-11-06', closingNo: 1, baseVersion: 0, queuedOffline: true, seq: 1 },
     ]);
     const server = fakeServer();
     const p = phone(server, MARIA, store);
@@ -323,7 +358,7 @@ describe('after a failure the gate does not take over', () => {
     const store = memoryStore();
     const server = fakeServer();
     savePending(store, FAKE_SHOP_ID, 'staff-maria', [
-      { author: 'staff-maria', key: 'c:wolt', value: { text: '50' }, businessDate: '2026-11-07', baseVersion: 0, queuedOffline: true, seq: 1 },
+      { author: 'staff-maria', key: 'c:wolt', value: { text: '50' }, businessDate: '2026-11-07', closingNo: 1, baseVersion: 0, queuedOffline: true, seq: 1 },
     ]);
     const b = phone(server, NIKOS, store);
     await settle();
@@ -333,7 +368,7 @@ describe('after a failure the gate does not take over', () => {
     // ΝΙΚΟΣ's own edits go as him; Μαρία's stay stored.
     typeAndLeave(b, 'WOLT', '7');
     await settle();
-    expect(vi.mocked(b.api.setField).mock.calls.map((c) => [c[0], c[3]])).toEqual([['token-2', { text: '7' }]]);
+    expect(vi.mocked(b.api.setField).mock.calls.map((c) => [c[0], c[4]])).toEqual([['token-2', { text: '7' }]]);
     expect(loadPending(store, FAKE_SHOP_ID, 'staff-maria')).toHaveLength(1);
   });
 

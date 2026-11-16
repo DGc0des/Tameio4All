@@ -10,12 +10,12 @@ const meta = (order: number, removed = false) => ({ addedBy: owner, removed, ord
 
 function snap(fields: ServerField[] = []): Snapshot {
   return {
-    id: 'oc1', businessDate: '2026-11-08', configId: 'cfg1', config: {}, revision: 3, lastSubmit: null,
+    id: 'oc1', businessDate: '2026-11-08', configId: 'cfg1', config: {}, revision: 3, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null,
     fields: Object.fromEntries(fields.map((f) => [f.key, f])),
   };
 }
 let seq = 0;
-const edit = (key: string, value: unknown): PendingEdit => ({ author: 'staff-maria', key, value, businessDate: '2026-11-08', baseVersion: null, queuedOffline: false, seq: ++seq });
+const edit = (key: string, value: unknown): PendingEdit => ({ author: 'staff-maria', key, value, businessDate: '2026-11-08', closingNo: 1, baseVersion: null, queuedOffline: false, seq: ++seq });
 
 describe('draftFromFields', () => {
   it('builds entries, channels and expense lines from the snapshot', () => {

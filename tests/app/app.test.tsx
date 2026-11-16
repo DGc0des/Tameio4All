@@ -163,8 +163,8 @@ describe('register flows', () => {
     await submitClosing();
 
     expect(submitCalls(api)).toHaveLength(1);
-    const [token, configId, businessDate, inputs, revision, key] = submitCalls(api)[0]!;
-    expect([token, configId, businessDate]).toEqual(['token-1', FAKE_CONFIG_ID, '2026-11-07']);
+    const [token, configId, businessDate, closingNo, inputs, revision, key] = submitCalls(api)[0]!;
+    expect([token, configId, businessDate, closingNo]).toEqual(['token-1', FAKE_CONFIG_ID, '2026-11-07', 1]);
     // The revision of the live closing the inputs were derived from (4 writes: 100€, the line, its text, its amount).
     expect(revision).toBe(4);
     expect(inputs).toEqual<ClosingInputs>({
@@ -200,11 +200,11 @@ describe('register flows', () => {
 
     type('50€', '100');
     await submitClosing();
-    const keys = submitCalls(api).map((c) => c[5]);
+    const keys = submitCalls(api).map((c) => c[6]);
     expect(keys).toHaveLength(3);
     expect(keys[1]).toBe(keys[0]);
     expect(keys[2]).not.toBe(keys[0]);
-    expect(submitCalls(api)[1]![3]).toEqual(submitCalls(api)[0]![3]);
+    expect(submitCalls(api)[1]![4]).toEqual(submitCalls(api)[0]![4]);
   });
 
   it('reuses the key when the sheet is reopened for an unchanged closing after a failed submit', async () => {
@@ -216,7 +216,7 @@ describe('register flows', () => {
     await submitClosing();
     fireEvent.keyDown(window, { key: 'Escape' });
     await submitClosing();
-    const keys = submitCalls(api).map((c) => c[5]);
+    const keys = submitCalls(api).map((c) => c[6]);
     expect(keys).toHaveLength(2);
     expect(keys[1]).toBe(keys[0]);
   });
@@ -231,8 +231,8 @@ describe('register flows', () => {
     await submitClosing();
     const calls = submitCalls(api);
     expect(calls).toHaveLength(2);
-    expect(calls[1]![3]).toEqual(calls[0]![3]);
-    expect(calls[1]![5]).not.toBe(calls[0]![5]);
+    expect(calls[1]![4]).toEqual(calls[0]![4]);
+    expect(calls[1]![6]).not.toBe(calls[0]![6]);
   });
 
   it('an expired session sends the cashier to sign in; the closing is still there after signing in', async () => {

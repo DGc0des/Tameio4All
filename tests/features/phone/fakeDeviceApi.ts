@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import { juiceBarPreset } from '../../../src/core/presets';
-import type { LiveChannel, LiveFieldEvent, LiveHandlers, LiveStatus } from '../../../src/data/remote/live';
-import type { FieldKey, ServerField, Snapshot } from '../../../src/features/register/live/fields';
+import type { ClosingStartedEvent, LiveChannel, LiveFieldEvent, LiveHandlers, LiveStatus } from '../../../src/data/remote/live';
+import type { CashMode, FieldKey, ServerField, Snapshot, SubmitInfo } from '../../../src/features/register/live/fields';
 import type { DResult, DeviceApi, DeviceError, StaffSession } from '../../../src/data/remote/deviceApi';
 
 export const ok = <T,>(data: T): Promise<DResult<T>> => Promise.resolve({ ok: true, data });
@@ -21,7 +21,8 @@ export interface FakeLive extends LiveChannel {
   setFocus: ReturnType<typeof vi.fn<(key: FieldKey | null) => void>>;
   close: ReturnType<typeof vi.fn<() => void>>;
   emitField(f: LiveFieldEvent): void;
-  emitSubmitted(s: { closingId: string; staffName: string; at: string }): void;
+  emitSubmitted(s: SubmitInfo): void;
+  emitClosingStarted(e: ClosingStartedEvent): void;
   emitPresence(p: { name: string; focus: FieldKey | null }[]): void;
   emitStatus(s: LiveStatus): void;
 }
@@ -33,6 +34,7 @@ export function fakeLive(h: LiveHandlers): FakeLive {
     close: vi.fn(() => { closed = true; }),
     emitField: guard(h.onField),
     emitSubmitted: guard(h.onSubmitted),
+    emitClosingStarted: guard(h.onClosingStarted),
     emitPresence: guard(h.onPresence),
     emitStatus: guard(h.onStatus),
   };
@@ -45,6 +47,10 @@ export function fakeLive(h: LiveHandlers): FakeLive {
  */
 export interface FakeServer {
   businessDate: string;
+  /** The live closing of the day (start_next_closing moves it on, emptying the fields). */
+  closingNo: number;
+  closingsPlanned: number;
+  cashMode: CashMode;
   revision: number;
   fields: Record<FieldKey, ServerField>;
   lastSubmit: Snapshot['lastSubmit'];
@@ -58,12 +64,15 @@ export interface FakeServer {
   snapshot(): Snapshot;
   setField: DeviceApi['setField'];
   submit: DeviceApi['submit'];
+  startNextClosing: DeviceApi['startNextClosing'];
   live: DeviceApi['live'];
   /** Open channels right now. */
   openChannels(): number;
 }
 
-export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'config' | 'names' | 'staffIds' | 'at'>> = {}): FakeServer {
+export function fakeServer(
+  init: Partial<Pick<FakeServer, 'businessDate' | 'config' | 'names' | 'staffIds' | 'at' | 'closingsPlanned' | 'cashMode'>> = {},
+): FakeServer {
   type Conn = { live: FakeLive; name: string; focus: FieldKey | null; open: boolean };
   const conns = new Set<Conn>();
   const later = (fn: () => void) => queueMicrotask(fn);
@@ -74,6 +83,9 @@ export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'conf
 
   const server: FakeServer = {
     businessDate: init.businessDate ?? FAKE_DATE,
+    closingNo: 1,
+    closingsPlanned: init.closingsPlanned ?? 1,
+    cashMode: init.cashMode ?? 'separate',
     revision: 0,
     fields: {},
     lastSubmit: null,
@@ -82,16 +94,20 @@ export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'conf
     staffIds: init.staffIds ?? { 'token-1': 'staff-maria', 'token-2': 'staff-nikos' },
     at: init.at ?? '2026-11-07T19:42:00.000Z',
     snapshot: () => ({
-      id: 'oc-1',
+      id: `oc-${server.closingNo}`,
       businessDate: server.businessDate,
       configId: FAKE_CONFIG_ID,
       config: server.config,
       revision: server.revision,
+      closingNo: server.closingNo,
+      closingsPlanned: server.closingsPlanned,
+      cashMode: server.cashMode,
       lastSubmit: server.lastSubmit,
       fields: structuredClone(server.fields),
     }),
-    setField(token, businessDate, key, value, baseVersion) {
+    setField(token, businessDate, closingNo, key, value, baseVersion) {
       if (businessDate !== server.businessDate) return fail({ code: 'wrong_day' });
+      if (closingNo !== server.closingNo) return fail({ code: 'wrong_closing' });
       const current = server.fields[key];
       if (baseVersion !== null && (current?.version ?? 0) !== baseVersion) {
         return fail({ code: 'stale', current: current ?? { key, value: null, version: 0, updatedByName: '', updatedAt: '' } });
@@ -108,19 +124,37 @@ export function fakeServer(init: Partial<Pick<FakeServer, 'businessDate' | 'conf
       const field: ServerField = { key, value: stored, version, updatedByName: server.names[token] ?? '?', updatedAt: server.at };
       server.fields[key] = field;
       later(() => {
-        for (const c of conns) c.live.emitField({ ...structuredClone(field), revision, businessDate });
+        for (const c of conns) c.live.emitField({ ...structuredClone(field), revision, businessDate, closingNo });
       });
       return ok({ version, revision, value: structuredClone(stored) });
     },
-    submit(token, _configId, businessDate, _inputs, revision) {
+    submit(token, _configId, businessDate, closingNo, _inputs, revision) {
       if (businessDate !== server.businessDate) return fail({ code: 'wrong_day' });
+      if (closingNo !== server.closingNo) return fail({ code: 'wrong_closing' });
       if (revision !== server.revision) return fail({ code: 'draft_changed', revision: server.revision });
-      const info = { closingId: `closing-${server.revision}`, staffName: server.names[token] ?? '?', at: server.at, revision: server.revision };
+      const info: SubmitInfo = {
+        closingId: `closing-${server.closingNo}-${server.revision}`, staffName: server.names[token] ?? '?', at: server.at, revision: server.revision,
+        closingNo: server.closingNo,
+      };
       server.lastSubmit = info;
       later(() => {
         for (const c of conns) c.live.emitSubmitted(info);
       });
       return ok({ closingId: info.closingId, repeat: false });
+    },
+    startNextClosing(_token, businessDate, closingNo) {
+      if (businessDate !== server.businessDate) return fail({ code: 'wrong_day' });
+      if (closingNo !== server.closingNo + 1) return fail({ code: 'wrong_closing' });
+      if (server.lastSubmit === null || server.lastSubmit.revision !== server.revision) return fail({ code: 'not_submitted' });
+      if (closingNo > server.closingsPlanned) return fail({ code: 'no_more_closings' });
+      server.closingNo = closingNo;
+      server.revision = 0;
+      server.fields = {};
+      server.lastSubmit = null;
+      later(() => {
+        for (const c of conns) c.live.emitClosingStarted({ businessDate, closingNo });
+      });
+      return ok(server.snapshot());
     },
     live(_shopId, me, h) {
       const live = fakeLive(h);
@@ -174,6 +208,7 @@ export function fakeDeviceApi(overrides: Partial<DeviceApi> = {}, server: FakeSe
     submit: vi.fn<DeviceApi['submit']>((...a) => server.submit(...a)),
     suggestionData: vi.fn(() => ok([])),
     getOpenClosing: vi.fn(() => ok(server.snapshot())),
+    startNextClosing: vi.fn<DeviceApi['startNextClosing']>((...a) => server.startNextClosing(...a)),
     setField: vi.fn<DeviceApi['setField']>((...a) => server.setField(...a)),
     live: vi.fn<DeviceApi['live']>((...a) => server.live(...a)),
   };

@@ -113,7 +113,7 @@ describe('applyLocalEdit', () => {
 
 describe('summarizeOpen / openInputs', () => {
   const open = (fields: Snapshot['fields'], cfg: unknown = config): Snapshot => ({
-    id: 'o', businessDate: '2026-11-09', configId: 'cfg1', config: cfg, revision: 3, lastSubmit: null, fields,
+    id: 'o', businessDate: '2026-11-09', configId: 'cfg1', config: cfg, revision: 3, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields,
   });
   it('matches the same numbers as stored inputs', () => {
     const f = { 'd:10000': { key: 'd:10000', value: { text: '300', mode: 'amount' }, version: 1, updatedByName: '', updatedAt: '' } };
@@ -131,7 +131,7 @@ describe('weekCells', () => {
   const MON = '2026-11-09';
   const current = { id: 'v1', kind: 'staff' as const, authorName: 'ΜΑΡΙΑ', createdAt: '2026-11-09T21:00:00Z', configId: 'cfg1', inputs: inputs2, correctsId: null };
   const submittedDay = (businessDate: string): HistoryDay => ({ status: 'submitted', businessDate, current, versionCount: 1 });
-  const open: Snapshot = { id: 'o', businessDate: '2026-11-10', configId: 'cfg1', config, revision: 1, lastSubmit: null, fields: {} };
+  const open: Snapshot = { id: 'o', businessDate: '2026-11-10', configId: 'cfg1', config, revision: 1, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {} };
   const unsubmittedDay = (businessDate: string): HistoryDay => ({ status: 'unsubmitted', businessDate, open: { ...open, businessDate } });
   const listOf = (today: string, days: HistoryDay[]): HistoryList => ({ today, from: '2026-10-13', to: today, configs: {}, days });
 

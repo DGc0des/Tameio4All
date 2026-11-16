@@ -99,7 +99,17 @@ export interface SubmitInfo {
   at: string;
   /** The open closing's revision at that submit; absent on rows from before 20261111000003. */
   revision?: number;
+  /** Which closing of the day was submitted; absent from an older server (= closing 1). */
+  closingNo?: number;
 }
+
+/** What happens to the cash at each closing of a multi-closing day (stage 5). */
+export type CashMode = 'separate' | 'running';
+
+/** A day has closings 1..MAX_CLOSINGS (SQL twin: the closing_no / closings_per_day checks). */
+export const MAX_CLOSINGS = 6;
+export const isClosingNo = (x: unknown): x is number => typeof x === 'number' && Number.isInteger(x) && x >= 1 && x <= MAX_CLOSINGS;
+export const isCashMode = (x: unknown): x is CashMode => x === 'separate' || x === 'running';
 
 export interface Snapshot {
   id: string;
@@ -107,9 +117,21 @@ export interface Snapshot {
   configId: string;
   config: unknown;
   revision: number;
+  /** Which closing of the business day this is (1..6). Data from before stage 5 reads as 1. */
+  closingNo: number;
+  /** The day's planned number of closings, pinned at its first closing (1 before stage 5). */
+  closingsPlanned: number;
+  /** The day's cash mode, pinned with the plan ('separate' before stage 5). */
+  cashMode: CashMode;
   lastSubmit: SubmitInfo | null;
   fields: Record<FieldKey, ServerField>;
 }
+
+/** Same business date and same closing number. */
+export const sameClosing = (
+  a: { businessDate: string; closingNo: number },
+  b: { businessDate: string; closingNo: number },
+): boolean => a.businessDate === b.businessDate && a.closingNo === b.closingNo;
 
 /** Someone changed the live closing after its last Υποβολή (unknown for an old submit without a revision). */
 export const changedSinceSubmit = (s: Snapshot): boolean =>
@@ -134,6 +156,8 @@ export interface PendingEdit {
   key: FieldKey;
   value: unknown;
   businessDate: string;
+  /** The closing of `businessDate` it was typed in (the snapshot's); stored before stage 5 → 1. */
+  closingNo: number;
   baseVersion: number | null;
   queuedOffline: boolean;
   seq: number;

@@ -1,11 +1,17 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
-import { parseKey, type FieldAck, type FieldKey, type ServerField, type Snapshot, type SubmitInfo } from '../../features/register/live/fields';
+import { isIsoDate } from '../../app/dates';
+import {
+  isCashMode, isClosingNo, parseKey, type CashMode, type FieldAck, type FieldKey, type ServerField, type Snapshot, type SubmitInfo,
+} from '../../features/register/live/fields';
 
 export type LiveStatus = 'connecting' | 'live' | 'offline';
-export type LiveFieldEvent = ServerField & { revision: number; businessDate: string };
+export type LiveFieldEvent = ServerField & { revision: number; businessDate: string; closingNo: number };
+export type ClosingStartedEvent = { businessDate: string; closingNo: number };
 export interface LiveHandlers {
   onField(f: LiveFieldEvent): void;
   onSubmitted(s: SubmitInfo): void;
+  /** A cashier started the next closing of the day (`closing_started` broadcast). */
+  onClosingStarted(e: ClosingStartedEvent): void;
   onPresence(p: { name: string; focus: FieldKey | null }[]): void;
   onStatus(s: LiveStatus): void;
 }
@@ -19,10 +25,17 @@ const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !
 const isStr = (x: unknown): x is string => typeof x === 'string';
 const isInt = (x: unknown): x is number => typeof x === 'number' && Number.isSafeInteger(x);
 
-function parseSubmitInfo(x: unknown): SubmitInfo | null {
+/**
+ * A closing number sent by the server: absent (an older server) → 1; anything but an integer 1..6 → null.
+ */
+const closingNoOf = (x: unknown): number | null => (x === undefined || x === null ? 1 : isClosingNo(x) ? x : null);
+
+/** `last_submit` / the `submitted` broadcast. `closingNo` is carried only when the server sent a valid one. */
+export function parseSubmitInfo(x: unknown): SubmitInfo | null {
   if (!isObj(x) || !isStr(x.closing_id) || !isStr(x.staff_name) || !isStr(x.at)) return null;
   const info: SubmitInfo = { closingId: x.closing_id, staffName: x.staff_name, at: x.at };
   if (isInt(x.revision)) info.revision = x.revision;
+  if (isClosingNo(x.closing_no)) info.closingNo = x.closing_no;
   return info;
 }
 
@@ -46,12 +59,20 @@ export function parseSnapshot(x: unknown): Snapshot | null {
     if (lastSubmit === null) return null;
   }
   if (x.fields !== null && x.fields !== undefined && !Array.isArray(x.fields)) return null;
+  // Stage 5: absent keys (an older server) read as closing 1 of a 1-closing 'separate' day.
+  const closingNo = closingNoOf(x.closing_no);
+  const closingsPlanned = closingNoOf(x.closings_planned);
+  const cashMode: CashMode | null = x.cash_mode === undefined || x.cash_mode === null ? 'separate' : isCashMode(x.cash_mode) ? x.cash_mode : null;
+  if (closingNo === null || closingsPlanned === null || cashMode === null) return null;
   const fields: Snapshot['fields'] = {};
   for (const raw of (x.fields ?? []) as unknown[]) {
     const f = parseServerField(raw);
     if (f) fields[f.key] = f;
   }
-  return { id: x.id, businessDate: x.business_date, configId: x.config_id, config: x.config, revision: x.revision, lastSubmit, fields };
+  return {
+    id: x.id, businessDate: x.business_date, configId: x.config_id, config: x.config, revision: x.revision,
+    closingNo, closingsPlanned, cashMode, lastSubmit, fields,
+  };
 }
 
 /**
@@ -75,10 +96,19 @@ export function parseStaleCurrent(key: FieldKey, x: unknown): ServerField | null
   };
 }
 
-function parseFieldBroadcast(x: unknown): LiveFieldEvent | null {
+/** A `field` broadcast; `closing_no` absent (an older server) → 1. */
+export function parseFieldBroadcast(x: unknown): LiveFieldEvent | null {
   if (!isObj(x) || !isInt(x.revision) || !isStr(x.business_date)) return null;
+  const closingNo = closingNoOf(x.closing_no);
+  if (closingNo === null) return null;
   const f = parseServerField(x);
-  return f ? { ...f, revision: x.revision, businessDate: x.business_date } : null;
+  return f ? { ...f, revision: x.revision, businessDate: x.business_date, closingNo } : null;
+}
+
+/** A `closing_started` broadcast: `{business_date, closing_no}`, both required. */
+export function parseClosingStarted(x: unknown): ClosingStartedEvent | null {
+  if (!isObj(x) || !isStr(x.business_date) || !isIsoDate(x.business_date) || !isClosingNo(x.closing_no)) return null;
+  return { businessDate: x.business_date, closingNo: x.closing_no };
 }
 
 const newPresenceKey = (): string =>
@@ -184,6 +214,11 @@ export function openShopChannel(client: SupabaseClient, shopId: string, me: { na
       if (closed) return;
       const s = parseSubmitInfo(msg.payload);
       if (s) h.onSubmitted(s);
+    });
+    mine.on('broadcast', { event: 'closing_started' }, (msg: { payload?: unknown }) => {
+      if (dead()) return;
+      const e = parseClosingStarted(msg.payload);
+      if (e) h.onClosingStarted(e);
     });
     mine.on('presence', { event: 'sync' }, () => {
       if (closed) return;

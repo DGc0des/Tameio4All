@@ -28,6 +28,12 @@ export type DeviceError =
   | { code: 'draft_changed'; revision: number }
   | { code: 'bad_inputs' }
   | { code: 'idempotency_conflict' }
+  /** The write/submit named a closing that is no longer the live one (the next closing started). */
+  | { code: 'wrong_closing' }
+  /** start_next_closing: the live closing is not submitted, or changed since its Υποβολή. */
+  | { code: 'not_submitted' }
+  /** start_next_closing: the day's planned closings are all started. */
+  | { code: 'no_more_closings' }
   | { code: 'network' }
   | { code: 'unknown'; detail: string };
 
@@ -71,6 +77,7 @@ export interface DeviceApi {
     token: string,
     configId: string,
     businessDate: string,
+    closingNo: number,
     inputs: ClosingInputs,
     revision: number,
     idempotencyKey: string,
@@ -83,7 +90,12 @@ export interface DeviceApi {
    * Writes one field. baseVersion null = last-write-wins; a mismatch is `stale` (carries the current field).
    * The ack carries the value the server stored (`FieldAck.value`).
    */
-  setField(token: string, businessDate: string, key: FieldKey, value: unknown, baseVersion: number | null): Promise<DResult<FieldAck>>;
+  setField(token: string, businessDate: string, closingNo: number, key: FieldKey, value: unknown, baseVersion: number | null): Promise<DResult<FieldAck>>;
+  /**
+   * Starts closing `closingNo` of `businessDate` (the live one's number + 1) and returns its snapshot.
+   * `not_submitted` / `no_more_closings` / `wrong_closing` are expected refusals.
+   */
+  startNextClosing(token: string, businessDate: string, closingNo: number): Promise<DResult<Snapshot>>;
   /** Realtime channel for the shop (broadcasts + presence). */
   live(shopId: string, me: { name: string }, h: LiveHandlers): LiveChannel;
 }
