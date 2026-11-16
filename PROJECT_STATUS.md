@@ -290,6 +290,12 @@ Test-only fix `3f614be`: two pre-existing SQL test bugs (`100` T9 assumed every 
 | L101 | `submit_closing` accepts the same expense id twice in one `inputs`; amounts in a submit are still not proven equal to the live fields (accepted trust) | open |
 | L102 | Deferred minors: `check_config` accepts a missing `maxExpenses` key (read as 0) but rejects JSON `5.0`/`30.0` that TS accepts; `SignInScreen` imports `PIN_LENGTH` from `owner/model`; `020` T12 checks `sqlerrm` only; a duplicate staff name at exactly 100 staff reports `too_many_staff`; `130` lacks deactivated-staff/stale-date token cases; `T-M40-5` does not assert the repeat's `closing_id`; `070` T7 and `090` lost some cross-cashier / expense-line coverage; historical specs still say 4 digits | open |
 
+## Field report 2026-11-16 (live closing offline while typing)
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| H25 | Entering a closing showed «Εκτός σύνδεσης» and the boxes stopped syncing. Every box focus and blur sent a presence `track()` (tabbing = 2 per box), so quick entry hit Supabase's per-client presence limit; the server closed the channel (`ClientPresenceRateLimitReached` in the dev realtime logs, 2026-11-15 23:48 UTC). realtime-js never rejoins a server-closed channel, so `openShopChannel` stayed `offline` for good, and the engine sends writes only while live: every edit after that sat in the queue | `live.ts`: presence throttled to one track per `PRESENCE_MIN_INTERVAL_MS` (1 s), latest focus sent at the end of the window, an unchanged focus not sent; a channel closed by the server is replaced by a fresh one after `REOPEN_AFTER_CLOSE_MS` (10 s), and the dead channel's late callbacks are ignored. Tests in liveRemote «presence throttle and server close» | fixed — not verified on a real device |
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped
@@ -320,6 +326,9 @@ https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
 CI now runs the production build (`npm run build`) as well, after test.
 
 ## Not verified
+- H25 (presence throttle + reopen after a server close): unit tests only. Not yet checked on a real phone: fast entry
+  across many boxes stays «live», no new `ClientPresenceRateLimitReached` in the realtime logs, and a forced server close
+  comes back live in ~10 s. The exact per-client limit is not documented; 1 s was chosen with margin.
 - Review fixes 2026-11-11 (M38, L87–L89), NOT verified: the 15 s timeout has only run against fakes — not on a real
   phone with a stalled network (devtools throttling "offline after connect", or a captive Wi-Fi), and not that
   supabase-js surfaces the timeout to `mapDeviceError`/`mapError` as `Error: request_timeout` / `AuthRetryableFetchError`
