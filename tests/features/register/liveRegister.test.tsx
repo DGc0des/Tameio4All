@@ -207,7 +207,9 @@ describe('phones on the shared live closing', () => {
     fireEvent.click(barSubmit(a));
     await tapSheetSubmit();
     await settle();
-    expect((await b.api.startNextClosing('token-2', '2026-11-07', 2)).ok).toBe(true);
+    expect((await b.api.startNextClosing('token-2', '2026-11-07', 2)).ok === false).toBe(true); // 2 is not the live one
+    const started = await b.api.startNextClosing('token-2', '2026-11-07', 1);
+    expect(started.ok && started.data.closingNo).toBe(2);
     await settle();
     expect(field(a, '100€').value).toBe('');
     typeAndLeave(a, '100€', '300');
@@ -434,5 +436,45 @@ describe('a signed-out phone', () => {
     await settle();
     expect(api.live).not.toHaveBeenCalled();
     expect(api.getOpenClosing).not.toHaveBeenCalled();
+  });
+});
+
+describe('fake start_next_closing (matches the server: closingNo = the live closing)', () => {
+  const D = '2026-11-07';
+  const submitted = (s: FakeServer) => { s.lastSubmit = { closingId: 'x', staffName: 'Μ', at: 't', revision: s.revision }; };
+
+  it('check order: repeat → wrong_closing → no_more_closings → not_submitted', async () => {
+    const s = fakeServer({ closingsPlanned: 2 });
+    expect(await s.startNextClosing('token-1', D, 2)).toEqual({ ok: false, error: { code: 'wrong_closing' } });
+    expect(await s.startNextClosing('token-1', D, 1)).toEqual({ ok: false, error: { code: 'not_submitted' } });
+    submitted(s);
+    const r = await s.startNextClosing('token-1', D, 1);
+    expect(r.ok && [r.data.closingNo, r.data.revision, r.data.lastSubmit]).toEqual([2, 0, null]);
+    const again = await s.startNextClosing('token-1', D, 1); // a repeat
+    expect(again.ok && again.data.closingNo).toBe(2);
+    submitted(s);
+    expect(await s.startNextClosing('token-1', D, 2)).toEqual({ ok: false, error: { code: 'no_more_closings' } });
+  });
+
+  it("'running' carries the visible expense lines over at version 1; 'separate' starts empty", async () => {
+    for (const cashMode of ['running', 'separate'] as const) {
+      const s = fakeServer({ closingsPlanned: 3, cashMode });
+      await s.setField('token-1', D, 1, 'd:10000', { text: '5', mode: 'amount' }, null);
+      await s.setField('token-1', D, 1, 'e:a', { addedBy: { kind: 'owner' }, removed: false, order: 1 }, null);
+      await s.setField('token-1', D, 1, 'e:a:d', { text: 'Φρούτα' }, null);
+      await s.setField('token-1', D, 1, 'e:a:a', { text: '3' }, null);
+      await s.setField('token-1', D, 1, 'e:a:a', { text: '4' }, null);
+      await s.setField('token-1', D, 1, 'e:b', { addedBy: { kind: 'owner' }, removed: true, order: 2 }, null);
+      await s.setField('token-1', D, 1, 'e:b:d', { text: 'x' }, null);
+      submitted(s);
+      const r = await s.startNextClosing('token-1', D, 1);
+      if (!r.ok) throw new Error('start failed');
+      if (cashMode === 'running') {
+        expect(Object.keys(r.data.fields).sort()).toEqual(['e:a', 'e:a:a', 'e:a:d']);
+        expect(r.data.fields['e:a:a']).toMatchObject({ value: { text: '4' }, version: 1 });
+      } else {
+        expect(r.data.fields).toEqual({});
+      }
+    }
   });
 });

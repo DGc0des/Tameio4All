@@ -142,17 +142,29 @@ export function fakeServer(
       });
       return ok({ closingId: info.closingId, repeat: false });
     },
+    // Like start_next_closing: `closingNo` is the live closing the phone shows; it starts closingNo + 1.
     startNextClosing(_token, businessDate, closingNo) {
       if (businessDate !== server.businessDate) return fail({ code: 'wrong_day' });
-      if (closingNo !== server.closingNo + 1) return fail({ code: 'wrong_closing' });
+      if (closingNo >= 1 && server.closingNo === closingNo + 1) return ok(server.snapshot()); // a repeat
+      if (closingNo !== server.closingNo) return fail({ code: 'wrong_closing' });
+      if (closingNo >= server.closingsPlanned) return fail({ code: 'no_more_closings' });
       if (server.lastSubmit === null || server.lastSubmit.revision !== server.revision) return fail({ code: 'not_submitted' });
-      if (closingNo > server.closingsPlanned) return fail({ code: 'no_more_closings' });
-      server.closingNo = closingNo;
+      const next: Record<FieldKey, ServerField> = {};
+      if (server.cashMode === 'running') {
+        // The visible expense lines (meta, description, amount) carry over at version 1; boxes start empty.
+        for (const [key, f] of Object.entries(server.fields)) {
+          const m = /^(e:[A-Za-z0-9-]{1,64})(:[da])?$/.exec(key);
+          const meta = m ? (server.fields[m[1]!]?.value as { removed?: unknown } | undefined) : undefined;
+          if (m && meta?.removed === false) next[key] = { ...structuredClone(f), version: 1 };
+        }
+      }
+      server.closingNo = closingNo + 1;
       server.revision = 0;
-      server.fields = {};
+      server.fields = next;
       server.lastSubmit = null;
+      const started = server.closingNo;
       later(() => {
-        for (const c of conns) c.live.emitClosingStarted({ businessDate, closingNo });
+        for (const c of conns) c.live.emitClosingStarted({ businessDate, closingNo: started });
       });
       return ok(server.snapshot());
     },

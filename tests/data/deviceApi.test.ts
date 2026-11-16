@@ -159,14 +159,14 @@ describe('createDeviceApi', () => {
     });
   });
 
-  it('startNextClosing calls start_next_closing and parses the new closing', async () => {
+  it('startNextClosing sends the live closing number and parses the started (next) closing', async () => {
     const closing = {
       id: 'oc2', business_date: '2026-11-17', config_id: 'cfg', config: {}, revision: 0, last_submit: null, fields: [],
       closing_no: 2, closings_planned: 3, cash_mode: 'running',
     };
     const s = stub({ rpc: { start_next_closing: { data: { ok: true, closing }, error: null } } });
-    const r = await createDeviceApi(s.client).startNextClosing('tok', '2026-11-17', 2);
-    expect(s.rpc).toHaveBeenCalledWith('start_next_closing', { p_token: 'tok', p_business_date: '2026-11-17', p_closing_no: 2 });
+    const r = await createDeviceApi(s.client).startNextClosing('tok', '2026-11-17', 1);
+    expect(s.rpc).toHaveBeenCalledWith('start_next_closing', { p_token: 'tok', p_business_date: '2026-11-17', p_closing_no: 1 });
     expect(r).toEqual({
       ok: true,
       data: {
@@ -175,10 +175,10 @@ describe('createDeviceApi', () => {
       },
     });
     const junk = stub({ rpc: { start_next_closing: { data: { ok: true, closing: { ...closing, closing_no: 9 } }, error: null } } });
-    expect(await createDeviceApi(junk.client).startNextClosing('t', 'd', 2)).toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
+    expect(await createDeviceApi(junk.client).startNextClosing('t', 'd', 1)).toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
     for (const code of ['not_submitted', 'no_more_closings', 'wrong_closing']) {
       const refused = stub({ rpc: { start_next_closing: { data: { ok: false, error: code }, error: null } } });
-      expect(await createDeviceApi(refused.client).startNextClosing('t', 'd', 2)).toEqual({ ok: false, error: { code } });
+      expect(await createDeviceApi(refused.client).startNextClosing('t', 'd', 1)).toEqual({ ok: false, error: { code } });
     }
   });
 

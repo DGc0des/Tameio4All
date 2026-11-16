@@ -109,6 +109,7 @@ describe('closing number (stage 5)', () => {
   it('parseSubmitInfo carries closingNo when present', () => {
     expect(parseSubmitInfo({ closing_id: 'c', staff_name: 'Μ', at: 't', closing_no: 2 })).toEqual({ closingId: 'c', staffName: 'Μ', at: 't', closingNo: 2 });
     expect(parseSubmitInfo({ closing_id: 'c', staff_name: 'Μ', at: 't' })).toEqual({ closingId: 'c', staffName: 'Μ', at: 't' });
+    for (const bad of [9, 0, 1.5, '2']) expect(parseSubmitInfo({ closing_id: 'c', staff_name: 'Μ', at: 't', closing_no: bad })).toBeNull();
   });
 });
 

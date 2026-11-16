@@ -92,8 +92,9 @@ export interface DeviceApi {
    */
   setField(token: string, businessDate: string, closingNo: number, key: FieldKey, value: unknown, baseVersion: number | null): Promise<DResult<FieldAck>>;
   /**
-   * Starts closing `closingNo` of `businessDate` (the live one's number + 1) and returns its snapshot.
-   * `not_submitted` / `no_more_closings` / `wrong_closing` are expected refusals.
+   * `closingNo` = the live closing the phone shows; starts closing `closingNo + 1` of `businessDate` and
+   * returns its snapshot (a repeat returns the already started one). `wrong_closing` (not the live one),
+   * `no_more_closings` and `not_submitted` are expected refusals.
    */
   startNextClosing(token: string, businessDate: string, closingNo: number): Promise<DResult<Snapshot>>;
   /** Realtime channel for the shop (broadcasts + presence). */

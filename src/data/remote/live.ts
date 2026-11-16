@@ -30,9 +30,10 @@ const isInt = (x: unknown): x is number => typeof x === 'number' && Number.isSaf
  */
 const closingNoOf = (x: unknown): number | null => (x === undefined || x === null ? 1 : isClosingNo(x) ? x : null);
 
-/** `last_submit` / the `submitted` broadcast. `closingNo` is carried only when the server sent a valid one. */
+/** `last_submit` / the `submitted` broadcast. `closing_no` absent → no closingNo; present but invalid → null. */
 export function parseSubmitInfo(x: unknown): SubmitInfo | null {
   if (!isObj(x) || !isStr(x.closing_id) || !isStr(x.staff_name) || !isStr(x.at)) return null;
+  if (x.closing_no !== undefined && x.closing_no !== null && !isClosingNo(x.closing_no)) return null;
   const info: SubmitInfo = { closingId: x.closing_id, staffName: x.staff_name, at: x.at };
   if (isInt(x.revision)) info.revision = x.revision;
   if (isClosingNo(x.closing_no)) info.closingNo = x.closing_no;
