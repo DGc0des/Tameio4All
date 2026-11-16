@@ -94,14 +94,18 @@ do $$
 declare
   v_shop uuid := current_setting('t.shop_a')::uuid;
   c record;
+  v_accepted boolean;
 begin
   for c in select * from (values (0, 'separate'), (7, 'separate'), (3, 'x'), (null::int, 'separate'), (2, null::text)) v(n, m) loop
+    -- The "accepted" raise sits outside the handler, so an accepted bad plan fails with its own message.
+    v_accepted := false;
     begin
       perform public.set_closing_plan(v_shop, c.n, c.m);
-      raise exception 'T2 set_closing_plan(%, %) accepted', c.n, c.m;
+      v_accepted := true;
     exception when others then
       if sqlerrm <> 'bad_closing_plan' then raise exception 'T2 set_closing_plan(%, %) wrong error: %', c.n, c.m, sqlerrm; end if;
     end;
+    if v_accepted then raise exception 'T2 set_closing_plan(%, %) accepted', c.n, c.m; end if;
   end loop;
 end $$;
 reset role;
@@ -269,6 +273,11 @@ begin
   r := public.submit_closing(tok, cfg, bd, current_setting('t.good')::jsonb, 1, 'k-2a', 2);
   if (r ->> 'ok')::boolean is not true or (r ->> 'repeat')::boolean then raise exception 'T4 submit of closing 2: %', r; end if;
   perform set_config('t.c2', r ->> 'closing_id', true);
+  -- M1: the same key re-sent naming another closing is not a repeat of the stored one.
+  r := public.submit_closing(tok, cfg, bd, current_setting('t.good')::jsonb, 1, 'k-2a', 1);
+  if r is distinct from jsonb_build_object('ok', false, 'error', 'idempotency_conflict') then raise exception 'T4 same key, other closing: %', r; end if;
+  r := public.submit_closing(tok, cfg, bd, current_setting('t.good')::jsonb, 1, 'k-2a', 2);
+  if r is distinct from jsonb_build_object('ok', true, 'closing_id', current_setting('t.c2')::uuid, 'repeat', true) then raise exception 'T4 same key, same closing: %', r; end if;
 end $$;
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);

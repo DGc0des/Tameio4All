@@ -231,6 +231,9 @@ begin
   if p_business_date = v_today and v_oc.id is not null then
     v_live := v_oc.id = (private.open_closing_for(p_shop_id)).id;
   end if;
+  -- Today with no open closing row but a current version would fall through the past-day path below: unreachable in
+  -- practice, since a version of (shop, date, closing_no) is only stored by submit_closing (on the live open closing)
+  -- or by this function (a first filing needs v_oc), and open closings are deleted only with their whole shop.
 
   v_cur := private.current_closing(p_shop_id, p_business_date, p_closing_no);
   if v_cur.id is not null then

@@ -261,6 +261,11 @@ begin
     end if;
   end loop;
   if (select count(*) from public.closings) <> n then raise exception 'T6 a refused save stored a row'; end if;
+  -- M7: the guard is per closing. Closing 1's current (s10_1) is not the day's newest row (k6 is), yet a save of
+  -- closing 1 guarded on it lands.
+  r := public.owner_save_closing(shop, bd - 10, cfg, inp, current_setting('t.s10_1')::uuid, 'k6d', p_closing_no => 1);
+  if r ->> 'ok' <> 'true' or r ->> 'repeat' <> 'false' then raise exception 'T6 save of closing 1 on its own current refused: %', r; end if;
+  perform set_config('t.k6d', r ->> 'closing_id', true);
 end $$;
 reset role;
 do $$
@@ -271,8 +276,16 @@ begin
      or c.business_date <> current_setting('t.bd')::date - 10 then
     raise exception 'T6 wrong row: %', to_jsonb(c);
   end if;
-  if (private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date - 10, 1)).id::text is distinct from current_setting('t.s10_1') then
-    raise exception 'T6 closing 1 current changed';
+  -- closing 2's save did not touch closing 1; closing 1's own save (M7) is its new current, correcting s10_1
+  select * into c from public.closings where id = current_setting('t.k6d')::uuid;
+  if c.closing_no <> 1 or c.kind <> 'owner_correction' or c.corrects_closing_id is distinct from current_setting('t.s10_1')::uuid then
+    raise exception 'T6 wrong closing 1 row: %', to_jsonb(c);
+  end if;
+  if (private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date - 10, 1)).id::text is distinct from current_setting('t.k6d') then
+    raise exception 'T6 closing 1 current is not its own save';
+  end if;
+  if (private.current_closing(current_setting('t.shop_a')::uuid, current_setting('t.bd')::date - 10, 2)).id::text is distinct from current_setting('t.k6') then
+    raise exception 'T6 closing 2 current changed by the closing 1 save';
   end if;
 end $$;
 

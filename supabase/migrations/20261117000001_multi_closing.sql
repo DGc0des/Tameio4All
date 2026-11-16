@@ -17,8 +17,8 @@ alter table public.shops
 
 alter table public.open_closings
   add column closing_no int not null default 1 check (closing_no between 1 and 6),
-  add column closings_planned int not null default 1,
-  add column cash_mode text not null default 'separate';
+  add column closings_planned int not null default 1 check (closings_planned between 1 and 6),
+  add column cash_mode text not null default 'separate' check (cash_mode in ('separate', 'running'));
 alter table public.open_closings drop constraint open_closings_shop_id_business_date_key;
 alter table public.open_closings
   add constraint open_closings_shop_date_no_key unique (shop_id, business_date, closing_no);
@@ -34,7 +34,8 @@ create function public.set_closing_plan(p_shop_id uuid, p_count int, p_cash_mode
 language plpgsql security definer set search_path = '' as $$
 begin
   perform private.require_owner(p_shop_id);
-  perform 1 from public.shops where id = p_shop_id for update;
+  -- no key update (like owner_erase_staff): only non-key columns change, so a key-share lock elsewhere is not blocked
+  perform 1 from public.shops where id = p_shop_id for no key update;
   if p_count is null or p_count not between 1 and 6
      or p_cash_mode is null or p_cash_mode not in ('separate', 'running') then
     raise exception 'bad_closing_plan' using errcode = '22023';
@@ -347,7 +348,8 @@ begin
   select * into v_existing from public.closings where shop_id = v_shop and idempotency_key = p_idempotency_key;
   if found then
     if v_existing.inputs = p_inputs and v_existing.staff_id = v_staff
-       and v_existing.config_id = p_config_id and v_existing.business_date = p_business_date then
+       and v_existing.config_id = p_config_id and v_existing.business_date = p_business_date
+       and v_existing.closing_no = p_closing_no then
       return jsonb_build_object('ok', true, 'closing_id', v_existing.id, 'repeat', true);
     end if;
     return jsonb_build_object('ok', false, 'error', 'idempotency_conflict');
@@ -397,7 +399,8 @@ begin
 
   select * into v_existing from public.closings where shop_id = v_shop and idempotency_key = p_idempotency_key;
   if v_existing.inputs = p_inputs and v_existing.staff_id = v_staff
-     and v_existing.config_id = p_config_id and v_existing.business_date = p_business_date then
+     and v_existing.config_id = p_config_id and v_existing.business_date = p_business_date
+     and v_existing.closing_no = p_closing_no then
     return jsonb_build_object('ok', true, 'closing_id', v_existing.id, 'repeat', true);
   end if;
   return jsonb_build_object('ok', false, 'error', 'idempotency_conflict');
