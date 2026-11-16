@@ -101,7 +101,7 @@ export interface OwnerApi {
    * shop's current one is `wrong_day`). `stale` (baseVersion mismatch) is data, not an error: it carries
    * the field's current server state. The ack carries the value the server stored.
    */
-  setTodayField(shopId: string, businessDate: string, key: FieldKey, value: unknown, baseVersion: number | null): Promise<Result<FieldAck | { stale: ServerField }>>;
+  setTodayField(shopId: string, businessDate: string, closingNo: number, key: FieldKey, value: unknown, baseVersion: number | null): Promise<Result<FieldAck | { stale: ServerField }>>;
   /** Submitted and unsubmitted days in a range (null = the server's default: the last 30 days up to its today). */
   listClosings(shopId: string, from: string | null, to: string | null): Promise<Result<HistoryList>>;
   /** Every version of one day, with the configs and staff names needed to read them. */

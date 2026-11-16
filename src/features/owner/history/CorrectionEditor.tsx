@@ -99,6 +99,7 @@ export function CorrectionEditor({ api, shopId, base, expectedCurrentId, onSaved
     setConflict(null);
     const r = await api.saveClosing(shopId, {
       businessDate: base.businessDate, configId: base.configId, inputs: derived.inputs, expectedCurrentId: guard, key: k,
+      closingNo: 1, // stage 5 Task 8 passes the real closing number
     });
     inFlight.current = false;
     if (!mounted.current) return;

@@ -271,7 +271,7 @@ describe('createOwnerApi', () => {
     });
 
     const args = {
-      businessDate: '2026-11-10', configId: 'c1', inputs: { schema: 2 } as never, expectedCurrentId: 'v1', key: 'k1',
+      businessDate: '2026-11-10', configId: 'c1', inputs: { schema: 2 } as never, expectedCurrentId: 'v1', key: 'k1', closingNo: 1,
     };
 
     it('saveClosing calls owner_save_closing with the server parameter names', async () => {
@@ -279,7 +279,7 @@ describe('createOwnerApi', () => {
       expect(await api.saveClosing('s1', args)).toEqual({ ok: true, data: { closingId: 'c', repeat: true } });
       expect(calls).toEqual([[
         'rpc', 'owner_save_closing',
-        { p_shop_id: 's1', p_business_date: '2026-11-10', p_config_id: 'c1', p_inputs: { schema: 2 }, p_expected_current_id: 'v1', p_idempotency_key: 'k1', p_revision: null },
+        { p_shop_id: 's1', p_business_date: '2026-11-10', p_config_id: 'c1', p_inputs: { schema: 2 }, p_expected_current_id: 'v1', p_idempotency_key: 'k1', p_revision: null, p_closing_no: 1 },
       ]]);
     });
 
@@ -298,6 +298,21 @@ describe('createOwnerApi', () => {
         .toEqual({ ok: false, error: { code: 'config_mismatch' } });
       expect(await fake({ data: { ok: true, closing_id: '', repeat: false }, error: null }).api.saveClosing('s1', args))
         .toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
+    });
+
+    it('setTodayField sends p_closing_no and maps a wrong_closing answer', async () => {
+      const { api, calls } = fake({ data: { ok: false, error: 'wrong_closing' }, error: null });
+      expect(await api.setTodayField('s1', '2026-11-10', 2, 'c:wolt', { text: '5' }, 3)).toEqual({ ok: false, error: { code: 'wrong_closing' } });
+      expect(calls).toEqual([[
+        'rpc', 'owner_set_closing_field',
+        { p_shop_id: 's1', p_business_date: '2026-11-10', p_key: 'c:wolt', p_value: { text: '5' }, p_base_version: 3, p_closing_no: 2 },
+      ]]);
+    });
+
+    it('saveClosing sends p_closing_no', async () => {
+      const { api, calls } = fake({ data: { ok: true, closing_id: 'c', repeat: false }, error: null });
+      await api.saveClosing('s1', { ...args, closingNo: 3 });
+      expect((calls[0]![2] as Record<string, unknown>).p_closing_no).toBe(3);
     });
   });
 });

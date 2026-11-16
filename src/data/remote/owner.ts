@@ -190,10 +190,10 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
       const snap = parseSnapshot(j.closing);
       return snap ? { ok: true, data: snap } : { ok: false, error: BAD_RESPONSE };
     },
-    async setTodayField(shopId, businessDate, key, value, baseVersion) {
+    async setTodayField(shopId, businessDate, closingNo, key, value, baseVersion) {
       const r = await run(
         client.rpc('owner_set_closing_field', {
-          p_shop_id: shopId, p_business_date: businessDate, p_key: key, p_value: value, p_base_version: baseVersion,
+          p_shop_id: shopId, p_business_date: businessDate, p_key: key, p_value: value, p_base_version: baseVersion, p_closing_no: closingNo,
         }),
       );
       if (!r.ok) return r;
@@ -228,7 +228,7 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
       const r = await run(
         client.rpc('owner_save_closing', {
           p_shop_id: shopId, p_business_date: args.businessDate, p_config_id: args.configId, p_inputs: args.inputs,
-          p_expected_current_id: args.expectedCurrentId, p_idempotency_key: args.key, p_revision: args.revision ?? null,
+          p_expected_current_id: args.expectedCurrentId, p_idempotency_key: args.key, p_revision: args.revision ?? null, p_closing_no: args.closingNo,
         }),
       );
       if (!r.ok) return r;

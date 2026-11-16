@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatDayEl, formatTimeEl } from '../../app/dates';
+import { closingOfLabel } from '../../app/closingLabel';
 import { randomId } from '../../app/ids';
 import { isShopConfig } from '../../core/config';
 import type { EntryMode } from '../../core/denominations';
@@ -134,7 +135,7 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
     setSaving(true);
     setSaveError(null);
     const r = await api.saveClosing(shopId, {
-      businessDate: snapshot.businessDate, configId: snapshot.configId, inputs,
+      businessDate: snapshot.businessDate, configId: snapshot.configId, closingNo: snapshot.closingNo, inputs,
       expectedCurrentId: expectedOverride?.forSubmit === lastSubmit.closingId ? expectedOverride.id : lastSubmit.closingId, key: saveKey.current.key, revision: snapshot.revision,
     });
     setSaving(false);
@@ -154,6 +155,7 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
     <>
       {banner}
       <p className="sub">{formatDayEl(snapshot.businessDate)}</p>
+      {snapshot.closingsPlanned > 1 && <p className="sub">{closingOfLabel(snapshot.closingNo, snapshot.closingsPlanned)}</p>}
       <p className="sub">
         {lastSubmit ? `Υποβλήθηκε ${formatTimeEl(lastSubmit.at)} · ${lastSubmit.staffName}` : 'Δεν έχει υποβληθεί ακόμα'}
       </p>

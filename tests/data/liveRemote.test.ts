@@ -152,15 +152,15 @@ describe('setField / setTodayField', () => {
 
   it('owner: stale is data, success carries version + revision, bad_field is an error', async () => {
     const stale = rpcClient({ ok: false, error: 'stale', current: { value: { text: '9' }, version: 4, updated_by_name: 'ΝΙΚΟΣ' } });
-    const r1 = await createOwnerApi(stale.client).setTodayField('shop1', '2026-11-07', 'c:wolt', { text: '5' }, 2);
+    const r1 = await createOwnerApi(stale.client).setTodayField('shop1', '2026-11-07', 1, 'c:wolt', { text: '5' }, 2);
     expect(stale.rpc).toHaveBeenCalledWith('owner_set_closing_field', {
-      p_shop_id: 'shop1', p_business_date: '2026-11-07', p_key: 'c:wolt', p_value: { text: '5' }, p_base_version: 2,
+      p_shop_id: 'shop1', p_business_date: '2026-11-07', p_key: 'c:wolt', p_value: { text: '5' }, p_base_version: 2, p_closing_no: 1,
     });
     expect(r1).toEqual({ ok: true, data: { stale: { key: 'c:wolt', value: { text: '9' }, version: 4, updatedByName: 'ΝΙΚΟΣ', updatedAt: '' } } });
-    expect(await createOwnerApi(rpcClient({ ok: true, version: 1, revision: 2, value: { text: '1' } }).client).setTodayField('s', 'd', 'c:a', {}, null)).toEqual({ ok: true, data: { version: 1, revision: 2, value: { text: '1' } } });
-    expect(await createOwnerApi(rpcClient({ ok: false, error: 'wrong_day' }).client).setTodayField('s', 'd', 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'wrong_day' } });
-    expect(await createOwnerApi(rpcClient({ ok: false, error: 'bad_field' }).client).setTodayField('s', 'd', 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'bad_field' } });
-    expect(await createOwnerApi(rpcClient({ ok: false, error: 'weird' }).client).setTodayField('s', 'd', 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'unknown', detail: 'weird' } });
+    expect(await createOwnerApi(rpcClient({ ok: true, version: 1, revision: 2, value: { text: '1' } }).client).setTodayField('s', 'd', 1, 'c:a', {}, null)).toEqual({ ok: true, data: { version: 1, revision: 2, value: { text: '1' } } });
+    expect(await createOwnerApi(rpcClient({ ok: false, error: 'wrong_day' }).client).setTodayField('s', 'd', 1, 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'wrong_day' } });
+    expect(await createOwnerApi(rpcClient({ ok: false, error: 'bad_field' }).client).setTodayField('s', 'd', 1, 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'bad_field' } });
+    expect(await createOwnerApi(rpcClient({ ok: false, error: 'weird' }).client).setTodayField('s', 'd', 1, 'c:a', {}, null)).toEqual({ ok: false, error: { code: 'unknown', detail: 'weird' } });
   });
 
   it('mapError knows the new owner codes', () => {

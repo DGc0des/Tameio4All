@@ -114,7 +114,7 @@ describe('CorrectionEditor', () => {
     type('100€', '4');
     fireEvent.click(saveButton());
     expect(api.saveClosing).toHaveBeenCalledWith(SHOP, {
-      businessDate: DATE, configId: 'cfg1', inputs: expect.anything(), expectedCurrentId: 'v2', key: expect.any(String),
+      businessDate: DATE, configId: 'cfg1', inputs: expect.anything(), expectedCurrentId: 'v2', key: expect.any(String), closingNo: 1,
     });
     const { inputs } = savedArgs(api);
     expect(inputs.schema).toBe(2);
@@ -281,7 +281,7 @@ describe('CorrectionEditor', () => {
     expect(saveButton().disabled).toBe(false);
     fireEvent.click(saveButton());
     expect(api.saveClosing).toHaveBeenCalledWith(SHOP, {
-      businessDate: DATE, configId: 'cfg-open', inputs: expect.anything(), expectedCurrentId: null, key: expect.any(String),
+      businessDate: DATE, configId: 'cfg-open', inputs: expect.anything(), expectedCurrentId: null, key: expect.any(String), closingNo: 1,
     });
     expect(savedArgs(api).inputs.counts).toEqual({ '10000': 2 });
     await waitFor(() => expect(api.closingDay).toHaveBeenCalledTimes(2));

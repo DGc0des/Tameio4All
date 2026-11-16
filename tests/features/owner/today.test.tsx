@@ -72,7 +72,7 @@ describe('TodayScreen', () => {
       await Promise.resolve();
     });
     type('500');
-    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledWith(SHOP, '2026-11-07', 'd:10000', { text: '500', mode: 'amount' }, null));
+    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledWith(SHOP, '2026-11-07', 1, 'd:10000', { text: '500', mode: 'amount' }, null));
   });
 
   it('an edit while connecting is held back, then sent with base version 0 once live', async () => {
@@ -81,7 +81,7 @@ describe('TodayScreen', () => {
     type('500');
     expect(api.setTodayField).not.toHaveBeenCalled();
     act(() => channels[0]!.emitStatus('live'));
-    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledWith(SHOP, '2026-11-07', 'd:10000', { text: '500', mode: 'amount' }, 0));
+    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledWith(SHOP, '2026-11-07', 1, 'd:10000', { text: '500', mode: 'amount' }, 0));
   });
 
   it('a broadcast updates the view', async () => {
@@ -192,8 +192,8 @@ describe('TodayScreen', () => {
   });
 
   describe('«Άλλαξε μετά την υποβολή»', () => {
-    const submitted = (revision: number, submittedAt: number | undefined) =>
-      snap({ revision, lastSubmit: { closingId: 'v2', staffName: 'ΜΑΡΙΑ', at: '2026-11-07T20:30:00Z', ...(submittedAt === undefined ? {} : { revision: submittedAt }) } });
+    const submitted = (revision: number, submittedAt: number | undefined, over: Partial<Snapshot> = {}) =>
+      snap({ ...over, revision, lastSubmit: { closingId: 'v2', staffName: 'ΜΑΡΙΑ', at: '2026-11-07T20:30:00Z', ...(submittedAt === undefined ? {} : { revision: submittedAt }) } });
     const goLive = async (channels: FakeLive[], api: ReturnType<typeof setup>['api']) => {
       act(() => channels[0]!.emitStatus('live'));
       await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(2));
@@ -210,6 +210,37 @@ describe('TodayScreen', () => {
       expect(screen.queryByText(CHANGED_SINCE_SUBMIT)).toBeNull();
     });
 
+    it('shows «2ο κλείσιμο από 3» for plan 3 closing 2, and nothing for a plan of 1', async () => {
+      setup({ todayClosing: vi.fn(() => ok(submitted(4, 3, { closingNo: 2, closingsPlanned: 3 }))) });
+      await loaded();
+      expect(screen.getByText('2ο κλείσιμο από 3')).toBeTruthy();
+      cleanup();
+      setup({ todayClosing: vi.fn(() => ok(submitted(4, 3))) });
+      await loaded();
+      expect(screen.queryByText(/κλείσιμο από/)).toBeNull();
+    });
+
+    it('«Καταχώρηση αλλαγών» sends the live closing number', async () => {
+      const saveClosing = vi.fn((_s: string, _a: unknown) => ok({ closingId: 'v3', repeat: false }));
+      const { api, channels } = setup({ todayClosing: vi.fn(() => ok(submitted(4, 3, { closingNo: 2, closingsPlanned: 3 }))), saveClosing });
+      await loaded();
+      await goLive(channels, api);
+      fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση αλλαγών' }));
+      await waitFor(() => expect(saveClosing).toHaveBeenCalled());
+      expect(saveClosing.mock.calls[0]![1]).toEqual(expect.objectContaining({ closingNo: 2 }));
+    });
+
+    it('a closing_started event loads and shows the next closing', async () => {
+      let n = 2;
+      const todayClosing = vi.fn(() => ok(snap({ closingNo: n, closingsPlanned: 3 })));
+      const { channels } = setup({ todayClosing });
+      await loaded();
+      expect(screen.getByText('2ο κλείσιμο από 3')).toBeTruthy();
+      n = 3;
+      act(() => channels[0]!.emitClosingStarted({ businessDate: '2026-11-07', closingNo: 3 }));
+      expect(await screen.findByText('3ο κλείσιμο από 3')).toBeTruthy();
+    });
+
     it('«Καταχώρηση αλλαγών» saves the live numbers with the live revision, guarded on the last submit', async () => {
       const saveClosing = vi.fn(() => ok({ closingId: 'v3', repeat: false }));
       const { api, channels } = setup({ todayClosing: vi.fn(() => ok(submitted(4, 3))), saveClosing });
@@ -220,7 +251,7 @@ describe('TodayScreen', () => {
       await goLive(channels, api);
       fireEvent.click(save);
       await waitFor(() => expect(saveClosing).toHaveBeenCalledWith(SHOP, {
-        businessDate: '2026-11-07', configId: 'c1', inputs: expect.objectContaining({ schema: 2 }), expectedCurrentId: 'v2', key: 'id-1', revision: 4,
+        businessDate: '2026-11-07', configId: 'c1', inputs: expect.objectContaining({ schema: 2 }), expectedCurrentId: 'v2', key: 'id-1', revision: 4, closingNo: 1,
       }));
       expect(await screen.findByText('Οι αλλαγές καταχωρήθηκαν')).toBeTruthy();
     });

@@ -111,6 +111,7 @@ export function DayScreen({ api, shopId, date, navigate, now, newId = randomId }
     setRevertError(null);
     const r = await api.saveClosing(shopId, {
       businessDate: day.businessDate, configId: selected.configId, inputs: shown.inputs, expectedCurrentId: current.id, key: revertKey,
+      closingNo: 1, // stage 5 Task 8 passes the real closing number
     });
     setReverting(false);
     if (r.ok) {

@@ -225,7 +225,7 @@ describe('DayScreen', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Προβολή' }));
       fireEvent.click(screen.getByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' }));
       await waitFor(() => expect(saveClosing).toHaveBeenCalledWith(SHOP, {
-        businessDate: DATE, configId: 'cfg1', inputs: currentInputs, expectedCurrentId: 'v3', key: 'k1',
+        businessDate: DATE, configId: 'cfg1', inputs: currentInputs, expectedCurrentId: 'v3', key: 'k1', closingNo: 1,
       }));
       await waitFor(() => expect(closingDay).toHaveBeenCalledTimes(2));
       expect(await screen.findByText(/4 υποβολές/)).toBeTruthy();

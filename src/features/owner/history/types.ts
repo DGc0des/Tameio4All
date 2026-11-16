@@ -44,6 +44,8 @@ export interface SaveClosingArgs {
   /** The version the owner saw as current (null: the day has none); a different current → `closing_changed`. */
   expectedCurrentId: string | null;
   key: string;
+  /** The closing of the day the inputs belong to (the live one for today). */
+  closingNo: number;
   /** Today only: the live closing's revision the inputs were derived from (another value → `draft_changed`). */
   revision?: number;
 }

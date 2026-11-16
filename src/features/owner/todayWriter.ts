@@ -11,7 +11,7 @@ export const OWNER_PRESENCE_NAME = 'Ιδιοκτήτης';
  * `detail` is already the Greek owner message (DeviceError cannot carry an OwnerError).
  */
 function toDeviceError(e: OwnerError): DeviceError {
-  if (e.code === 'network' || e.code === 'bad_field' || e.code === 'too_many_expenses' || e.code === 'wrong_day') return { code: e.code };
+  if (e.code === 'network' || e.code === 'bad_field' || e.code === 'too_many_expenses' || e.code === 'wrong_day' || e.code === 'wrong_closing') return { code: e.code };
   return { code: 'unknown', detail: ownerErrorMessage(e) };
 }
 
@@ -29,7 +29,7 @@ export function createTodayWriter(api: OwnerApi, shopId: string): Writer {
       return r.ok ? r : mapFail(r);
     },
     write: async (e) => {
-      const r = await api.setTodayField(shopId, e.businessDate, e.key, e.value, e.baseVersion);
+      const r = await api.setTodayField(shopId, e.businessDate, e.closingNo, e.key, e.value, e.baseVersion);
       if (!r.ok) return mapFail(r);
       if ('stale' in r.data) return { ok: false, error: { code: 'stale', current: r.data.stale } };
       return { ok: true, data: r.data };
