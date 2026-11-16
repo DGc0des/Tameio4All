@@ -220,6 +220,25 @@ describe('createOwnerApi', () => {
     expect(calls).toEqual([['rpc', 'set_day_change_time', { p_shop_id: 's1', p_time: '06:00' }]]);
   });
 
+  it('reads the closing plan from the shop row', async () => {
+    const { api, calls } = fake({ data: [{ closings_per_day: 3, cash_mode: 'running' }], error: null });
+    expect(await api.closingPlan('s1')).toEqual({ ok: true, data: { count: 3, cashMode: 'running' } });
+    expect(calls[0]).toEqual(['from', 'shops']);
+  });
+
+  it('closingPlan: a missing row is not_owner, a bad row is bad_response', async () => {
+    expect(await fake({ data: [], error: null }).api.closingPlan('s1')).toEqual({ ok: false, error: { code: 'not_owner' } });
+    const bad = { ok: false, error: { code: 'unknown', detail: 'bad_response' } };
+    expect(await fake({ data: [{ closings_per_day: 2, cash_mode: 'other' }], error: null }).api.closingPlan('s1')).toEqual(bad);
+    expect(await fake({ data: [{ closings_per_day: 'x', cash_mode: 'separate' }], error: null }).api.closingPlan('s1')).toEqual(bad);
+  });
+
+  it('calls set_closing_plan', async () => {
+    const { api, calls } = fake({ data: null, error: null });
+    expect(await api.setClosingPlan('s1', { count: 2, cashMode: 'separate' })).toEqual({ ok: true, data: undefined });
+    expect(calls).toEqual([['rpc', 'set_closing_plan', { p_shop_id: 's1', p_count: 2, p_cash_mode: 'separate' }]]);
+  });
+
   describe('history', () => {
     const version = { id: 'v1', kind: 'staff', author_name: 'Μ', created_at: 't', config_id: 'c1', inputs: {}, corrects_closing_id: null };
 

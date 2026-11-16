@@ -19,6 +19,12 @@ describe('mapError', () => {
     }
   });
 
+  it('maps the stage 5 closing plan errors', () => {
+    for (const code of ['bad_closing_plan', 'wrong_closing'] as const) {
+      expect(mapError({ message: code, code: '22023' })).toEqual({ code });
+    }
+  });
+
   it('maps the shop deletion confirmation error', () => {
     expect(mapError({ message: 'confirm_mismatch', code: '22023' })).toEqual({ code: 'confirm_mismatch' });
   });

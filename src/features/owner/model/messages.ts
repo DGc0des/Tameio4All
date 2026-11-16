@@ -38,6 +38,10 @@ export function ownerErrorMessage(e: OwnerError): string {
       return 'Το διάστημα δεν είναι έγκυρο (έως 366 ημέρες, «Από» πριν το «Έως»).';
     case 'draft_changed':
       return 'Οι αριθμοί άλλαξαν μόλις τώρα — έλεγξέ τους και πάτα ξανά.';
+    case 'bad_closing_plan':
+      return 'Τα κλεισίματα ανά ημέρα πρέπει να είναι από 1 έως 6.';
+    case 'wrong_closing':
+      return 'Ξεκίνησε νέο κλείσιμο. Η οθόνη ανανεώθηκε.';
     case 'too_many_shops':
       return 'Έφτασες το όριο των 20 καταστημάτων.';
     case 'too_many_staff':

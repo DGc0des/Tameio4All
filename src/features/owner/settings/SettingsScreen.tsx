@@ -10,6 +10,7 @@ import { applySettings, isEditableConfig, type SettingsAction } from '../model/s
 import { ErrorText, type OwnerNavigate } from '../OwnerUi';
 import { useAction } from '../useAction';
 import { DangerZoneCard } from './DangerZoneCard';
+import { ClosingPlanCard } from './ClosingPlanCard';
 import { DayChangeCard } from './DayChangeCard';
 import { ChannelsSection } from './ChannelsSection';
 import { GeneralSection } from './GeneralSection';
@@ -165,6 +166,7 @@ export function SettingsScreen({ api, shopId, shopName, navigate, store, now }: 
   return (
     <div key={formKey}>
       <DayChangeCard api={api} shopId={shopId} />
+      <ClosingPlanCard api={api} shopId={shopId} />
       <p className="notice-soft">
         Έκδοση {server.version}
         {dirty ? ' · μη δημοσιευμένες αλλαγές' : ''}

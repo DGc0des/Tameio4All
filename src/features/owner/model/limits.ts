@@ -3,6 +3,8 @@ export const SHOP_NAME_MAX = 80;
 export const STAFF_NAME_MAX = 40;
 export const DEVICE_LABEL_MAX = 60;
 export const PASSWORD_MIN = 8;
+/** Closings per business day, 1..6. Cross-file: the CHECK on shops.closings_per_day and the check in set_closing_plan. */
+export const MAX_CLOSINGS_PER_DAY = 6;
 
 export type NameProblem = 'empty' | 'too_long';
 

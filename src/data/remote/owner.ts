@@ -1,5 +1,7 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { parseJoinKey } from '../../app/joinKey';
+import { MAX_CLOSINGS_PER_DAY } from '../../features/owner/model/limits';
+import { isCashMode } from '../../features/register/live/fields';
 import { mapError, type OwnerError } from './errors';
 import { parseDayDetail, parseHistoryList } from './history';
 import { openShopChannel, parseFieldAck, parseSnapshot, parseStaleCurrent } from './live';
@@ -107,6 +109,21 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
       };
     },
     setDayChange: (shopId, time) => run(client.rpc('set_day_change_time', { p_shop_id: shopId, p_time: time })),
+    async closingPlan(shopId) {
+      const r = await run(client.from('shops').select('closings_per_day, cash_mode').eq('id', shopId).limit(1));
+      if (!r.ok) return r;
+      const row = (r.data as { closings_per_day: unknown; cash_mode: unknown }[] | null)?.[0];
+      if (!row) return { ok: false, error: { code: 'not_owner' } };
+      const n = row.closings_per_day;
+      if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > MAX_CLOSINGS_PER_DAY || !isCashMode(row.cash_mode)) {
+        return { ok: false, error: BAD_RESPONSE };
+      }
+      return { ok: true, data: { count: n, cashMode: row.cash_mode } };
+    },
+    async setClosingPlan(shopId, plan) {
+      const r = await run(client.rpc('set_closing_plan', { p_shop_id: shopId, p_count: plan.count, p_cash_mode: plan.cashMode }));
+      return r.ok ? { ok: true, data: undefined } : r;
+    },
     async listStaff(shopId) {
       const r = await run(
         client.from('staff').select('id, name, active, locked_until, has_pin').eq('shop_id', shopId).is('erased_at', null).order('name'),

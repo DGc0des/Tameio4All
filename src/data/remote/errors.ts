@@ -19,6 +19,8 @@ export type OwnerError =
   | { code: 'idempotency_conflict' }
   | { code: 'bad_range' }
   | { code: 'draft_changed' }
+  | { code: 'bad_closing_plan' }
+  | { code: 'wrong_closing' }
   | { code: 'too_many_shops' }
   | { code: 'too_many_staff' }
   | { code: 'too_many_versions' }
@@ -51,7 +53,8 @@ export function mapError(err: unknown): OwnerError {
     return { code: 'version_conflict', currentVersion: m?.[1] !== undefined ? Number(m[1]) : null };
   }
   if (message === 'closing_changed') return { code: 'closing_changed', currentId: null };
-  if (message === 'bad_inputs' || message === 'config_mismatch' || message === 'no_closing_day' || message === 'idempotency_conflict' || message === 'bad_range' || message === 'draft_changed') {
+  if (message === 'bad_inputs' || message === 'config_mismatch' || message === 'no_closing_day' || message === 'idempotency_conflict' || message === 'bad_range' || message === 'draft_changed'
+      || message === 'bad_closing_plan' || message === 'wrong_closing') {
     return { code: message };
   }
   if (message === 'not_owner' || message === 'staff_name_taken' || message === 'bad_pin_format' || message === 'bad_config' || message === 'bad_field' || message === 'too_many_expenses' || message === 'wrong_day'

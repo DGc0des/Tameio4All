@@ -1,6 +1,6 @@
 import type { ShopConfig } from '../../core/config';
 import type { DayDetail, HistoryList, SaveClosingArgs } from '../../features/owner/history/types';
-import type { FieldAck, FieldKey, ServerField, Snapshot } from '../../features/register/live/fields';
+import type { CashMode, FieldAck, FieldKey, ServerField, Snapshot } from '../../features/register/live/fields';
 import type { OwnerError } from './errors';
 import type { LiveChannel, LiveHandlers } from './live';
 
@@ -49,6 +49,12 @@ export interface DayChange {
   fromDate: string | null;
 }
 
+export interface ClosingPlan {
+  /** Closings per business day, 1..6. */
+  count: number;
+  cashMode: CashMode;
+}
+
 /** Everything the owner app does with the server. Screens receive this; tests pass a fake. */
 export interface OwnerApi {
   session(): Promise<SessionInfo | null>;
@@ -67,6 +73,8 @@ export interface OwnerApi {
   dayChange(shopId: string): Promise<Result<DayChange>>;
   /** Resolves to the first business date (YYYY-MM-DD) the new time applies to. */
   setDayChange(shopId: string, time: string): Promise<Result<string>>;
+  closingPlan(shopId: string): Promise<Result<ClosingPlan>>;
+  setClosingPlan(shopId: string, plan: ClosingPlan): Promise<Result<void>>;
   listStaff(shopId: string): Promise<Result<StaffRow[]>>;
   createStaff(shopId: string, name: string, pin: string): Promise<Result<string>>;
   setStaffPin(staffId: string, pin: string): Promise<Result<void>>;

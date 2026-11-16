@@ -19,7 +19,7 @@ const OWNER_ERRORS: Record<OwnerError['code'], OwnerError> = {
   closing_changed: { code: 'closing_changed', currentId: null }, bad_inputs: { code: 'bad_inputs' },
   config_mismatch: { code: 'config_mismatch' }, no_closing_day: { code: 'no_closing_day' },
   idempotency_conflict: { code: 'idempotency_conflict' }, bad_range: { code: 'bad_range' },
-  draft_changed: { code: 'draft_changed' },
+  draft_changed: { code: 'draft_changed' }, bad_closing_plan: { code: 'bad_closing_plan' }, wrong_closing: { code: 'wrong_closing' },
   too_many_shops: { code: 'too_many_shops' }, too_many_staff: { code: 'too_many_staff' }, too_many_versions: { code: 'too_many_versions' },
   confirm_mismatch: { code: 'confirm_mismatch' },
   unknown: { code: 'unknown', detail: 'x' },
@@ -49,6 +49,11 @@ describe('messages', () => {
     expect(ownerErrorMessage({ code: 'too_many_shops' })).toBe('Έφτασες το όριο των 20 καταστημάτων.');
     expect(ownerErrorMessage({ code: 'too_many_staff' })).toBe('Έφτασες το όριο των 100 ατόμων σε αυτό το κατάστημα.');
     expect(ownerErrorMessage({ code: 'too_many_versions' })).toBe('Πάρα πολλές αλλαγές ρυθμίσεων σήμερα. Δοκίμασε ξανά αύριο.');
+  });
+
+  it('words the closing plan errors', () => {
+    expect(ownerErrorMessage({ code: 'bad_closing_plan' })).toBe('Τα κλεισίματα ανά ημέρα πρέπει να είναι από 1 έως 6.');
+    expect(ownerErrorMessage({ code: 'wrong_closing' })).toBe('Ξεκίνησε νέο κλείσιμο. Η οθόνη ανανεώθηκε.');
   });
 
   it('words the deletion confirmation error', () => {
