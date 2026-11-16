@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { plus, type ShopConfig } from '../../../../src/core/config';
 import { juiceBarPreset } from '../../../../src/core/presets';
 import { evaluateTotals, type ClosingInputs } from '../../../../src/core/formula';
 import { planEnvelope } from '../../../../src/core/envelope';
@@ -7,7 +8,7 @@ import { draftFromFields } from '../../../../src/features/register/live/merge';
 import type { HistoryDay, HistoryList } from '../../../../src/features/owner/history/types';
 import { denomKey, expenseKey, expenseMetaValue, textValue, type Snapshot } from '../../../../src/features/register/live/fields';
 import {
-  OWNER_NAME, UNKNOWN_AUTHOR, applyLocalEdit, breakdown, openInputs, snapshotFromInputs, summarizeInputs, summarizeOpen, weekCells,
+  OWNER_NAME, UNKNOWN_AUTHOR, applyLocalEdit, breakdown, openInputs, snapshotFromInputs, combineDay, summarizeDay, summarizeInputs, summarizeOpen, weekCells,
 } from '../../../../src/features/owner/history/model';
 
 const config = juiceBarPreset;
@@ -130,9 +131,9 @@ describe('summarizeOpen / openInputs', () => {
 describe('weekCells', () => {
   const MON = '2026-11-09';
   const current = { id: 'v1', kind: 'staff' as const, authorName: 'ΜΑΡΙΑ', createdAt: '2026-11-09T21:00:00Z', configId: 'cfg1', inputs: inputs2, correctsId: null };
-  const submittedDay = (businessDate: string): HistoryDay => ({ status: 'submitted', businessDate, current, versionCount: 1 });
+  const submittedDay = (businessDate: string): HistoryDay => ({ businessDate, cashMode: 'separate', closingsPlanned: 1, closings: [{ closingNo: 1, status: 'submitted', current, versionCount: 1 }] });
   const open: Snapshot = { id: 'o', businessDate: '2026-11-10', configId: 'cfg1', config, revision: 1, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {} };
-  const unsubmittedDay = (businessDate: string): HistoryDay => ({ status: 'unsubmitted', businessDate, open: { ...open, businessDate } });
+  const unsubmittedDay = (businessDate: string): HistoryDay => ({ businessDate, cashMode: 'separate', closingsPlanned: 1, closings: [{ closingNo: 1, status: 'unsubmitted', open: { ...open, businessDate } }] });
   const listOf = (today: string, days: HistoryDay[]): HistoryList => ({ today, from: '2026-10-13', to: today, configs: {}, days });
 
   it('has seven cells, Monday first, dates in order', () => {
@@ -148,6 +149,14 @@ describe('weekCells', () => {
     expect(cells[1]!.day).toBe(days[1]);
     expect(cells[2]!.day).toBeUndefined();
     expect(cells[3]!.day).toBeUndefined();
+  });
+
+  it('a day with one submitted and one unsubmitted closing is submitted', () => {
+    const day: HistoryDay = {
+      businessDate: '2026-11-10', cashMode: 'separate', closingsPlanned: 2,
+      closings: [{ closingNo: 1, status: 'submitted', current, versionCount: 1 }, { closingNo: 2, status: 'unsubmitted', open }],
+    };
+    expect(weekCells(listOf('2026-11-12', [day]), MON)[1]!.kind).toBe('submitted');
   });
 
   it('today with a submission is a submitted cell', () => {
@@ -168,5 +177,83 @@ describe('weekCells', () => {
     const cells = weekCells(listOf('2026-11-20', [submittedDay('2026-11-08'), submittedDay('2026-11-16')]), MON);
     expect(cells.every((c) => c.kind === 'empty')).toBe(true);
     expect(weekCells(listOf('2026-11-20', []), 'nonsense')).toEqual([]);
+  });
+});
+
+describe('combineDay and summarizeDay', () => {
+  /** A small config whose ΜΕΤΡΗΤΑ is just the counted cash, so the expected sums are plain literals. */
+  const cfg: ShopConfig = {
+    ...juiceBarPreset, floatCents: 0, channels: [],
+    totals: [
+      { id: 'cash', label: 'ΜΕΤΡΗΤΑ', terms: [plus({ kind: 'counted' })], showInSummary: true, showInShare: true },
+      { id: 'exp', label: 'ΕΞΟΔΑ', terms: [plus({ kind: 'expenses' })], showInSummary: true, showInShare: true },
+    ],
+    envelopeTotalId: 'cash',
+  };
+  const inp = (counts: Record<string, number>, expenseCents = 0): ClosingInputs => ({
+    schema: 2, counts, channelCents: {},
+    expenses: expenseCents > 0 ? [{ id: 'x', description: 'Γ', cents: expenseCents, addedBy: { kind: 'owner' } }] : [],
+  });
+  const res = (closingNo: number, i: ClosingInputs, configId = 'cfg1') => ({ closingNo, configId, summary: summarizeInputs(cfg, i) });
+  const cash = (s: ReturnType<typeof combineDay>) => s!.totals.find((t) => t.id === 'cash')!.cents;
+
+  it('separate of 100,00 € and 250,50 € ΜΕΤΡΗΤΑ is 350,50 €, expenses added, labels and order kept', () => {
+    const a = res(1, inp({ '10000': 1 }, 200));
+    const b = res(2, inp({ '10000': 2, '5000': 1, '50': 1 }, 300));
+    const s = combineDay('separate', [a, b])!;
+    expect(cash(s)).toBe(35050);
+    expect(s.expensesCents).toBe(500);
+    expect(s.totals.map((t) => [t.id, t.label])).toEqual([['cash', 'ΜΕΤΡΗΤΑ'], ['exp', 'ΕΞΟΔΑ']]);
+  });
+
+  it('running is the summary of the highest-numbered closing', () => {
+    const rs = [res(1, inp({ '10000': 1 })), res(2, inp({ '10000': 2 })), res(3, inp({ '10000': 5 }))];
+    expect(combineDay('running', [rs[1]!, rs[2]!, rs[0]!])).toEqual(rs[2]!.summary);
+  });
+
+  it('is null for an unreadable item, mixed configs, an unreadable last running item and an empty list', () => {
+    expect(combineDay('separate', [res(1, inp({ '10000': 1 })), { closingNo: 2, configId: 'cfg1', summary: null }])).toBeNull();
+    expect(combineDay('separate', [res(1, inp({ '10000': 1 })), res(2, inp({ '10000': 1 }), 'cfg2')])).toBeNull();
+    expect(combineDay('running', [res(1, inp({ '10000': 1 })), { closingNo: 2, configId: 'cfg1', summary: null }])).toBeNull();
+    expect(combineDay('separate', [])).toBeNull();
+    expect(combineDay('running', [])).toBeNull();
+  });
+
+  const cur = (id: string, i: ClosingInputs) => ({ id, kind: 'staff' as const, authorName: 'Μ', createdAt: 't', configId: 'cfg1', inputs: i, correctsId: null });
+  const openSnap = (n: number): Snapshot => ({ id: 'o', businessDate: '2026-11-10', configId: 'cfg1', config: cfg, revision: 1, closingNo: n, closingsPlanned: 3, cashMode: 'separate', lastSubmit: null, fields: {} });
+  const configs = { cfg1: cfg };
+
+  it('summarizeDay counts done/planned and sums only the submitted closings', () => {
+    const day: HistoryDay = {
+      businessDate: '2026-11-10', cashMode: 'separate', closingsPlanned: 3,
+      closings: [
+        { closingNo: 1, status: 'submitted', current: cur('a', inp({ '10000': 1 })), versionCount: 1 },
+        { closingNo: 2, status: 'submitted', current: cur('b', inp({ '10000': 2 })), versionCount: 1 },
+        { closingNo: 3, status: 'unsubmitted', open: openSnap(3) },
+      ],
+    };
+    const d = summarizeDay(day, configs);
+    expect([d.done, d.planned, d.hasUnsubmitted]).toEqual([2, 3, true]);
+    expect(cash(d.result)).toBe(30000);
+  });
+
+  it('planned is at least the number of closings', () => {
+    const day: HistoryDay = {
+      businessDate: '2026-11-10', cashMode: 'separate', closingsPlanned: 3,
+      closings: [1, 2, 3, 4].map((n) => ({ closingNo: n, status: 'submitted' as const, current: cur(`v${n}`, inp({ '10000': 1 })), versionCount: 1 })),
+    };
+    expect(summarizeDay(day, configs).planned).toBe(4);
+  });
+
+  it('a one-closing day has the result of summarizeInputs', () => {
+    const day: HistoryDay = { businessDate: '2026-11-10', cashMode: 'separate', closingsPlanned: 1, closings: [{ closingNo: 1, status: 'submitted', current: cur('a', inp({ '10000': 3 }, 850)), versionCount: 1 }] };
+    const d = summarizeDay(day, configs);
+    expect(d.result).toEqual(summarizeInputs(cfg, inp({ '10000': 3 }, 850)));
+    expect([d.done, d.planned, d.hasUnsubmitted]).toEqual([1, 1, false]);
+  });
+
+  it('an unknown config makes the result null without throwing', () => {
+    const day: HistoryDay = { businessDate: '2026-11-10', cashMode: 'separate', closingsPlanned: 1, closings: [{ closingNo: 1, status: 'submitted', current: cur('a', inp({ '10000': 3 }, 850)), versionCount: 1 }] };
+    expect(summarizeDay(day, {}).result).toBeNull();
   });
 });

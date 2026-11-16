@@ -1,5 +1,6 @@
 import { isIsoDate } from '../../app/dates';
-import type { ClosingVersion, DayDetail, HistoryDay, HistoryList } from '../../features/owner/history/types';
+import type { ClosingVersion, DayDetail, HistoryClosing, HistoryDay, HistoryList } from '../../features/owner/history/types';
+import { isCashMode, isClosingNo } from '../../features/register/live/fields';
 import { parseSnapshot } from './live';
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -20,19 +21,34 @@ function parseVersion(x: unknown): ClosingVersion | null {
   };
 }
 
-function parseDay(x: unknown): HistoryDay | null {
-  if (!isObj(x) || !isDate(x.business_date)) return null;
+/** One closing entry of a day; null when malformed. */
+function parseEntry(x: unknown): HistoryClosing | null {
+  if (!isObj(x) || !isClosingNo(x.closing_no)) return null;
   if (x.status === 'submitted') {
     const current = parseVersion(x.current);
     const n = x.version_count;
     if (!current || typeof n !== 'number' || !Number.isInteger(n) || n < 1) return null;
-    return { status: 'submitted', businessDate: x.business_date, current, versionCount: n };
+    return { closingNo: x.closing_no, status: 'submitted', current, versionCount: n };
   }
   if (x.status === 'unsubmitted') {
     const open = parseSnapshot(x.open);
-    return open ? { status: 'unsubmitted', businessDate: x.business_date, open } : null;
+    return open ? { closingNo: x.closing_no, status: 'unsubmitted', open } : null;
   }
   return null;
+}
+
+/** One day; bad entries are dropped individually, a day left with none (or with a bad mode/plan) is dropped. */
+function parseDay(x: unknown): HistoryDay | null {
+  if (!isObj(x) || !isDate(x.business_date) || !isCashMode(x.cash_mode) || !isClosingNo(x.closings_planned)) return null;
+  if (!Array.isArray(x.closings)) return null;
+  const closings: HistoryClosing[] = [];
+  for (const raw of x.closings as unknown[]) {
+    const c = parseEntry(raw);
+    if (c) closings.push(c);
+  }
+  if (closings.length === 0) return null;
+  closings.sort((a, b) => a.closingNo - b.closingNo);
+  return { businessDate: x.business_date, cashMode: x.cash_mode, closingsPlanned: x.closings_planned, closings };
 }
 
 /** The ok payload of owner_list_closings. Bad days are dropped individually; a bad top level → null. */

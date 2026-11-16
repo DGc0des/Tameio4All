@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDaysIso, formatDayMonthLongEl, formatTimeEl, formatWeekRangeEl, formatWeekdayEl, weekStartIso } from '../../../app/dates';
+import { closingsDoneLabel } from '../../../app/closingLabel';
 import { formatEuro } from '../../../core/money';
 import type { OwnerApi } from '../../../data/remote/ownerApi';
 import { ownerErrorMessage } from '../model/messages';
 import type { OwnerNavigate } from '../OwnerUi';
-import { summarizeInputs, summarizeOpen, weekCells, type Summary, type WeekCell } from './model';
+import { summarizeDay, summarizeOpen, weekCells, type Summary, type WeekCell } from './model';
 import type { HistoryList } from './types';
 
 type Shown = { list: HistoryList; monday: string };
@@ -128,12 +129,13 @@ function WeekGrid({ shown, dimmed, navigate, shopId }: { shown: Shown; dimmed: b
   );
 }
 
+/** The card's numbers: the day's result from its submitted closings; a day with none shows its newest open closing. */
 function summaryOf(cell: WeekCell, list: HistoryList): Summary | null {
   const day = cell.day;
   if (day === undefined) return null;
-  return day.status === 'submitted'
-    ? summarizeInputs(Object.hasOwn(list.configs, day.current.configId) ? list.configs[day.current.configId] : undefined, day.current.inputs)
-    : summarizeOpen(day.open);
+  if (cell.kind === 'submitted') return summarizeDay(day, list.configs).result;
+  const last = day.closings[day.closings.length - 1];
+  return last?.status === 'unsubmitted' ? summarizeOpen(last.open) : null;
 }
 
 function DayCard({ cell, list, today, navigate, shopId }: { cell: WeekCell; list: HistoryList; today: string; navigate: OwnerNavigate; shopId: string }) {
@@ -176,11 +178,16 @@ function DayCard({ cell, list, today, navigate, shopId }: { cell: WeekCell; list
 
   const summary = summaryOf(cell, list);
   const day = cell.day;
+  const info = day !== undefined && cell.kind === 'submitted' ? summarizeDay(day, list.configs) : null;
+  const multi = day !== undefined && (day.closingsPlanned > 1 || day.closings.length > 1);
+  const submittedEntries = day?.closings.flatMap((c) => (c.status === 'submitted' ? [c] : [])) ?? [];
+  const latest = submittedEntries[submittedEntries.length - 1];
+  const unsubmittedNo = [...(day?.closings ?? [])].reverse().find((c) => c.status === 'unsubmitted')?.closingNo;
   return (
     <button type="button" className={cell.kind === 'unsubmitted' ? 'week-card is-unsubmitted' : 'week-card'} onClick={open}>
       {head}
       {summary === null ? (
-        <span className="week-note">Δεν διαβάζεται</span>
+        <span className="week-note">{multi && cell.kind === 'submitted' ? '—' : 'Δεν διαβάζεται'}</span>
       ) : (
         <>
           {summary.totals.map((t) => (
@@ -195,11 +202,13 @@ function DayCard({ cell, list, today, navigate, shopId }: { cell: WeekCell; list
           </span>
         </>
       )}
+      {info !== null && multi && <span className="week-note">{closingsDoneLabel(info.done, info.planned)}</span>}
       <span className="week-foot">
-        {day?.status === 'submitted' ? (
+        {latest !== undefined ? (
           <>
-            <span>{`${day.current.authorName} · ${formatTimeEl(day.current.createdAt)}`}</span>
-            {day.current.kind === 'owner_correction' ? <span className="badge">διορθωμένο</span> : day.versionCount > 1 ? <span className="badge">{day.versionCount} υποβολές</span> : null}
+            <span>{`${latest.current.authorName} · ${formatTimeEl(latest.current.createdAt)}`}</span>
+            {latest.current.kind === 'owner_correction' ? <span className="badge">διορθωμένο</span> : latest.versionCount > 1 ? <span className="badge">{latest.versionCount} υποβολές</span> : null}
+            {unsubmittedNo !== undefined && <span className="badge">{`Δεν υποβλήθηκε το ${unsubmittedNo}ο`}</span>}
           </>
         ) : (
           <span>Δεν υποβλήθηκε</span>

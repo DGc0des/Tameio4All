@@ -245,7 +245,7 @@ describe('createOwnerApi', () => {
     it('listClosings calls owner_list_closings and parses the payload', async () => {
       const payload = {
         ok: true, today: '2026-11-11', from: '2026-10-13', to: '2026-11-11', configs: {},
-        days: [{ business_date: '2026-11-10', status: 'submitted', version_count: 1, current: version }],
+        days: [{ business_date: '2026-11-10', cash_mode: 'separate', closings_planned: 1, closings: [{ closing_no: 1, status: 'submitted', version_count: 1, current: version }] }],
       };
       const { api, calls } = fake({ data: payload, error: null });
       const r = await api.listClosings('s1', null, '2026-11-11');

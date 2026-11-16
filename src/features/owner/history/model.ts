@@ -8,7 +8,7 @@ import { deriveClosing } from '../../register/derive';
 import { draftFromFields } from '../../register/live/merge';
 import {
   KEY_RE, amountValue, channelKey, denomKey, denomValue, expenseAmountKey, expenseDescKey, expenseKey, expenseMetaValue,
-  isFieldValue, parseKey, textValue, type FieldKey, type ServerField, type Snapshot,
+  isFieldValue, parseKey, textValue, type CashMode, type FieldKey, type ServerField, type Snapshot,
 } from '../../register/live/fields';
 import type { ClosingVersion, HistoryDay, HistoryList } from './types';
 
@@ -212,8 +212,50 @@ export function weekCells(list: HistoryList, monday: string): WeekCell[] {
   return Array.from({ length: 7 }, (_, i) => {
     const date = addDaysIso(monday, i);
     const day = list.days.find((d) => d.businessDate === date);
-    if (day !== undefined) return { date, kind: day.status, day };
+    if (day !== undefined) return { date, kind: day.closings.some((c) => c.status === 'submitted') ? 'submitted' : 'unsubmitted', day };
     if (date > list.today) return { date, kind: 'future' };
     return { date, kind: date === list.today ? 'in_progress' : 'empty' };
   });
+}
+
+/** One closing's readable result with the config it was computed with. */
+export interface ClosingResult { closingNo: number; configId: string; summary: Summary | null }
+
+/**
+ * The day's result. running: the summary of the highest-numbered item (null if unreadable).
+ * separate: per total id, the sum over all items — null unless every item is readable and all share one configId.
+ * An empty list → null.
+ */
+export function combineDay(mode: CashMode, results: readonly ClosingResult[]): Summary | null {
+  if (results.length === 0) return null;
+  const sorted = [...results].sort((a, b) => a.closingNo - b.closingNo);
+  if (mode === 'running') return sorted[sorted.length - 1]!.summary;
+  const first = sorted[0]!;
+  const summaries: Summary[] = [];
+  for (const r of sorted) {
+    if (r.summary === null || r.configId !== first.configId) return null;
+    summaries.push(r.summary);
+  }
+  const head = summaries[0]!;
+  return {
+    totals: head.totals.map((t, i) => ({ ...t, cents: summaries.reduce((sum, s) => sum + (s.totals[i]?.cents ?? 0), 0) })),
+    expensesCents: summaries.reduce((sum, s) => sum + s.expensesCents, 0),
+  };
+}
+
+export interface DaySummary { result: Summary | null; done: number; planned: number; hasUnsubmitted: boolean }
+
+/** `done` = submitted closings; `planned` = max(day.closingsPlanned, day.closings.length). Only submitted closings feed `result`. */
+export function summarizeDay(day: HistoryDay, configs: Record<string, unknown>): DaySummary {
+  const results: ClosingResult[] = [];
+  let hasUnsubmitted = false;
+  for (const c of day.closings) {
+    if (c.status === 'unsubmitted') { hasUnsubmitted = true; continue; }
+    const id = c.current.configId;
+    results.push({ closingNo: c.closingNo, configId: id, summary: summarizeInputs(Object.hasOwn(configs, id) ? configs[id] : undefined, c.current.inputs) });
+  }
+  return {
+    result: combineDay(day.cashMode, results), done: results.length,
+    planned: Math.max(day.closingsPlanned, day.closings.length), hasUnsubmitted,
+  };
 }

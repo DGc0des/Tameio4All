@@ -29,7 +29,12 @@ const inputs = (hundreds: number): ClosingInputs => ({
 const version = (id: string, over: Partial<ClosingVersion> = {}): ClosingVersion => ({
   id, kind: 'staff', authorName: 'ΜΑΡΙΑ', createdAt: '2026-11-10T21:00:00Z', configId: 'cfg1', inputs: inputs(3), correctsId: null, ...over,
 });
-const submitted = (businessDate: string, current: ClosingVersion, versionCount = 1): HistoryDay => ({ status: 'submitted', businessDate, current, versionCount });
+const submitted = (businessDate: string, current: ClosingVersion, versionCount = 1): HistoryDay => ({
+  businessDate, cashMode: 'separate', closingsPlanned: 1, closings: [{ closingNo: 1, status: 'submitted', current, versionCount }],
+});
+const unsubmitted = (businessDate: string, open: Snapshot): HistoryDay => ({
+  businessDate, cashMode: 'separate', closingsPlanned: 1, closings: [{ closingNo: 1, status: 'unsubmitted', open }],
+});
 /** Wednesday 2026-11-11 is «today»; the current week is Monday 2026-11-09 – Sunday 2026-11-15. */
 const TODAY = '2026-11-11';
 const MON = '2026-11-09';
@@ -170,6 +175,55 @@ describe('HistoryScreen week view', () => {
     expect(within(several).queryByText('διορθωμένο')).toBeNull();
   });
 
+  describe('several closings in a day', () => {
+    const v = (n: number, hundreds: number) => ({ closingNo: n, status: 'submitted' as const, current: version(`v${n}`, { inputs: { schema: 2, counts: { '10000': hundreds }, channelCents: {}, expenses: [] } }), versionCount: 1 });
+    const multi = (over: Partial<HistoryDay>): HistoryDay => ({ businessDate: '2026-11-10', cashMode: 'separate', closingsPlanned: 3, closings: [], ...over });
+
+    it('a plan-3 day with two submitted shows the day totals and «2 από 3 κλεισίματα»', async () => {
+      setup(list([multi({ closings: [v(1, 1), v(2, 2)] })]));
+      await screen.findByText(RANGE);
+      const r = card('2026-11-10');
+      const cashLine = (c: HTMLElement) => within(c).getByText('ΜΕΤΡΗΤΑ').parentElement!.textContent;
+      // (100,00 € − 1.000,00 € float) + (200,00 € − 1.000,00 € float), each closing counted on its own
+      expect(cashLine(r)).toContain(formatEuro(-170000));
+      expect(within(r).getByText('2 από 3 κλεισίματα')).toBeTruthy();
+      expect(within(r).queryByText(/Δεν υποβλήθηκε/)).toBeNull();
+    });
+
+    it('a separate day with an unreadable closing shows «—» and still the done count', async () => {
+      const bad = { ...v(2, 2), current: version('v2', { configId: 'bad' }) };
+      setup(list([multi({ closings: [v(1, 1), bad] })]));
+      await screen.findByText(RANGE);
+      const r = card('2026-11-10');
+      expect(within(r).getByText('—')).toBeTruthy();
+      expect(within(r).queryByText('Δεν διαβάζεται')).toBeNull();
+      expect(within(r).getByText('2 από 3 κλεισίματα')).toBeTruthy();
+    });
+
+    it('a day with only unsubmitted closings keeps the unsubmitted look', async () => {
+      setup(list([multi({ closings: [{ closingNo: 1, status: 'unsubmitted', open: openSnap('2026-11-10') }] })]));
+      await screen.findByText(RANGE);
+      const r = card('2026-11-10');
+      expect(r.className).toContain('is-unsubmitted');
+      expect(within(r).getByText('Δεν υποβλήθηκε')).toBeTruthy();
+      expect(within(r).queryByText(/κλεισίματα/)).toBeNull();
+    });
+
+    it('an unsubmitted tail shows «Δεν υποβλήθηκε το 3ο»', async () => {
+      setup(list([multi({ closings: [v(1, 1), v(2, 2), { closingNo: 3, status: 'unsubmitted', open: { ...openSnap('2026-11-10'), closingNo: 3 } }] })]));
+      await screen.findByText(RANGE);
+      const r = card('2026-11-10');
+      expect(within(r).getByText('Δεν υποβλήθηκε το 3ο')).toBeTruthy();
+      expect(within(r).getByText('2 από 3 κλεισίματα')).toBeTruthy();
+    });
+
+    it('a one-closing day shows no done count', async () => {
+      setup(list([submitted('2026-11-10', version('v1'))]));
+      await screen.findByText(RANGE);
+      expect(within(card('2026-11-10')).queryByText(/κλεισίματα/)).toBeNull();
+    });
+  });
+
   it('today with a submission is a normal submitted card with a «Σήμερα» tag', async () => {
     const { navigate } = setup(list([submitted(TODAY, version('v1'))]));
     await screen.findByText(RANGE);
@@ -182,7 +236,7 @@ describe('HistoryScreen week view', () => {
   });
 
   it('shows an unsubmitted day with «Δεν υποβλήθηκε» and the numbers of the open closing', async () => {
-    setup(list([{ status: 'unsubmitted', businessDate: '2026-11-10', open: openSnap('2026-11-10') }]));
+    setup(list([unsubmitted('2026-11-10', openSnap('2026-11-10'))]));
     await screen.findByText(RANGE);
     const r = card('2026-11-10');
     expect(within(r).getByText('Δεν υποβλήθηκε')).toBeTruthy();
@@ -244,7 +298,7 @@ describe('HistoryScreen week view', () => {
   it('unreadable inputs and an unreadable unsubmitted day in another week leave its readable card alone', async () => {
     const listClosings = vi.fn((_s: string, f: string | null, t: string | null) => ok(list(f === null ? [] : [
       submitted('2026-11-08', version('v4', { inputs: { nope: true } })),
-      { status: 'unsubmitted', businessDate: '2026-11-07', open: { ...openSnap('2026-11-07'), config: {} } },
+      unsubmitted('2026-11-07', { ...openSnap('2026-11-07'), config: {} }),
       submitted('2026-11-06', version('v5')),
     ], { from: f ?? MON, to: t ?? SUN })));
     render(<HistoryScreen api={fakeApi({ listClosings })} shopId={SHOP} navigate={vi.fn()} />);

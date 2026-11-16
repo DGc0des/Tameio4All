@@ -1,5 +1,5 @@
 import type { ClosingInputs } from '../../../core/formula';
-import type { Snapshot } from '../../register/live/fields';
+import type { CashMode, Snapshot } from '../../register/live/fields';
 
 export type VersionKind = 'staff' | 'owner_correction';
 
@@ -14,9 +14,17 @@ export interface ClosingVersion {
   correctsId: string | null;
 }
 
-export type HistoryDay =
-  | { status: 'submitted'; businessDate: string; current: ClosingVersion; versionCount: number }
-  | { status: 'unsubmitted'; businessDate: string; open: Snapshot };
+export type HistoryClosing =
+  | { closingNo: number; status: 'submitted'; current: ClosingVersion; versionCount: number }
+  | { closingNo: number; status: 'unsubmitted'; open: Snapshot };
+
+/** One business day of the list: its numbered closings, by closingNo ascending, never empty. */
+export interface HistoryDay {
+  businessDate: string;
+  cashMode: CashMode;
+  closingsPlanned: number;
+  closings: HistoryClosing[];
+}
 
 export interface HistoryList {
   today: string;
