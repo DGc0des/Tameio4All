@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { closingOfLabel } from '../../app/closingLabel';
 import { formatDayEl, formatTimeEl } from '../../app/dates';
 import { isShopConfig } from '../../core/config';
 import type { EntryMode } from '../../core/denominations';
@@ -22,6 +23,7 @@ import {
   CHANGED_SINCE_SUBMIT, CONNECTING_SUBMIT_REASON, HALTED_SUBMIT_REASON, INVALID_CONFIG_MESSAGE, OFFLINE_SUBMIT_REASON, PENDING_SUBMIT_REASON,
 } from './messages';
 import type { ShareFn } from './share';
+import { canStartNext, StartNextSheet, startNextLabel } from './StartNextSheet';
 import { SubmitSheet } from './SubmitSheet';
 
 export interface RegisterProps {
@@ -46,7 +48,7 @@ export interface RegisterProps {
   onServerError: (e: DeviceError) => void;
 }
 
-type SheetName = 'envelope' | 'submit' | 'cashier';
+type SheetName = 'envelope' | 'submit' | 'cashier' | 'next';
 
 export function RegisterScreen(props: RegisterProps) {
   const { ctx, session, api, store, now, newId, share, themePref, active, offline, onTheme, onOwner, onSignOut, onServerError } = props;
@@ -95,6 +97,15 @@ export function RegisterScreen(props: RegisterProps) {
   // a submit, reopening the sheet for an unchanged closing keeps the key (a lost answer is then answered
   // `repeat`); any edit, an acknowledged submit or a `draft_changed` refusal makes the next send mint a new one.
   const submitKey = useRef<{ key: string; inputs: string } | null>(null);
+  // Start-next sheet state; `startingNext` guards against a double tap, every path of the call settles `nextBusy`.
+  const [nextBusy, setNextBusy] = useState(false);
+  const [nextError, setNextError] = useState<string | null>(null);
+  const startingNext = useRef(false);
+  // A new closing never reuses the previous closing's submit key.
+  const closingNoNow = state.snapshot?.closingNo;
+  useEffect(() => {
+    submitKey.current = null;
+  }, [closingNoNow]);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +148,39 @@ export function RegisterScreen(props: RegisterProps) {
     onSignOut();
   };
 
+  const openNext = () => {
+    setNextError(null);
+    setNextBusy(false);
+    setSheet('next');
+  };
+  const startNext = async () => {
+    if (snapshot === null || startingNext.current) return;
+    startingNext.current = true;
+    setNextBusy(true);
+    setNextError(null);
+    try {
+      const r = await api.startNextClosing(session.token, snapshot.businessDate, snapshot.closingNo);
+      if (r.ok) {
+        setSheet(null);
+        // One load path: the returned snapshot is not applied by hand.
+        void resync();
+      } else if (r.error.code === 'wrong_closing') {
+        setSheet(null);
+        void resync();
+      } else if (
+        r.error.code === 'session_invalid' || r.error.code === 'wrong_day' || r.error.code === 'not_a_device' || r.error.code === 'device_revoked'
+      ) {
+        setSheet(null);
+        onServerError(r.error);
+      } else {
+        setNextError(deviceErrorMessage(r.error));
+      }
+    } finally {
+      startingNext.current = false;
+      setNextBusy(false);
+    }
+  };
+
   const header = (
     <header className="top">
       <div>
@@ -144,6 +188,7 @@ export function RegisterScreen(props: RegisterProps) {
         <button type="button" className="meta-btn" onClick={() => setSheet('cashier')}>
           {formatDayEl(snapshot?.businessDate ?? ctx.businessDate)} · {session.name}
         </button>
+        {snapshot && snapshot.closingsPlanned > 1 && <p className="sub">{closingOfLabel(snapshot.closingNo, snapshot.closingsPlanned)}</p>}
         {snapshot?.lastSubmit && (
           <p className="sub">{`Υποβλήθηκε ${formatTimeEl(snapshot.lastSubmit.at)} · ${snapshot.lastSubmit.staffName}`}</p>
         )}
@@ -151,6 +196,11 @@ export function RegisterScreen(props: RegisterProps) {
           <p className="sub">
             <span className="badge">{CHANGED_SINCE_SUBMIT}</span> Κάνε ξανά Υποβολή.
           </p>
+        )}
+        {snapshot && canStartNext(snapshot, state.pending.some((p) => sameClosing(p, snapshot))) && (
+          <button type="button" className="btn btn-text" onClick={openNext}>
+            {startNextLabel(snapshot.closingNo + 1)}
+          </button>
         )}
       </div>
       {active && <HeaderMenu themePref={themePref} onTheme={onTheme} onOwner={onOwner} />}
@@ -280,9 +330,21 @@ export function RegisterScreen(props: RegisterProps) {
           draft={draft}
           derived={derived}
           revision={snapshot.revision}
+          closingNo={snapshot.closingNo}
+          closingsPlanned={snapshot.closingsPlanned}
           blocked={submitBlocked}
           onSubmit={submit}
           onShare={share}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {active && sheet === 'next' && (
+        <StartNextSheet
+          nextNo={snapshot.closingNo + 1}
+          cashMode={snapshot.cashMode}
+          busy={nextBusy}
+          error={nextError}
+          onConfirm={() => void startNext()}
           onClose={() => setSheet(null)}
         />
       )}

@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import { formatDateEl } from '../../app/dates';
 import type { ShopConfig } from '../../core/config';
 import { denomLabel, isBill } from '../../core/denominations';
 import type { ClosingInputs } from '../../core/formula';
@@ -9,7 +8,7 @@ import { Sheet } from '../../ui/Sheet';
 import { deviceErrorMessage } from '../phone/model/messages';
 import type { Derived } from './derive';
 import type { Draft } from './draft';
-import type { ShareFn } from './share';
+import { shareDateLine, type ShareFn } from './share';
 
 interface Props {
   config: ShopConfig;
@@ -17,6 +16,9 @@ interface Props {
   derived: Derived;
   /** Revision of the live closing that `draft` shows. */
   revision: number;
+  /** Which closing of the day this is, and how many the shop plans (the share card names it when > 1). */
+  closingNo: number;
+  closingsPlanned: number;
   /** Why Υποβολή can't be sent right now (unsaved edits, offline, a wrong value), or null. */
   blocked: string | null;
   /** Sends these inputs as derived from closing `revision` (the caller picks the idempotency key). */
@@ -27,13 +29,13 @@ interface Props {
 
 export const DRAFT_CHANGED_MESSAGE = 'Κάποιος άλλαξε κάτι — έλεγξε και πάτα ξανά Υποβολή';
 
-export function SubmitSheet({ config, draft, derived, revision, blocked, onSubmit, onShare, onClose }: Props) {
+export function SubmitSheet({ config, draft, derived, revision, closingNo, closingsPlanned, blocked, onSubmit, onShare, onClose }: Props) {
   // A retry must send exactly what was first sent, and the card (and the shared image) must show that
   // same closing: both come from the snapshot taken on open. After `draft_changed` the sheet follows the
   // live closing again until the next tap takes a new snapshot.
-  const [snapshot, setSnapshot] = useState(() => ({ draft, derived, revision }));
+  const [snapshot, setSnapshot] = useState(() => ({ draft, derived, revision, closingNo }));
   const [following, setFollowing] = useState(false);
-  const shown = following ? { draft, derived, revision } : snapshot;
+  const shown = following ? { draft, derived, revision, closingNo } : snapshot;
   const cardRef = useRef<HTMLDivElement>(null);
   const [submitted, setSubmitted] = useState(false);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -78,7 +80,7 @@ export function SubmitSheet({ config, draft, derived, revision, blocked, onSubmi
   return (
     <Sheet title={submitted ? 'Υποβλήθηκε ✓' : 'Υποβολή'} onClose={onClose}>
       <div ref={cardRef}>
-        <ShareCard config={config} draft={shown.draft} derived={shown.derived} />
+        <ShareCard config={config} draft={shown.draft} derived={shown.derived} closingNo={shown.closingNo} closingsPlanned={closingsPlanned} />
       </div>
       {message !== null && (
         <p className="status-warn" role="alert">
@@ -114,7 +116,7 @@ export function SubmitSheet({ config, draft, derived, revision, blocked, onSubmi
   );
 }
 
-function ShareCard({ config, draft, derived }: { config: ShopConfig; draft: Draft; derived: Derived }) {
+function ShareCard({ config, draft, derived, closingNo, closingsPlanned }: { config: ShopConfig; draft: Draft; derived: Derived; closingNo: number; closingsPlanned: number }) {
   const sorted = [...config.denominations].sort((a, b) => b - a);
   const stays = (bills: boolean) =>
     sorted
@@ -128,7 +130,7 @@ function ShareCard({ config, draft, derived }: { config: ShopConfig; draft: Draf
   return (
     <div className="share-card">
       <div className="share-head">
-        <span>{formatDateEl(draft.businessDate)}</span>
+        <span>{shareDateLine(draft.businessDate, closingNo, closingsPlanned)}</span>
       </div>
       {config.totals
         .filter((t) => t.showInShare)

@@ -1,4 +1,6 @@
 import { toBlob } from 'html-to-image';
+import { closingLabel } from '../../app/closingLabel';
+import { formatDateEl } from '../../app/dates';
 
 export type ShareOutcome = 'shared' | 'downloaded' | 'cancelled' | 'failed';
 export type ShareFn = (card: HTMLElement, photo: File | null) => Promise<ShareOutcome>;
@@ -34,3 +36,8 @@ export const shareCard: ShareFn = async (card, photo) => {
     return e instanceof DOMException && e.name === 'AbortError' ? 'cancelled' : 'failed';
   }
 };
+
+/** The share card's date line; a shop with several closings a day also names which one this is. */
+export function shareDateLine(businessDate: string, closingNo: number, closingsPlanned: number): string {
+  return closingsPlanned > 1 ? `${formatDateEl(businessDate)} · ${closingLabel(closingNo)}` : formatDateEl(businessDate);
+}

@@ -5,7 +5,7 @@ vi.mock('html-to-image', () => ({
   toBlob: vi.fn(async () => new Blob(['x'], { type: 'image/png' })),
 }));
 
-import { shareCard } from '../../../src/features/register/share';
+import { shareCard, shareDateLine } from '../../../src/features/register/share';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -64,5 +64,14 @@ describe('shareCard download fallback', () => {
     expect(revoke).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(revoke).toHaveBeenCalledWith('blob:x');
+  });
+});
+
+describe('shareDateLine', () => {
+  it('ends with the closing label when the plan has several closings', () => {
+    expect(shareDateLine('2026-11-07', 2, 3)).toMatch(/ · 2ο κλείσιμο$/);
+  });
+  it('is the plain date for a 1-closing plan', () => {
+    expect(shareDateLine('2026-11-07', 1, 1)).not.toContain('κλείσιμο');
   });
 });

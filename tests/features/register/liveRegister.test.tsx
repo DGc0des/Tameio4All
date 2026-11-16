@@ -478,3 +478,126 @@ describe('fake start_next_closing (matches the server: closingNo = the live clos
     }
   });
 });
+
+describe('closing number and starting the next closing (stage 5)', () => {
+  const header = (p: Phone) => p.container.querySelector('header')!.textContent ?? '';
+  const startBtn = (p: Phone, no = 2) => p.q.queryByRole('button', { name: `Έναρξη ${no}ου κλεισίματος` });
+  /** Types a value, submits through the sheet and closes it. */
+  async function submitClosing(p: Phone) {
+    typeAndLeave(p, '100€', '500');
+    await settle();
+    fireEvent.click(barSubmit(p));
+    await tapSheetSubmit();
+    await settle();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await settle();
+  }
+  const confirmStart = (no = 2) =>
+    act(async () => {
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Έναρξη' }));
+    });
+
+  it('a 1-closing shop shows no closing line and no start button, before and after a submit', async () => {
+    const server = fakeServer();
+    const p = phone(server, MARIA);
+    await settle();
+    expect(header(p)).not.toContain('κλείσιμο από');
+    expect(p.q.queryByRole('button', { name: /^Έναρξη/ })).toBeNull();
+    await submitClosing(p);
+    expect(header(p)).not.toContain('κλείσιμο από');
+    expect(p.q.queryByRole('button', { name: /^Έναρξη/ })).toBeNull();
+  });
+
+  it('plan 3, closing 1, not submitted: shows the closing line, no start button', async () => {
+    const p = phone(fakeServer({ closingsPlanned: 3 }), MARIA);
+    await settle();
+    expect(header(p)).toContain('1ο κλείσιμο από 3');
+    expect(startBtn(p)).toBeNull();
+  });
+
+  it('submitted and unchanged shows the button; typing hides it', async () => {
+    const p = phone(fakeServer({ closingsPlanned: 3 }), MARIA);
+    await settle();
+    await submitClosing(p);
+    expect(startBtn(p)).not.toBeNull();
+    typeAndLeave(p, '50€', '1');
+    await settle();
+    expect(startBtn(p)).toBeNull();
+  });
+
+  it('confirming starts closing 2 once: header moves on and the boxes are empty', async () => {
+    const server = fakeServer({ closingsPlanned: 3 });
+    const p = phone(server, MARIA);
+    await settle();
+    await submitClosing(p);
+    fireEvent.click(startBtn(p)!);
+    expect(dialog().textContent).toContain('Τα κουτιά θα αδειάσουν για το νέο κλείσιμο.');
+    await confirmStart();
+    await settle();
+    expect(p.api.startNextClosing).toHaveBeenCalledTimes(1);
+    expect(p.api.startNextClosing).toHaveBeenCalledWith('token-1', '2026-11-07', 1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(header(p)).toContain('2ο κλείσιμο από 3');
+    expect(field(p, '100€').value).toBe('');
+    expect(startBtn(p, 3)).toBeNull();
+  });
+
+  it('not_submitted shows its message in the sheet, which stays open', async () => {
+    const server = fakeServer({ closingsPlanned: 3 });
+    const p = phone(server, MARIA, memoryStore(), { startNextClosing: vi.fn<DeviceApi['startNextClosing']>(() => fail({ code: 'not_submitted' })) });
+    await settle();
+    await submitClosing(p);
+    fireEvent.click(startBtn(p)!);
+    await confirmStart();
+    expect(within(dialog()).getByRole('alert').textContent).toBe('Κάνε πρώτα Υποβολή του κλεισίματος.');
+  });
+
+  it('wrong_closing closes the sheet and reloads once', async () => {
+    const server = fakeServer({ closingsPlanned: 3 });
+    const p = phone(server, MARIA, memoryStore(), { startNextClosing: vi.fn<DeviceApi['startNextClosing']>(() => fail({ code: 'wrong_closing' })) });
+    await settle();
+    await submitClosing(p);
+    const before = vi.mocked(p.api.getOpenClosing).mock.calls.length;
+    fireEvent.click(startBtn(p)!);
+    await confirmStart();
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(vi.mocked(p.api.getOpenClosing).mock.calls.length - before).toBe(1);
+  });
+
+  it('a network failure shows the message and re-enables «Έναρξη»', async () => {
+    const server = fakeServer({ closingsPlanned: 3 });
+    const p = phone(server, MARIA, memoryStore(), { startNextClosing: vi.fn<DeviceApi['startNextClosing']>(() => fail({ code: 'network' })) });
+    await settle();
+    await submitClosing(p);
+    fireEvent.click(startBtn(p)!);
+    await confirmStart();
+    expect(within(dialog()).getByRole('alert').textContent).toBe('Δεν υπάρχει σύνδεση.');
+    expect((within(dialog()).getByRole('button', { name: 'Έναρξη' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('closing 3 of 3, submitted: no button', async () => {
+    const server = fakeServer({ closingsPlanned: 3 });
+    const p = phone(server, MARIA);
+    await settle();
+    await submitClosing(p);
+    fireEvent.click(startBtn(p)!);
+    await confirmStart();
+    await settle();
+    await submitClosing(p);
+    fireEvent.click(startBtn(p, 3)!);
+    await confirmStart();
+    await settle();
+    expect(header(p)).toContain('3ο κλείσιμο από 3');
+    await submitClosing(p);
+    expect(p.q.queryByRole('button', { name: /^Έναρξη/ })).toBeNull();
+  });
+
+  it("'running' mode shows the running body text", async () => {
+    const p = phone(fakeServer({ closingsPlanned: 2, cashMode: 'running' }), MARIA);
+    await settle();
+    await submitClosing(p);
+    fireEvent.click(startBtn(p)!);
+    expect(dialog().textContent).toContain('Τα έξοδα μένουν. Η καταμέτρηση και τα ποσά ξεκινούν κενά για νέα καταγραφή.');
+  });
+});
