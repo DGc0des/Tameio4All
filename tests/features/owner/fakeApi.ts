@@ -46,7 +46,10 @@ export function fakeApi(overrides: Partial<OwnerApi> = {}): OwnerApi {
     setTodayField: vi.fn(() => ok({ version: 1, revision: 1 })),
     listClosings: vi.fn(() => ok({ today: '2026-11-11', from: '2026-10-13', to: '2026-11-11', configs: {}, days: [] })),
     closingDay: vi.fn(() =>
-      ok({ today: '2026-11-11', businessDate: '2026-11-10', versions: [], configs: {}, staffNames: {}, open: null }),
+      ok({
+        today: '2026-11-11', businessDate: '2026-11-10', cashMode: 'separate' as const, closingsPlanned: 1, liveClosingNo: null,
+        closings: [], configs: {}, staffNames: {},
+      }),
     ),
     saveClosing: vi.fn(() => ok({ closingId: 'c-new', repeat: false })),
     live: vi.fn((_shopId: string, _me: { name: string }, h: LiveHandlers) => fakeLive(h)),

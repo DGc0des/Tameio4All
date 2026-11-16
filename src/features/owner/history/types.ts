@@ -35,14 +35,26 @@ export interface HistoryList {
   days: HistoryDay[];
 }
 
+/** One numbered closing of a day: its versions, or (none submitted) the open closing of a past day. */
+export interface DayClosing {
+  closingNo: number;
+  /** Newest first; [0] is the current version. */
+  versions: ClosingVersion[];
+  open: Snapshot | null;
+}
+
 export interface DayDetail {
   today: string;
   businessDate: string;
-  /** Newest first; [0] is the current version. */
-  versions: ClosingVersion[];
+  cashMode: CashMode;
+  closingsPlanned: number;
+  /** The live closing's number when this day is the shop's today; else null. */
+  liveClosingNo: number | null;
+  /** By closingNo ascending; may be empty. */
+  closings: DayClosing[];
+  /** Untrusted jsonb by config id — check with isShopConfig. */
   configs: Record<string, unknown>;
   staffNames: Record<string, string>;
-  open: Snapshot | null;
 }
 
 export interface SaveClosingArgs {

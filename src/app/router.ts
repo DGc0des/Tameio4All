@@ -21,29 +21,42 @@ export type OwnerRoute =
   | { name: 'reset' }
   | { name: 'shops' }
   | { name: 'new' }
-  | { name: 'shop'; shopId: string; tab: ShopTab; /** A day of the history tab (only with `tab: 'history'`). */ date?: string };
+  | {
+      name: 'shop';
+      shopId: string;
+      tab: ShopTab;
+      /** A day of the history tab (only with `tab: 'history'`). */
+      date?: string;
+      /** A numbered closing of that day, 1..6 (only with `tab: 'history'` and a date). */
+      closingNo?: number;
+    };
 
 export type AppRoute = { area: 'register'; route: Route } | { area: 'owner'; route: OwnerRoute };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SHOP_TABS: readonly ShopTab[] = ['today', 'history', 'settings', 'staff', 'devices'];
 const OWNER_PREFIX = '#/owner';
+/** A closing number segment: 1..6, no leading zeros. */
+const CLOSING_SEGMENT_RE = /^[1-6]$/;
 
 /** `rest` is what follows `#/owner`. Anything malformed lands on the shops list. */
 export function parseOwnerRoute(rest: string): OwnerRoute {
   const parts = rest.split('/').filter((p) => p !== '');
-  const [first, id, tab, day] = parts;
+  const [first, id, tab, day, closing] = parts;
   if (parts.length === 1 && (first === 'login' || first === 'signup' || first === 'forgot' || first === 'reset' || first === 'new')) {
     return { name: first };
   }
-  if (first === 'shop' && id !== undefined && parts.length <= 4) {
+  // A fifth part (a closing of a history day) is allowed only after a history day; checked below.
+  if (first === 'shop' && id !== undefined && parts.length <= 5) {
     const shopId = id.toLowerCase();
     const shopTab = tab ?? 'settings';
     if (UUID_RE.test(shopId) && (SHOP_TABS as readonly string[]).includes(shopTab)) {
       if (day === undefined) return { name: 'shop', shopId, tab: shopTab as ShopTab };
-      // A day segment belongs to the history tab only; a malformed one is dropped, not an error.
+      // A day (and closing) segment belongs to the history tab only; a malformed one is dropped, not an error.
       if (shopTab === 'history') {
-        return isIsoDate(day) ? { name: 'shop', shopId, tab: 'history', date: day } : { name: 'shop', shopId, tab: 'history' };
+        if (!isIsoDate(day)) return { name: 'shop', shopId, tab: 'history' };
+        if (closing === undefined || !CLOSING_SEGMENT_RE.test(closing)) return { name: 'shop', shopId, tab: 'history', date: day };
+        return { name: 'shop', shopId, tab: 'history', date: day, closingNo: Number(closing) };
       }
     }
   }
@@ -61,7 +74,9 @@ export function ownerHash(route: OwnerRoute): string {
   if (route.name === 'shops') return OWNER_PREFIX;
   if (route.name === 'shop') {
     const base = `${OWNER_PREFIX}/shop/${route.shopId}/${route.tab}`;
-    return route.tab === 'history' && route.date !== undefined ? `${base}/${route.date}` : base;
+    if (route.tab !== 'history' || route.date === undefined) return base;
+    const closing = route.closingNo !== undefined && CLOSING_SEGMENT_RE.test(String(route.closingNo)) ? `/${route.closingNo}` : '';
+    return `${base}/${route.date}${closing}`;
   }
   return `${OWNER_PREFIX}/${route.name}`;
 }

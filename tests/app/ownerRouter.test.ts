@@ -31,9 +31,32 @@ describe('owner routes', () => {
     }
   });
 
+  it('parses a closing of a history day and round-trips it', () => {
+    const r: OwnerRoute = { name: 'shop', shopId: ID, tab: 'history', date: '2026-11-16', closingNo: 2 };
+    expect(parseOwnerRoute(`/shop/${ID}/history/2026-11-16/2`)).toEqual(r);
+    expect(ownerHash(r)).toBe(`#/owner/shop/${ID}/history/2026-11-16/2`);
+    expect(parseAppRoute(ownerHash(r))).toEqual({ area: 'owner', route: r });
+    expect(parseOwnerRoute(`/shop/${ID}/history/2026-11-16/6`)).toEqual({ ...r, closingNo: 6 });
+  });
+
+  it('drops a malformed closing segment: the route is the day without a closing', () => {
+    for (const bad of ['0', '7', '02', 'x']) {
+      const r = parseOwnerRoute(`/shop/${ID}/history/2026-11-16/${bad}`);
+      expect(r).toEqual({ name: 'shop', shopId: ID, tab: 'history', date: '2026-11-16' });
+      expect('closingNo' in r).toBe(false);
+    }
+  });
+
+  it('writes a closing segment only with a history day', () => {
+    expect(ownerHash({ name: 'shop', shopId: ID, tab: 'history', closingNo: 2 })).toBe(`#/owner/shop/${ID}/history`);
+    expect(ownerHash({ name: 'shop', shopId: ID, tab: 'settings', date: '2026-11-16', closingNo: 2 })).toBe(`#/owner/shop/${ID}/settings`);
+  });
+
   it('refuses a day segment on other tabs and extra segments', () => {
     expect(parseOwnerRoute(`/shop/${ID}/settings/2026-11-09`)).toEqual({ name: 'shops' });
-    expect(parseOwnerRoute(`/shop/${ID}/history/2026-11-09/extra`)).toEqual({ name: 'shops' });
+    expect(parseOwnerRoute(`/shop/${ID}/settings/2026-11-09/2`)).toEqual({ name: 'shops' });
+    expect(parseOwnerRoute(`/shop/${ID}/today/2026-11-09/2`)).toEqual({ name: 'shops' });
+    expect(parseOwnerRoute(`/shop/${ID}/history/2026-11-09/2/extra`)).toEqual({ name: 'shops' });
   });
 
   it('writes a day segment only for the history tab', () => {

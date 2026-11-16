@@ -23,6 +23,8 @@ export interface CorrectionEditorProps {
   base: Snapshot;
   /** The version being corrected; null when filing an unsubmitted day. */
   expectedCurrentId: string | null;
+  /** The closing of the day being corrected (sent with every save). */
+  closingNo: number;
   /** The parent refetches the day and leaves edit mode. */
   onSaved: () => void;
   /** «Φόρτωση νέας»: the parent refetches; the editor remounts on the new current. */
@@ -41,7 +43,7 @@ const NO_HISTORY: SupplierHistory = {};
 const noop = (): void => {};
 
 /** A past closing edited locally (nothing live, nothing sent per field) and saved as a new version. */
-export function CorrectionEditor({ api, shopId, base, expectedCurrentId, onSaved, onReload, onCancel, now, newId = randomId }: CorrectionEditorProps) {
+export function CorrectionEditor({ api, shopId, base, expectedCurrentId, closingNo, onSaved, onReload, onCancel, now, newId = randomId }: CorrectionEditorProps) {
   const config = isShopConfig(base.config) ? base.config : null;
   const [snapshot, setSnapshot] = useState(base);
   const [viewMode, setViewMode] = useState<EntryMode>('count');
@@ -99,7 +101,7 @@ export function CorrectionEditor({ api, shopId, base, expectedCurrentId, onSaved
     setConflict(null);
     const r = await api.saveClosing(shopId, {
       businessDate: base.businessDate, configId: base.configId, inputs: derived.inputs, expectedCurrentId: guard, key: k,
-      closingNo: 1, // stage 5 Task 8 passes the real closing number
+      closingNo,
     });
     inFlight.current = false;
     if (!mounted.current) return;

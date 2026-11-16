@@ -261,12 +261,15 @@ describe('createOwnerApi', () => {
     });
 
     it('closingDay calls owner_get_closing_day and parses the payload', async () => {
-      const payload = { ok: true, today: '2026-11-11', business_date: '2026-11-10', versions: [version], configs: {}, staff_names: {}, open: null };
+      const payload = {
+        ok: true, today: '2026-11-11', business_date: '2026-11-10', cash_mode: 'separate', closings_planned: 1, live_closing_no: null,
+        closings: [{ closing_no: 1, versions: [version], open: null }], configs: {}, staff_names: {},
+      };
       const { api, calls } = fake({ data: payload, error: null });
       const r = await api.closingDay('s1', '2026-11-10');
       expect(calls).toEqual([['rpc', 'owner_get_closing_day', { p_shop_id: 's1', p_business_date: '2026-11-10' }]]);
-      expect(r.ok && r.data.versions[0]?.id).toBe('v1');
-      expect(await fake({ data: { ok: true, versions: 1 }, error: null }).api.closingDay('s1', '2026-11-10'))
+      expect(r.ok && r.data.closings[0]?.versions[0]?.id).toBe('v1');
+      expect(await fake({ data: { ok: true, closings: 1 }, error: null }).api.closingDay('s1', '2026-11-10'))
         .toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
     });
 

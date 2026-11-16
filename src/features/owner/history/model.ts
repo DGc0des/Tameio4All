@@ -10,7 +10,7 @@ import {
   KEY_RE, amountValue, channelKey, denomKey, denomValue, expenseAmountKey, expenseDescKey, expenseKey, expenseMetaValue,
   isFieldValue, parseKey, textValue, type CashMode, type FieldKey, type ServerField, type Snapshot,
 } from '../../register/live/fields';
-import type { ClosingVersion, HistoryDay, HistoryList } from './types';
+import type { ClosingVersion, DayDetail, HistoryClosing, HistoryDay, HistoryList } from './types';
 
 export const OWNER_NAME = 'Ιδιοκτήτης';
 export const UNKNOWN_AUTHOR = '—';
@@ -258,4 +258,15 @@ export function summarizeDay(day: HistoryDay, configs: Record<string, unknown>):
     result: combineDay(day.cashMode, results), done: results.length,
     planned: Math.max(day.closingsPlanned, day.closings.length), hasUnsubmitted,
   };
+}
+
+/** The day result of a day detail: each closing's current version (unsubmitted closings excluded), through summarizeDay. */
+export function summarizeDetail(day: DayDetail): DaySummary {
+  const closings: HistoryClosing[] = [];
+  for (const c of day.closings) {
+    const current = c.versions[0];
+    if (current !== undefined) closings.push({ closingNo: c.closingNo, status: 'submitted', current, versionCount: c.versions.length });
+    else if (c.open !== null) closings.push({ closingNo: c.closingNo, status: 'unsubmitted', open: c.open });
+  }
+  return summarizeDay({ businessDate: day.businessDate, cashMode: day.cashMode, closingsPlanned: day.closingsPlanned, closings }, day.configs);
 }

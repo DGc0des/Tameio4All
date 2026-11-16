@@ -20,6 +20,8 @@ export interface ShopLayoutProps {
   tab: ShopTab;
   /** A day of the history tab (`#/owner/shop/<id>/history/<date>`). */
   date?: string;
+  /** A closing of that day (`…/history/<date>/<n>`). */
+  closingNo?: number;
   navigate: OwnerNavigate;
   store: KeyValueStore;
   now: () => Date;
@@ -39,7 +41,7 @@ const TABS: { tab: ShopTab; label: string }[] = [
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'missing' } | { status: 'ready'; name: string };
 
-export function ShopLayout({ api, shopId, tab, date, navigate, store, now, email, onSignOut, onExit }: ShopLayoutProps) {
+export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store, now, email, onSignOut, onExit }: ShopLayoutProps) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -144,6 +146,7 @@ export function ShopLayout({ api, shopId, tab, date, navigate, store, now, email
         <TabBody
           tab={tab}
           date={date}
+          closingNo={closingNo}
           api={api}
           shopId={shopId}
           shopName={load.name}
@@ -170,6 +173,7 @@ export function ShopLayout({ api, shopId, tab, date, navigate, store, now, email
 interface TabBodyProps {
   tab: ShopTab;
   date?: string;
+  closingNo?: number;
   api: OwnerApi;
   shopId: string;
   shopName: string;
@@ -180,11 +184,12 @@ interface TabBodyProps {
   onHistoryRange: (from: string, to: string) => void;
 }
 
-function TabBody({ tab, date, api, shopId, shopName, navigate, store, now, historyRange, onHistoryRange }: TabBodyProps) {
+function TabBody({ tab, date, closingNo, api, shopId, shopName, navigate, store, now, historyRange, onHistoryRange }: TabBodyProps) {
   if (tab === 'today') return <TodayScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
   if (tab === 'history') {
     return date ? (
-      <DayScreen key={shopId + date} api={api} shopId={shopId} date={date} navigate={navigate} now={now} />
+      // Not keyed by the closing: switching closings of one day keeps the loaded day.
+      <DayScreen key={shopId + date} api={api} shopId={shopId} date={date} closingNo={closingNo} navigate={navigate} now={now} />
     ) : (
       <HistoryScreen key={shopId} api={api} shopId={shopId} navigate={navigate} initialRange={historyRange} onRangeLoaded={onHistoryRange} />
     );

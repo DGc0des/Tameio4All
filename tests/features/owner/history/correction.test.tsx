@@ -7,7 +7,7 @@ import { juiceBarPreset } from '../../../../src/core/presets';
 import type { OwnerApi, Result } from '../../../../src/data/remote/ownerApi';
 import { DayScreen } from '../../../../src/features/owner/history/DayScreen';
 import { applyLocalEdit, snapshotFromInputs } from '../../../../src/features/owner/history/model';
-import type { ClosingVersion, DayDetail, SaveClosingArgs } from '../../../../src/features/owner/history/types';
+import type { ClosingVersion, DayClosing, DayDetail, SaveClosingArgs } from '../../../../src/features/owner/history/types';
 import { ownerErrorMessage } from '../../../../src/features/owner/model/messages';
 import { deriveClosing, envelopeBlockReason } from '../../../../src/features/register/derive';
 import { amountValue, type Snapshot } from '../../../../src/features/register/live/fields';
@@ -34,8 +34,12 @@ const version = (id: string, over: Partial<ClosingVersion> = {}): ClosingVersion
 const v1 = version('v1', { createdAt: '2026-11-09T17:05:00Z', inputs: { ...currentInputs, counts: { '10000': 1 } } });
 const v2 = version('v2');
 const v3 = version('v3', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', correctsId: 'v2', inputs: { ...currentInputs, counts: { '10000': 7 } } });
-const day = (over: Partial<DayDetail> = {}): DayDetail => ({
-  today: '2026-11-11', businessDate: DATE, versions: [v2, v1], configs: { cfg1: juiceBarPreset }, staffNames: NAMES, open: null, ...over,
+/** A day with one closing (closing 1) built from `versions`/`open`, unless `closings` is given. */
+type DayOver = Partial<Omit<DayDetail, 'closings'>> & { versions?: ClosingVersion[]; open?: Snapshot | null; closings?: DayClosing[] };
+const day = ({ versions = [v2, v1], open = null, closings, ...over }: DayOver = {}): DayDetail => ({
+  today: '2026-11-11', businessDate: DATE, cashMode: 'separate', closingsPlanned: 1, liveClosingNo: null,
+  closings: closings ?? (versions.length === 0 && open === null ? [] : [{ closingNo: 1, versions, open }]),
+  configs: { cfg1: juiceBarPreset }, staffNames: NAMES, ...over,
 });
 const openSnap: Snapshot = {
   id: 'oc-1', businessDate: DATE, configId: 'cfg-open', config: juiceBarPreset, revision: 2, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null,
@@ -43,15 +47,16 @@ const openSnap: Snapshot = {
 };
 
 type Save = OwnerApi['saveClosing'];
-function setup(o: { days?: DayDetail[]; saveClosing?: Save } = {}) {
+function setup(o: { days?: DayDetail[]; saveClosing?: Save; closingNo?: number } = {}) {
   const days = o.days ?? [day()];
   let n = 0;
   const closingDay = vi.fn(() => ok(days[Math.min(n++, days.length - 1)]!));
   let id = 0;
   const newId = () => `n${++id}`;
   const api = fakeApi({ closingDay, ...(o.saveClosing ? { saveClosing: o.saveClosing } : {}) });
-  render(<DayScreen api={api} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} newId={newId} />);
-  return { api, closingDay };
+  const view = render(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={o.closingNo} navigate={vi.fn()} now={NOW} newId={newId} />);
+  const go = (n: number) => view.rerender(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={n} navigate={vi.fn()} now={NOW} newId={newId} />);
+  return { api, closingDay, go };
 }
 
 const box = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
@@ -286,5 +291,54 @@ describe('CorrectionEditor', () => {
     expect(savedArgs(api).inputs.counts).toEqual({ '10000': 2 });
     await waitFor(() => expect(api.closingDay).toHaveBeenCalledTimes(2));
     noLiveWrites(api);
+  });
+
+  describe('per closing', () => {
+    const k1 = version('k1', { inputs: { ...currentInputs, counts: { '10000': 1 } } });
+    const k1b = version('k1b', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', correctsId: 'k1', inputs: { ...currentInputs, counts: { '10000': 6 } } });
+    const k2 = version('k2', { inputs: { ...currentInputs, counts: { '10000': 2 } } });
+    const two = (first: ClosingVersion[] = [k1]) => day({
+      closingsPlanned: 2, closings: [{ closingNo: 1, versions: first, open: null }, { closingNo: 2, versions: [k2], open: null }],
+    });
+
+    it('a save sends the editor\'s closing number and that closing\'s current version', async () => {
+      const { api } = setup({ days: [two()] });
+      expect((await startCorrection() as HTMLInputElement).value).toBe('2');
+      type('100€', '4');
+      fireEvent.click(saveButton());
+      expect(api.saveClosing).toHaveBeenCalledWith(SHOP, expect.objectContaining({ closingNo: 2, expectedCurrentId: 'k2' }));
+      await screen.findByRole('button', { name: 'Διόρθωση' });
+    });
+
+    it('closing_changed → «Φόρτωση νέας» refetches and stays on the same closing', async () => {
+      const saveClosing = vi.fn<Save>(() => fail({ code: 'closing_changed', currentId: 'k1b' }));
+      const { api, closingDay } = setup({ days: [two(), two([k1b, k1])], saveClosing, closingNo: 1 });
+      expect((await startCorrection() as HTMLInputElement).value).toBe('1');
+      type('100€', '4');
+      fireEvent.click(saveButton());
+      expect(savedArgs(api, 0)).toEqual(expect.objectContaining({ closingNo: 1, expectedCurrentId: 'k1' }));
+      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Φόρτωση νέας' }));
+      await waitFor(() => expect(closingDay).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(box('100€').value).toBe('6'));
+      type('100€', '8');
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(saveClosing).toHaveBeenCalledTimes(2));
+      expect(savedArgs(api, 1)).toEqual(expect.objectContaining({ closingNo: 1, expectedCurrentId: 'k1b' }));
+    });
+
+    it('switching closing leaves the editor; edits and the key never move to the other closing', async () => {
+      const { api, go } = setup({ days: [two()] });
+      await startCorrection();
+      type('100€', '9');
+      go(1);
+      expect(screen.queryByLabelText('100€')).toBeNull();
+      expect(screen.getByText('100€ × 1')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Διόρθωση' }));
+      expect(box('100€').value).toBe('1');
+      expect(saveButton().disabled).toBe(true);
+      type('100€', '3');
+      fireEvent.click(saveButton());
+      expect(savedArgs(api, 0)).toEqual(expect.objectContaining({ closingNo: 1, expectedCurrentId: 'k1' }));
+    });
   });
 });

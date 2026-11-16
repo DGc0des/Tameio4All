@@ -98,36 +98,62 @@ describe('parseHistoryList', () => {
 });
 
 describe('parseDayDetail', () => {
+  const closing = (no: unknown, over: Record<string, unknown> = {}) => ({ closing_no: no, versions: [version({ id: 'b' }), version({ id: 'a' })], open: null, ...over });
   const day = (over: Record<string, unknown> = {}) => ({
-    ok: true, today: '2026-11-11', business_date: '2026-11-10', versions: [version({ id: 'b' }), version({ id: 'a' })],
-    configs: { cfg1: { a: 1 } }, staff_names: { s1: 'Μαρία' }, open: null, ...over,
+    ok: true, today: '2026-11-11', business_date: '2026-11-10', cash_mode: 'separate', closings_planned: 2, live_closing_no: null,
+    closings: [closing(1)], configs: { cfg1: { a: 1 } }, staff_names: { s1: 'Μαρία' }, ...over,
   });
 
-  it('keeps server order and maps fields', () => {
-    const r = parseDayDetail(day());
-    expect(r!.versions.map((v) => v.id)).toEqual(['b', 'a']);
+  it('reads the per-closing shape, keeps version order and maps fields', () => {
+    const r = parseDayDetail(day({ cash_mode: 'running', closings: [closing(2, { versions: [version({ id: 'c' })] }), closing(1)] }));
     expect(r!.today).toBe('2026-11-11');
     expect(r!.businessDate).toBe('2026-11-10');
+    expect(r!.cashMode).toBe('running');
+    expect(r!.closingsPlanned).toBe(2);
+    expect(r!.liveClosingNo).toBeNull();
+    expect(r!.closings.map((c) => c.closingNo)).toEqual([1, 2]);
+    expect(r!.closings[0]!.versions.map((v) => v.id)).toEqual(['b', 'a']);
+    expect(r!.closings[1]!.versions.map((v) => v.id)).toEqual(['c']);
+    expect(r!.closings[0]!.open).toBeNull();
     expect(r!.configs).toEqual({ cfg1: { a: 1 } });
     expect(r!.staffNames).toEqual({ s1: 'Μαρία' });
-    expect(r!.open).toBeNull();
   });
 
-  it('drops a malformed version and a non-string staff name', () => {
-    const r = parseDayDetail(day({ versions: [version({ id: 'b' }), version({ kind: 'x' }), 5], staff_names: { s1: 'Μαρία', s2: 7 } }));
-    expect(r!.versions.map((v) => v.id)).toEqual(['b']);
+  it('reads live_closing_no as a number or null; an out-of-range one becomes null, not a rejected payload', () => {
+    expect(parseDayDetail(day({ live_closing_no: 2 }))!.liveClosingNo).toBe(2);
+    expect(parseDayDetail(day({ live_closing_no: null }))!.liveClosingNo).toBeNull();
+    expect(parseDayDetail(day({ live_closing_no: 0 }))!.liveClosingNo).toBeNull();
+    expect(parseDayDetail(day({ live_closing_no: 7 }))!.liveClosingNo).toBeNull();
+  });
+
+  it('drops a bad closing item alone', () => {
+    const r = parseDayDetail(day({ closings: [closing(0), closing(7), closing('2'), 5, closing(3, { versions: 'x' }), closing(2)] }));
+    expect(r!.closings.map((c) => c.closingNo)).toEqual([2]);
+  });
+
+  it('drops a bad version inside a closing alone, and a non-string staff name', () => {
+    const r = parseDayDetail(day({ closings: [closing(1, { versions: [version({ id: 'b' }), version({ kind: 'x' }), 5] })], staff_names: { s1: 'Μαρία', s2: 7 } }));
+    expect(r!.closings[0]!.versions.map((v) => v.id)).toEqual(['b']);
     expect(r!.staffNames).toEqual({ s1: 'Μαρία' });
   });
 
-  it('parses an open snapshot, and turns a bad one into null', () => {
-    expect(parseDayDetail(day({ versions: [], open: open() }))!.open?.id).toBe('oc-1');
-    expect(parseDayDetail(day({ versions: [], open: { id: '' } }))!.open).toBeNull();
+  it('parses an open snapshot per closing; a closing left with neither versions nor a readable open is dropped', () => {
+    expect(parseDayDetail(day({ closings: [closing(1, { versions: [], open: open() })] }))!.closings[0]!.open?.id).toBe('oc-1');
+    const r = parseDayDetail(day({ closings: [closing(1, { versions: [], open: { id: '' } }), closing(2, { open: { id: '' } })] }));
+    expect(r!.closings.map((c) => c.closingNo)).toEqual([2]);
+    expect(r!.closings[0]!.open).toBeNull();
+  });
+
+  it('accepts a day without closings', () => {
+    expect(parseDayDetail(day({ closings: [] }))!.closings).toEqual([]);
   });
 
   it('returns null for an unexpected payload', () => {
     expect(parseDayDetail(null)).toBeNull();
     expect(parseDayDetail({ ok: true })).toBeNull();
-    expect(parseDayDetail(day({ versions: 'x' }))).toBeNull();
+    expect(parseDayDetail(day({ closings: 'x' }))).toBeNull();
     expect(parseDayDetail(day({ business_date: 'bad' }))).toBeNull();
+    expect(parseDayDetail(day({ cash_mode: 'mixed' }))).toBeNull();
+    expect(parseDayDetail(day({ closings_planned: 0 }))).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { isIsoDate } from '../../app/dates';
-import type { ClosingVersion, DayDetail, HistoryClosing, HistoryDay, HistoryList } from '../../features/owner/history/types';
+import type { ClosingVersion, DayClosing, DayDetail, HistoryClosing, HistoryDay, HistoryList } from '../../features/owner/history/types';
 import { isCashMode, isClosingNo } from '../../features/register/live/fields';
 import { parseSnapshot } from './live';
 
@@ -64,21 +64,41 @@ export function parseHistoryList(x: unknown): HistoryList | null {
   return { today: x.today, from: x.from, to: x.to, configs, days };
 }
 
-/** The ok payload of owner_get_closing_day. Bad versions/names are dropped; a bad `open` becomes null. */
-export function parseDayDetail(x: unknown): DayDetail | null {
-  if (!isObj(x) || !isDate(x.today) || !isDate(x.business_date) || !Array.isArray(x.versions)) return null;
-  const configs = x.configs === undefined || x.configs === null ? {} : asRecord(x.configs);
-  const names = x.staff_names === undefined || x.staff_names === null ? {} : asRecord(x.staff_names);
-  if (!configs || !names) return null;
+/** One closing of the day detail; bad versions are dropped, a bad `open` becomes null; null when nothing is left to show. */
+function parseDayClosing(x: unknown): DayClosing | null {
+  if (!isObj(x) || !isClosingNo(x.closing_no) || !Array.isArray(x.versions)) return null;
   const versions: ClosingVersion[] = [];
   for (const raw of x.versions as unknown[]) {
     const v = parseVersion(raw);
     if (v) versions.push(v);
   }
+  const open = x.open === null || x.open === undefined ? null : parseSnapshot(x.open);
+  if (versions.length === 0 && open === null) return null;
+  return { closingNo: x.closing_no, versions, open };
+}
+
+/** The ok payload of owner_get_closing_day. Bad closings/versions/names are dropped individually; a bad top level → null. */
+export function parseDayDetail(x: unknown): DayDetail | null {
+  if (!isObj(x) || !isDate(x.today) || !isDate(x.business_date) || !Array.isArray(x.closings)) return null;
+  if (!isCashMode(x.cash_mode) || !isClosingNo(x.closings_planned)) return null;
+  const configs = x.configs === undefined || x.configs === null ? {} : asRecord(x.configs);
+  const names = x.staff_names === undefined || x.staff_names === null ? {} : asRecord(x.staff_names);
+  if (!configs || !names) return null;
+  const closings: DayClosing[] = [];
+  const seen = new Set<number>();
+  for (const raw of x.closings as unknown[]) {
+    const c = parseDayClosing(raw);
+    if (c && !seen.has(c.closingNo)) {
+      seen.add(c.closingNo);
+      closings.push(c);
+    }
+  }
+  closings.sort((a, b) => a.closingNo - b.closingNo);
   const staffNames: Record<string, string> = {};
   for (const [id, name] of Object.entries(names)) if (typeof name === 'string') staffNames[id] = name;
   return {
-    today: x.today, businessDate: x.business_date, versions, configs, staffNames,
-    open: x.open === null || x.open === undefined ? null : parseSnapshot(x.open),
+    today: x.today, businessDate: x.business_date, cashMode: x.cash_mode, closingsPlanned: x.closings_planned,
+    liveClosingNo: isClosingNo(x.live_closing_no) ? x.live_closing_no : null,
+    closings, configs, staffNames,
   };
 }

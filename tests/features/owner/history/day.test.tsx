@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatDateEl } from '../../../../src/app/dates';
+import { ownerHash } from '../../../../src/app/router';
 import { denomLabel } from '../../../../src/core/denominations';
 import type { ClosingInputs } from '../../../../src/core/formula';
 import { formatEuro } from '../../../../src/core/money';
@@ -9,8 +10,8 @@ import { juiceBarPreset } from '../../../../src/core/presets';
 import { memoryStore } from '../../../../src/data/local/storage';
 import type { Result } from '../../../../src/data/remote/ownerApi';
 import { DayScreen } from '../../../../src/features/owner/history/DayScreen';
-import { breakdown } from '../../../../src/features/owner/history/model';
-import type { ClosingVersion, DayDetail } from '../../../../src/features/owner/history/types';
+import { breakdown, combineDay, summarizeInputs } from '../../../../src/features/owner/history/model';
+import type { ClosingVersion, DayClosing, DayDetail } from '../../../../src/features/owner/history/types';
 import { ownerErrorMessage } from '../../../../src/features/owner/model/messages';
 import { ShopLayout } from '../../../../src/features/owner/ShopLayout';
 import type { Snapshot } from '../../../../src/features/register/live/fields';
@@ -44,8 +45,12 @@ const version = (id: string, over: Partial<ClosingVersion> = {}): ClosingVersion
 });
 const v1 = version('v1', { createdAt: '2026-11-09T17:05:00Z', authorName: 'ΓΙΑΝΝΗΣ', inputs: olderInputs });
 const v2 = version('v2');
-const day = (over: Partial<DayDetail> = {}): DayDetail => ({
-  today: '2026-11-11', businessDate: DATE, versions: [v2, v1], configs: { cfg1: juiceBarPreset }, staffNames: NAMES, open: null, ...over,
+/** A day with one closing (closing 1) built from `versions`/`open`, unless `closings` is given. */
+type DayOver = Partial<Omit<DayDetail, 'closings'>> & { versions?: ClosingVersion[]; open?: Snapshot | null; closings?: DayClosing[] };
+const day = ({ versions = [v2, v1], open = null, closings, ...over }: DayOver = {}): DayDetail => ({
+  today: '2026-11-11', businessDate: DATE, cashMode: 'separate', closingsPlanned: 1, liveClosingNo: null,
+  closings: closings ?? (versions.length === 0 && open === null ? [] : [{ closingNo: 1, versions, open }]),
+  configs: { cfg1: juiceBarPreset }, staffNames: NAMES, ...over,
 });
 const openSnap: Snapshot = {
   id: 'oc-1', businessDate: DATE, configId: 'cfg1', config: juiceBarPreset, revision: 2, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null,
@@ -322,7 +327,7 @@ describe('DayScreen', () => {
   });
 
   it('today offers neither «Διόρθωση» nor «Επαναφορά» (today is changed in «Σήμερα»)', async () => {
-    setup(day({ today: DATE }));
+    setup(day({ today: DATE, liveClosingNo: 1 }));
     await loaded();
     expect(screen.queryByRole('button', { name: 'Διόρθωση' })).toBeNull();
     expect(screen.getByText('Οι σημερινές αλλαγές γίνονται από «Σήμερα».')).toBeTruthy();
@@ -357,6 +362,114 @@ describe('DayScreen', () => {
   });
 });
 
+describe('DayScreen with several closings', () => {
+  const inputsOf = (n: number): ClosingInputs => ({ schema: 2, counts: { '10000': n }, channelCents: { wolt: 100 * n }, expenses: [] });
+  const c1 = version('c1', { authorName: 'ΑΛΕΞΗΣ', createdAt: '2026-11-09T09:10:00Z', inputs: inputsOf(1) });
+  const c2 = version('c2', { authorName: 'ΒΑΣΩ', createdAt: '2026-11-09T13:20:00Z', inputs: inputsOf(2) });
+  const c3 = version('c3', { authorName: 'ΓΙΩΤΑ', createdAt: '2026-11-09T19:30:00Z', inputs: inputsOf(3) });
+  const three = (over: DayOver = {}) => day({
+    closingsPlanned: 3,
+    closings: [{ closingNo: 1, versions: [c1], open: null }, { closingNo: 2, versions: [c2], open: null }, { closingNo: 3, versions: [c3], open: null }],
+    ...over,
+  });
+  const show = (d: DayDetail, closingNo?: number) => {
+    const navigate = vi.fn();
+    const closingDay = vi.fn(() => ok(d));
+    const api = fakeApi({ closingDay });
+    const view = render(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={closingNo} navigate={navigate} now={NOW} />);
+    const go = (n: number) => view.rerender(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={n} navigate={navigate} now={NOW} />);
+    return { navigate, closingDay, api, go };
+  };
+
+  it('a one-closing day with plan 1 has no day card and no selector', async () => {
+    show(day());
+    await loaded();
+    expect(screen.queryByRole('region', { name: 'Σύνολο ημέρας' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '1ο' })).toBeNull();
+    expect(screen.getByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
+  });
+
+  it('a one-closing day with a larger plan shows the day card and the selector', async () => {
+    show(day({ closingsPlanned: 3 }));
+    await loaded();
+    expect(within(region('Σύνολο ημέρας')).getByText('1 από 3 κλεισίματα')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '1ο' })).toBeTruthy();
+  });
+
+  it('a 3-closing separate day: the day sum, «3 από 3 κλεισίματα», three buttons, the highest closing shown', async () => {
+    const { navigate, closingDay, go } = show(three());
+    expect(await screen.findByText('Υποβλήθηκε 21:30 · ΓΙΩΤΑ')).toBeTruthy();
+    const card = within(region('Σύνολο ημέρας'));
+    const sum = combineDay('separate', [c1, c2, c3].map((v, i) => ({ closingNo: i + 1, configId: 'cfg1', summary: summarizeInputs(juiceBarPreset, v.inputs) })))!;
+    for (const t of sum.totals) expect(card.getByText(t.label).parentElement!.textContent).toContain(formatEuro(t.cents));
+    expect(card.getByText('3 από 3 κλεισίματα')).toBeTruthy();
+    expect(['1ο', '2ο', '3ο'].map((n) => screen.getByRole('button', { name: n }).getAttribute('aria-current'))).toEqual([null, null, 'true']);
+
+    fireEvent.click(screen.getByRole('button', { name: '1ο' }));
+    const route = { name: 'shop', shopId: SHOP, tab: 'history', date: DATE, closingNo: 1 } as const;
+    expect(navigate).toHaveBeenCalledWith(route);
+    expect(ownerHash(route).endsWith(`/history/${DATE}/1`)).toBe(true);
+    go(1);
+    expect(screen.getByText('Υποβλήθηκε 11:10 · ΑΛΕΞΗΣ')).toBeTruthy();
+    expect(within(region('Καταμέτρηση')).getByText('100€ × 1')).toBeTruthy();
+    expect(screen.queryByText(/ΓΙΩΤΑ/)).toBeNull();
+    expect(closingDay).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unsubmitted closing is left out of the day sum and its button says «Δεν υποβλήθηκε»', async () => {
+    const d = three({ closings: [{ closingNo: 1, versions: [c1], open: null }, { closingNo: 2, versions: [], open: { ...openSnap, closingNo: 2 } }] });
+    show(d);
+    expect((await screen.findAllByText('Δεν υποβλήθηκε')).length).toBe(2); // the closing's header and its selector badge
+    const card = within(region('Σύνολο ημέρας'));
+    const sum = combineDay('separate', [{ closingNo: 1, configId: 'cfg1', summary: summarizeInputs(juiceBarPreset, c1.inputs) }])!;
+    const first = sum.totals[0]!;
+    expect(card.getByText(first.label).parentElement!.textContent).toContain(formatEuro(first.cents));
+    expect(card.getByText('1 από 3 κλεισίματα')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^2ο/ }).textContent).toContain('Δεν υποβλήθηκε');
+    expect(screen.getByRole('button', { name: /^2ο/ }).getAttribute('aria-current')).toBe('true');
+  });
+
+  it('an unreadable closing makes the separate day sum «—» while every closing stays listed', async () => {
+    show(three({ closings: [{ closingNo: 1, versions: [version('bad', { configId: 'missing' })], open: null }, { closingNo: 2, versions: [c2], open: null }] }));
+    await loaded();
+    expect(within(region('Σύνολο ημέρας')).getByText('—')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '1ο' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '2ο' })).toBeTruthy();
+  });
+
+  it('a route closing the day does not have falls back to the highest closing', async () => {
+    show(three(), 9);
+    expect(await screen.findByText('Υποβλήθηκε 21:30 · ΓΙΩΤΑ')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '3ο' }).getAttribute('aria-current')).toBe('true');
+  });
+
+  it('today with closing 2 live: closing 2 has no «Διόρθωση», closing 1 has it', async () => {
+    const { go } = show(three({
+      today: DATE, liveClosingNo: 2, closingsPlanned: 2,
+      closings: [{ closingNo: 1, versions: [c1], open: null }, { closingNo: 2, versions: [c2], open: null }],
+    }));
+    expect(await screen.findByText('Υποβλήθηκε 15:20 · ΒΑΣΩ')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Διόρθωση' })).toBeNull();
+    expect(screen.getByText('Οι σημερινές αλλαγές γίνονται από «Σήμερα».')).toBeTruthy();
+    go(1);
+    expect(screen.getByText('Υποβλήθηκε 11:10 · ΑΛΕΞΗΣ')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Διόρθωση' })).toBeTruthy();
+    expect(screen.queryByText('Οι σημερινές αλλαγές γίνονται από «Σήμερα».')).toBeNull();
+  });
+
+  it('«Επαναφορά» on closing 2 of a past day saves with closingNo 2, guarded on closing 2\'s current', async () => {
+    const c2fix = version('c2fix', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', createdAt: '2026-11-10T08:00:00Z', correctsId: 'c2', inputs: inputsOf(5) });
+    const saveClosing = vi.fn(() => ok({ closingId: 'c2new', repeat: false }));
+    const d = three({ closings: [{ closingNo: 1, versions: [c1], open: null }, { closingNo: 2, versions: [c2fix, c2], open: null }, { closingNo: 3, versions: [c3], open: null }] });
+    render(<DayScreen api={fakeApi({ closingDay: vi.fn(() => ok(d)), saveClosing })} shopId={SHOP} date={DATE} closingNo={2} navigate={vi.fn()} now={NOW} newId={() => 'k2'} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Προβολή' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' }));
+    await waitFor(() => expect(saveClosing).toHaveBeenCalledWith(SHOP, {
+      businessDate: DATE, configId: 'cfg1', inputs: inputsOf(2), expectedCurrentId: 'c2fix', key: 'k2', closingNo: 2,
+    }));
+  });
+});
+
 describe('ShopLayout day route', () => {
   it('renders the day screen (not the list) for tab=history with a date', async () => {
     const api = fakeApi({
@@ -370,5 +483,18 @@ describe('ShopLayout day route', () => {
     expect(await screen.findByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
     await waitFor(() => expect(api.closingDay).toHaveBeenCalledWith(SHOP, DATE));
     expect(api.listClosings).not.toHaveBeenCalled();
+  });
+
+  it('hands the route closing number to the day screen', async () => {
+    const closings: DayClosing[] = [
+      { closingNo: 1, versions: [version('a1', { authorName: 'ΑΛΕΞΗΣ', createdAt: '2026-11-09T09:10:00Z' })], open: null },
+      { closingNo: 2, versions: [v2], open: null },
+    ];
+    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί' }])), closingDay: vi.fn(() => ok(day({ closingsPlanned: 2, closings }))) });
+    render(
+      <ShopLayout api={api} shopId={SHOP} tab="history" date={DATE} closingNo={1} navigate={vi.fn()} store={memoryStore()} now={NOW}
+        email="o@test.gr" onSignOut={vi.fn()} onExit={vi.fn()} />,
+    );
+    expect(await screen.findByText('Υποβλήθηκε 11:10 · ΑΛΕΞΗΣ')).toBeTruthy();
   });
 });
