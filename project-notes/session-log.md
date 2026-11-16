@@ -1,9 +1,16 @@
 ---
-updated: 2026-11-16
+updated: 2026-11-17
 ---
 # Session log
 
 Newest first. Back to [[index]].
+
+## 2026-11-17 — stage 5 planned: multiple closings per day
+- Wrote spec `docs/superpowers/specs/2026-11-17-multiple-closings-per-day-design.md` and plan
+  `docs/superpowers/plans/2026-11-17-stage-5-multiple-closings-per-day.md` (9 tasks). No code, nothing applied.
+- Model: closings numbered 1..6 per day, live closing = highest number, cashier starts the next one explicitly,
+  cash mode `separate` (day = sum) or `running` (day = last). Plan pinned when the day's first closing is created.
+- Next: owner reviews the plan (calls marked «my call» in the spec), then execution. Both files are uncommitted.
 
 ## 2026-11-16 — erasure migration applied to dev
 - Privilege probe passed (security definer can delete `auth.users`), `auth.sessions` columns checked, then
