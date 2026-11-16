@@ -41,6 +41,20 @@ is the last block; uses phones `…d1`–`…d3`, `…d5`, `…d6`. **Written, n
 privilege probe of plan `2026-11-14-legal-fixes` Task 3 Step 1 first). After applying, also re-run `020`, `060`, `110`,
 `140`, `150` (they touch `staff`).
 
+`170` several closings per day (`20261117000001_multi_closing`, stage 5 part 1): shop defaults (1 closing,
+`'separate'`) and the snapshot's `closing_no`/`closings_planned`/`cash_mode`; `set_closing_plan` (`bad_closing_plan` for
+0, 7, an unknown mode or nulls; `not_owner` for owner B) and the plan pinned on the day's closing 1 (re-created after a
+delete as the migration owner); `start_next_closing` refusals (`not_submitted` before a submit and after a change since
+it, `wrong_day`, `wrong_closing` for 2/0/null while 1 is live, `no_more_closings` after the last planned one), a start in
+`'separate'` mode (empty closing 2, same config, revision 0), a repeat start from the second phone, `wrong_closing` for
+phone/owner writes and submits naming closing 1 (closing 1 unchanged), `closings.closing_no`; `'running'` mode (shop C:
+only the visible expense lines and their `:d`/`:a` fields are copied, version 1, same authors; the second cashier
+submits them); the config pin across closings; a new day starting at closing 1 (the stored dates are shifted back as
+the migration owner, like 060 T8); grants and dropped overloads; T11 the `field`/`submitted` `closing_no` and the
+`closing_started` broadcast (skipped without `realtime.messages` partitions, like 090 T8). Uses phones `…d1`–`…d4`.
+After that migration two `090` checks must be updated: T0 (checks the 6-argument `submit_closing`; now 7 arguments)
+and T1 (expects 4 `last_submit` keys; now 5 with `closing_no`). **Written, not yet applied or run.**
+
 `080` and `090` also assert the Realtime side: `realtime.send` swallows insert errors (it only logs a
 WARNING) and, on a project whose `realtime.messages` has no partitions (the Realtime service creates the daily
 partitions once it is used), the broadcast/policy assertions cannot run. In that case the tests raise a
