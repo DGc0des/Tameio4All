@@ -197,6 +197,31 @@ describe('phones on the shared live closing', () => {
     expect(field(a, '100€').value).toBe('');
   });
 
+  it('F1: closing 2 starts and is resynced under an open sheet: Υποβολή still sends closing 1 (the frozen one), nothing lands on closing 2', async () => {
+    const server = fakeServer({ closingsPlanned: 3 });
+    const a = phone(server, MARIA);
+    await settle();
+    typeAndLeave(a, '100€', '500');
+    await settle();
+    fireEvent.click(barSubmit(a));
+    // Elsewhere: closing 1 is submitted, closing 2 starts and gets one write (its revision is now 1, like A's frozen one).
+    await server.submit('token-2', FAKE_CONFIG_ID, '2026-11-07', 1, { schema: 2, counts: {}, channelCents: {}, expenses: [] }, server.revision, 'k-other');
+    await server.startNextClosing('token-2', '2026-11-07', 1);
+    await server.setField('token-2', '2026-11-07', 2, 'd:5000', { text: '1', mode: 'amount' }, null);
+    await settle();
+    expect(field(a, '50€').value).toBe('1'); // A's register is on closing 2 under the sheet
+    const submitted = server.lastSubmit;
+    await tapSheetSubmit();
+    await settle();
+    const call = vi.mocked(a.api.submit).mock.calls[0]!;
+    expect(call[3]).toBe(1);
+    expect(call[2]).toBe('2026-11-07');
+    expect(call[1]).toBe(FAKE_CONFIG_ID);
+    expect(server.lastSubmit).toBe(submitted); // nothing stored for closing 2
+    expect(within(dialog()).getByRole('alert').textContent).toBe('Ξεκίνησε νέο κλείσιμο. Το ταμείο ανανεώθηκε.');
+    expect(a.onServerError).not.toHaveBeenCalled();
+  });
+
   it('a closing_started broadcast reloads the phone onto the new closing (stage 5)', async () => {
     const server = fakeServer({ closingsPlanned: 2 });
     const a = phone(server, MARIA);
@@ -547,9 +572,26 @@ describe('closing number and starting the next closing (stage 5)', () => {
     const p = phone(server, MARIA, memoryStore(), { startNextClosing: vi.fn<DeviceApi['startNextClosing']>(() => fail({ code: 'not_submitted' })) });
     await settle();
     await submitClosing(p);
+    const before = vi.mocked(p.api.getOpenClosing).mock.calls.length;
     fireEvent.click(startBtn(p)!);
     await confirmStart();
+    await settle();
     expect(within(dialog()).getByRole('alert').textContent).toBe('Κάνε πρώτα Υποβολή του κλεισίματος.');
+    // M4: the phone reloads so the snapshot (and the start button) follow the server.
+    expect(vi.mocked(p.api.getOpenClosing).mock.calls.length - before).toBe(1);
+  });
+
+  it('M4: no_more_closings keeps its message in the sheet and reloads once', async () => {
+    const server = fakeServer({ closingsPlanned: 3 });
+    const p = phone(server, MARIA, memoryStore(), { startNextClosing: vi.fn<DeviceApi['startNextClosing']>(() => fail({ code: 'no_more_closings' })) });
+    await settle();
+    await submitClosing(p);
+    const before = vi.mocked(p.api.getOpenClosing).mock.calls.length;
+    fireEvent.click(startBtn(p)!);
+    await confirmStart();
+    await settle();
+    expect(within(dialog()).getByRole('alert')).toBeTruthy();
+    expect(vi.mocked(p.api.getOpenClosing).mock.calls.length - before).toBe(1);
   });
 
   it('wrong_closing closes the sheet and reloads once', async () => {

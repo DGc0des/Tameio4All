@@ -24,7 +24,7 @@ import {
 } from './messages';
 import type { ShareFn } from './share';
 import { canStartNext, StartNextSheet, startNextLabel } from './StartNextSheet';
-import { SubmitSheet } from './SubmitSheet';
+import { SubmitSheet, type SubmitTarget } from './SubmitSheet';
 
 export interface RegisterProps {
   /** The server's view of this phone (shop, business date). The closing itself comes from the live snapshot. */
@@ -174,6 +174,8 @@ export function RegisterScreen(props: RegisterProps) {
         onServerError(r.error);
       } else {
         setNextError(deviceErrorMessage(r.error));
+        // The server disagrees with what this phone shows: reload so the snapshot (and the button) follow it.
+        if (r.error.code === 'not_submitted' || r.error.code === 'no_more_closings') void resync();
       }
     } finally {
       startingNext.current = false;
@@ -269,11 +271,13 @@ export function RegisterScreen(props: RegisterProps) {
     setSheet('submit');
   };
 
-  const submit = async (inputs: ClosingInputs, revision: number) => {
+  // Sends exactly the closing the sheet froze: a closing that changed under the open sheet is refused by the
+  // server (wrong_closing / wrong_day / config_mismatch), never written as the new one.
+  const submit = async (inputs: ClosingInputs, revision: number, target: SubmitTarget) => {
     const json = JSON.stringify(inputs);
     if (submitKey.current?.inputs !== json) submitKey.current = { key: newId(), inputs: json };
     const key = submitKey.current.key;
-    const r = await api.submit(session.token, snapshot.configId, snapshot.businessDate, snapshot.closingNo, inputs, revision, key);
+    const r = await api.submit(session.token, target.configId, target.businessDate, target.closingNo, inputs, revision, key);
     if (r.ok) {
       submitKey.current = null;
       setToast('Το κλείσιμο υποβλήθηκε');
@@ -327,6 +331,7 @@ export function RegisterScreen(props: RegisterProps) {
       {active && sheet === 'submit' && (
         <SubmitSheet
           config={config}
+          configId={snapshot.configId}
           draft={draft}
           derived={derived}
           revision={snapshot.revision}

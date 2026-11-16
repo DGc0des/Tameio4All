@@ -10,8 +10,17 @@ import type { Derived } from './derive';
 import type { Draft } from './draft';
 import { shareDateLine, type ShareFn } from './share';
 
+/** The closing a submit is for: frozen with the sheet's snapshot, never taken from the live register. */
+export interface SubmitTarget {
+  configId: string;
+  businessDate: string;
+  closingNo: number;
+}
+
 interface Props {
   config: ShopConfig;
+  /** The pinned config id of the closing that `draft` shows. */
+  configId: string;
   draft: Draft;
   derived: Derived;
   /** Revision of the live closing that `draft` shows. */
@@ -21,21 +30,21 @@ interface Props {
   closingsPlanned: number;
   /** Why Υποβολή can't be sent right now (unsaved edits, offline, a wrong value), or null. */
   blocked: string | null;
-  /** Sends these inputs as derived from closing `revision` (the caller picks the idempotency key). */
-  onSubmit: (inputs: ClosingInputs, revision: number) => Promise<DResult<{ closingId: string; repeat: boolean }>>;
+  /** Sends these inputs as derived from closing `revision` of `target` (the caller picks the idempotency key). */
+  onSubmit: (inputs: ClosingInputs, revision: number, target: SubmitTarget) => Promise<DResult<{ closingId: string; repeat: boolean }>>;
   onShare: ShareFn;
   onClose: () => void;
 }
 
 export const DRAFT_CHANGED_MESSAGE = 'Κάποιος άλλαξε κάτι — έλεγξε και πάτα ξανά Υποβολή';
 
-export function SubmitSheet({ config, draft, derived, revision, closingNo, closingsPlanned, blocked, onSubmit, onShare, onClose }: Props) {
+export function SubmitSheet({ config, configId, draft, derived, revision, closingNo, closingsPlanned, blocked, onSubmit, onShare, onClose }: Props) {
   // A retry must send exactly what was first sent, and the card (and the shared image) must show that
   // same closing: both come from the snapshot taken on open. After `draft_changed` the sheet follows the
   // live closing again until the next tap takes a new snapshot.
-  const [snapshot, setSnapshot] = useState(() => ({ draft, derived, revision, closingNo }));
+  const [snapshot, setSnapshot] = useState(() => ({ draft, derived, revision, closingNo, configId }));
   const [following, setFollowing] = useState(false);
-  const shown = following ? { draft, derived, revision, closingNo } : snapshot;
+  const shown = following ? { draft, derived, revision, closingNo, configId } : snapshot;
   const cardRef = useRef<HTMLDivElement>(null);
   const [submitted, setSubmitted] = useState(false);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -52,7 +61,9 @@ export function SubmitSheet({ config, draft, derived, revision, closingNo, closi
       setFollowing(false);
     }
     setBusy(true);
-    const r = await onSubmit(sending.derived.inputs, sending.revision);
+    const r = await onSubmit(sending.derived.inputs, sending.revision, {
+      configId: sending.configId, businessDate: sending.draft.businessDate, closingNo: sending.closingNo,
+    });
     inFlight.current = false;
     setBusy(false);
     if (!r.ok) {
