@@ -123,3 +123,12 @@ with the store key — the owner fetches it with `owner_get_join_key`, the phone
 rewritten for joining; 050 T9 was deleted; 060 T7 sets `revoked_at` as the migration owner, since `authenticated` no
 longer has that column grant). Run on dev on 2026-11-11 after both migrations: 010–120 all pass on dev (2026-11-11, after both migrations; 010 via the connector, 020–120 in the dashboard SQL editor, run by the user).
 
+`200` office names (`20261117000004_office_names`, stage 6): `private.office_name` (no client execute; the member's
+`display_name`, latest `accepted_at`, else «Ιδιοκτήτης»); a manager's live field, the owner's and a cashier's each named
+in `owner_get_open_closing` (`updated_by_name`), the `current` of a stale answer, `last_submit.staff_name` after the
+manager's live `owner_save_closing`, `author_name` of the manager's, the cashier's and an owner correction in
+`owner_get_closing_day`; the `field` and `submitted` broadcasts (T5, read from `realtime.messages`, skipped without a
+partition); removal keeping the name, a re-invite as «Νίκος Π.» renaming the earlier rows (the old row is back-dated:
+a transaction shares one `now()`), and account deletion showing `Διαγραμμένος συνεργάτης <8 hex>`. Written, **not run**
+(no local database; to be applied and run on dev with the migration).
+
