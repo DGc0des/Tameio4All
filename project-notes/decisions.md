@@ -1,5 +1,5 @@
 ---
-updated: 2026-11-16
+updated: 2026-11-17
 ---
 # Decisions
 
@@ -26,3 +26,7 @@ Seeded from CLAUDE.md, PROJECT_STATUS.md and git history. Back to [[index]].
 - **2026-11-14 (legal)** — Erasure keeps staff rows as tombstones (closings reference them); closings leave the DB
   only with their whole shop; daily purge of stale sessions/anonymous users (LG2). Real shop name removed from
   code (LG8); generated third-party notices (LG9).
+- **2026-11-17 (stage 5)** — Several closings per day (1..6): a cashier starts the next one explicitly
+  (`start_next_closing`, only after a submit), never automatically; the plan (count, cash mode, config) is pinned when
+  the day's closing 1 is created; `running` copies only the visible expense lines; the day result is computed in the
+  client history model (`combineDay`), never in SQL. Reason: spec `2026-11-17-multiple-closings-per-day-design.md`.

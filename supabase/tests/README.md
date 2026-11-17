@@ -47,13 +47,14 @@ privilege probe of plan `2026-11-14-legal-fixes` Task 3 Step 1 first). After app
 delete as the migration owner); `start_next_closing` refusals (`not_submitted` before a submit and after a change since
 it, `wrong_day`, `wrong_closing` for 2/0/null while 1 is live, `no_more_closings` after the last planned one), a start in
 `'separate'` mode (empty closing 2, same config, revision 0), a repeat start from the second phone, `wrong_closing` for
-phone/owner writes and submits naming closing 1 (closing 1 unchanged), `closings.closing_no`; `'running'` mode (shop C:
+phone/owner writes and submits naming closing 1 (closing 1 unchanged), the same submit key re-sent naming another
+closing (`idempotency_conflict`; the same closing is a repeat), `closings.closing_no`; `'running'` mode (shop C:
 only the visible expense lines and their `:d`/`:a` fields are copied, version 1, same authors; the second cashier
 submits them); the config pin across closings; a new day starting at closing 1 (the stored dates are shifted back as
 the migration owner, like 060 T8); grants and dropped overloads; T11 the `field`/`submitted` `closing_no` and the
 `closing_started` broadcast (skipped without `realtime.messages` partitions, like 090 T8). Uses phones `…d1`–`…d4`.
-After that migration two `090` checks must be updated: T0 (checks the 6-argument `submit_closing`; now 7 arguments)
-and T1 (expects 4 `last_submit` keys; now 5 with `closing_no`). **Written, not yet applied or run.**
+That migration changes two `090` checks, already adjusted (see below): T0 (7-argument `submit_closing`) and T1 (5
+`last_submit` keys with `closing_no`). **Written, not run** (the migration is not applied).
 
 `180` history, corrections and suggestions per closing (`20261117000002_multi_closing_history`, stage 5 part 2):
 `owner_list_closings` days with `cash_mode`/`closings_planned`/`closings:[entry…]` (an old-style day without an open
@@ -66,7 +67,10 @@ closing is `idempotency_conflict`, closing numbers 0/7/null are `bad_inputs`), f
 revision needed, no open closing changed) and for the live closing (`draft_changed`, then `last_submit` with
 `closing_no` on that closing only); suggestions for a `'separate'` day (every closing) and a `'running'` day (only the
 last closing); grants and the dropped 7-argument `owner_save_closing` / 2-argument `current_closing`. Past days are
-written as the migration owner (back-dated `closings`/`open_closings` rows, like 100). Uses phone `…d1`.
+written as the migration owner (back-dated `closings`/`open_closings` rows, like 100). Uses phone `…d1`. T4 assumes
+nothing creates today's closing 1 before its `set_closing_plan` call — check that when it first runs. **Written, not
+run** (the migration is not applied). Both stage-5 migrations are applied together; then run 170, 180, 090, 100, 110
+and 160. Neither file can test the `start_next_closing` races (one transaction each): those need two sessions.
 Older files adjusted to the two stage-5 migrations (assertions changed only as far as the new contract requires):
 `090` T0 (7-argument `submit_closing`; the 6-argument one is gone) and T1 (5 `last_submit` keys incl. `closing_no`);
 `100` T0/T1 (3-argument `current_closing`), T2–T4 (a list day's entry is `closings[0]`), T6 (the detail's

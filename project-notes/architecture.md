@@ -1,5 +1,5 @@
 ---
-updated: 2026-11-16
+updated: 2026-11-17
 ---
 # Architecture
 
@@ -36,13 +36,16 @@ Supabase: RLS everywhere, anon gets nothing, phones only via security-definer RP
 ## Data flow (a closing day)
 1. Phone opens `#/join/<key>` → `join_shop` (anonymous auth user + `devices` row) → key stored locally.
 2. Cashier signs in (`staff_sign_in`, PIN checked with two-track lockout) → staff session token (sha256 stored).
-3. `get_open_closing` creates/returns today's open closing, config **pinned** at creation.
+3. `get_open_closing` creates/returns today's live closing (highest `closing_no`); closing 1 pins config + plan.
 4. Each edit → `set_closing_field` (owner: `owner_set_closing_field`) → `private.write_closing_field` validates,
    stamps author, bumps version/revision, broadcasts `field` on private channel `shop:<shopId>`.
-5. Υποβολή → `submit_closing(token, config_id, date, inputs, revision, key)`: idempotent, revision must match,
+5. Υποβολή → `submit_closing(…, closing_no)`: idempotent, revision must match,
    expense lines must exist in the live closing → appends a `closings` row, broadcasts `submitted`.
-6. Owner history: `owner_list_closings` / `owner_get_closing_day`; corrections via `owner_save_closing` append
-   `owner_correction` rows (current version = highest non-voided `seq`). Totals never stored, always recomputed.
+6. Next closing (plan > 1): cashier taps «Έναρξη Nου κλεισίματος» → `start_next_closing` (live one submitted and
+   unchanged) inserts closing n+1 (`running` copies the visible expense lines), broadcasts `closing_started` → resync.
+7. Owner history: `owner_list_closings` / `owner_get_closing_day` (per closing); corrections via `owner_save_closing`
+   append `owner_correction` rows (current version = highest non-voided `seq` per closing). Totals never stored; the
+   day result is `combineDay` in `history/model.ts` (running = last, separate = sum).
 
 ## External services
 - Supabase dev project `fstfuhogvsdaiwpfdmep` (Postgres, Auth: email+PKCE for owners, anonymous for phones,

@@ -5,12 +5,12 @@ updated: 2026-11-17
 
 Newest first. Back to [[index]].
 
-## 2026-11-17 — stage 5 planned: multiple closings per day
-- Wrote spec `docs/superpowers/specs/2026-11-17-multiple-closings-per-day-design.md` and plan
-  `docs/superpowers/plans/2026-11-17-stage-5-multiple-closings-per-day.md` (9 tasks). No code, nothing applied.
-- Model: closings numbered 1..6 per day, live closing = highest number, cashier starts the next one explicitly,
-  cash mode `separate` (day = sum) or `running` (day = last). Plan pinned when the day's first closing is created.
-- Next: owner reviews the plan (calls marked «my call» in the spec), then execution. Both files are uncommitted.
+## 2026-11-17 — stage 5 built: multiple closings per day (not applied)
+- Tasks 1–8 + final-review fix wave on `stage-5-multi-closing` (to `affc2d6`): migrations `20261117000001_multi_closing`,
+  `…0002_multi_closing_history`, SQL tests 170/180 (+090/100/110/160 adjusted), phone start-next, owner plan card, history per closing.
+- Vitest 954/954, typecheck clean. Migrations NOT applied, SQL NOT run, nothing seen in a browser/phone.
+- Next: apply both migrations together on dev, run 170/180/090/100/110/160, two-session start race, two-phone check.
+- Gotcha: ship the stage-5 client with the migrations (history payload shapes changed).
 
 ## 2026-11-16 — erasure migration applied to dev
 - Privilege probe passed (security definer can delete `auth.users`), `auth.sessions` columns checked, then

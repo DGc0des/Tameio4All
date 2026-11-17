@@ -1,5 +1,5 @@
 ---
-updated: 2026-11-16
+updated: 2026-11-17
 ---
 # Tameio4All — index
 
@@ -27,7 +27,7 @@ Node 22.12+ or 24+.
 - `src/features/phone/` — phone gate reducer, join, sign-in
 - `src/data/local/` — only localStorage code · `src/data/remote/` — only supabase-js code
 - `src/app/` — App, hash router, theme, dates, join key · `src/ui/` — primitives
-- `supabase/migrations/` — DB source of truth (30 files) · `supabase/tests/` — SQL security tests
+- `supabase/migrations/` — DB source of truth (32 files; the 2 stage-5 ones not applied) · `supabase/tests/` — SQL security tests
 - `docs/superpowers/{specs,plans}/` — design specs and stage plans · `docs/legal/` — breach procedure, processing record
 
 ## Docs map (project root)
@@ -38,12 +38,14 @@ Node 22.12+ or 24+.
 ## Conventions
 - Components never parse/add money; text → cents only via `deriveClosing`/core, display via `formatEuro`
 - One write path each: phone `set_closing_field`, owner `owner_set_closing_field`, history `owner_save_closing`
+- Every write/submit names its closing (`p_closing_no`); only the live (highest) closing of today accepts it, else `wrong_closing`; history «current version» is per (shop, date, closing_no)
 - New server error string → `mapError` case + Greek `ownerErrorMessage`
 - Cross-file invariants (TS ↔ SQL) change in the same commit + a migration (field keys, inputs shape, PIN format, join key, `maxExpenses`)
 
 ## Gotchas
 - Migrations are applied to dev `fstfuhogvsdaiwpfdmep` via the Supabase connector; no production project yet
 - Each new migration must reach dev before the client that uses it is deployed (e.g. `erasure`: «Προσωπικό» filters on `erased_at`)
+- Stage 5: apply `20261117000001_multi_closing` + `…0002_multi_closing_history` together, with the stage-5 client (new history payloads)
 - SQL tests can run through the connector: paste the file whole (it ends in `ROLLBACK`), add a final `select` as a pass marker
 - Vitest also collects `.claude/worktrees/**` — run with `--exclude '.claude/**'` when worktrees exist
 - Many real-device / dashboard checks are outstanding — see PROJECT_STATUS «Not verified»

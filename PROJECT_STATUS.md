@@ -9,6 +9,7 @@
 - [ ] Stage 2 — live shared closing (open closing per day, per-field LWW writes, offline replay, realtime broadcast + presence, revision-checked submit, owner «Σήμερα» tab): code complete; SQL 010–090 pass on dev; pending the real-device checks (see Not verified)
 - [ ] Stage 3 — owner closing history and corrections («Ιστορικό» tab: closings as an append-only version log, range list, day detail with versions + Φάκελος, owner corrections saved as new versions with conflict handling, filing an unsubmitted day): code complete, merged to `main`; «Ιστορικό» is a week view (Mon–Sun, three cards per row on wide screens); SQL 010–110 all pass on dev (run whole in the SQL editor on 2026-11-11, after the three stage-3 migrations); pending the manual browser check (see Not verified)
 - [ ] Stage 4 — store link entry (a permanent store link / QR / code replaces the single-use pairing code; name + PIN on the phone; silent re-join with the stored key; owner «Αφαίρεση» and «Νέος σύνδεσμος»): code complete, merged to `main`; migrations `…0003_today_save_and_submit_revision` and `20261112000001_store_join_keys` applied to dev on 2026-11-11; SQL run: 010–120 all pass on dev (2026-11-11, after both migrations; 010 via the connector, 020–120 in the dashboard SQL editor, run by the user); pending the real-device check (see Not verified). **The deployed client must be the stage-4 build: the old pairing calls no longer exist on dev.**
+- [ ] Stage 5 — multiple closings per day (closings numbered 1..6, the live closing = the highest, an explicit «Έναρξη Nου κλεισίματος» by a cashier, cash mode `separate`/`running`, plan pinned per day, history/corrections/suggestions per closing, the day result in the history model): code complete on branch `stage-5-multi-closing` (head `affc2d6` before the docs commit); migrations `20261117000001_multi_closing` + `20261117000002_multi_closing_history` **written, NOT applied** to dev; SQL tests 170/180 written, not run; nothing seen in a browser or on a phone (see Not verified). **Apply both migrations together and ship the stage-5 client with them.**
 - [ ] Plan 5 — closings, suggestions, PWA, deploy (closing history landed in stage 3)
 
 ## Product decisions
@@ -316,6 +317,29 @@ queue stay in its phones' localStorage (only the owner's browser runs `clearShop
 half-done); a retry after a timed-out but committed shop delete answers `not_owner`; `160` T11 inserts only four
 columns into `auth.sessions` (check the table on dev).
 
+## Stage 5 findings (multiple closings per day)
+Branch `stage-5-multi-closing` (plan `docs/superpowers/plans/2026-11-17-stage-5-multiple-closings-per-day.md`, spec
+`docs/superpowers/specs/2026-11-17-multiple-closings-per-day-design.md`). Task-by-task reviews, then one final
+whole-branch review and one fix wave (`2f25fcd`, `bce5782`, `affc2d6`). Continues the severity scheme above. Every SQL item
+below is written, not applied or run.
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| M43 | The submit sheet could send closing 1's numbers as closing 2: it froze inputs and revision when it opened, but `submit()` took the closing number, config and date from the register's current snapshot, so a `closing_started` resync under an open sheet sent closing 1's inputs with `p_closing_no` = 2 (final review F1) | `SubmitSheet` also freezes `configId` and calls `onSubmit(inputs, revision, target)` with `{configId, businessDate, closingNo}`; `RegisterScreen.submit` sends exactly that (the server then answers `wrong_closing`/`wrong_day`/`config_mismatch`). Test: liveRegister «F1: closing 2 starts and is resynced under an open sheet…» | fixed in code — `2f25fcd` |
+| M44 | «Σήμερα» reused its idempotency key across closings: a failed save on closing 2 followed by closing 3 with identical inputs re-sent the old key (the server answers `idempotency_conflict`, since a repeat must match `closing_no`); the remembered `expectedOverride` could also apply to another closing (final review F3) | `saveKey` and `expectedOverride` carry `closingNo`; another closing mints a new key and ignores the override. Tests: today «F3: …» ×2 | fixed in code — `affc2d6` |
+| M45 | Concurrency of `start_next_closing` against writes, submits and a second start is argued from the locks (the live row `for update` in all of them), never exercised: SQL test files are one transaction each (final review F2) | Two-session check after applying (see Not verified) | open — needs a real database |
+| L103 | Review minors fixed in the wave: `submit_closing` repeat also matches `closing_no` (+170 case); CHECKs on `open_closings.closings_planned`/`cash_mode`; `set_closing_plan` locks the shop `for no key update`; start-next `not_submitted`/`no_more_closings` also resync; one TS source for the 1..6 limit (`MAX_CLOSINGS`, router via `isClosingNo`); 170 T2 loop message; 180 T6 positive per-closing case; a comment on today + no open closing in `owner_save_closing`; a `running` history screen test; `summarizeDay` once per card; `DayScreen` `editing: number \| null` (no other closing's editor, re-clicking the shown pill keeps edits) | `bce5782`, `2f25fcd`, `affc2d6` | fixed in code (SQL parts not run) |
+| L104 | The "is this the live closing" check (`closing_no` differs, or a higher row exists) is written three times (`write_closing_field`, `submit_closing`, `start_next_closing`), and the idempotency-repeat predicate twice in `submit_closing` and three times in `owner_save_closing` | A private helper each | open |
+| L105 | No SQL test for `live_closing_no` null when today has no open closing yet | Add to 180 | open |
+| L106 | `gate.ts` lists `wrong_closing`/`not_submitted`/`no_more_closings` as explicit no-op cases that duplicate `default` | Fold into `default` (or keep as documentation) | open |
+| L107 | Other authors' hidden queued edits of an earlier closing stay in localStorage until the day changes (never sent; `savePending` prunes only by day) | Also prune by closing | open |
+| L108 | `liveRegister.test.tsx` `confirmStart(no)` has an unused parameter; no test that a gate-class error from `startNextClosing` (`session_invalid`, `wrong_day`, …) reaches `onServerError` | Add the test, drop the parameter | open |
+| L109 | `data/remote/owner.ts` imports runtime values from `features/` (`MAX_CLOSINGS_PER_DAY`, `isCashMode`) | Move the guards to a shared module | open |
+| L110 | `ClosingPlanCard`: a save that finishes after a newer edit still shows «Αποθηκεύτηκε…» for the older plan | Compare the saved plan with the current one | open |
+| L111 | Day detail: a closing with no readable version and an unreadable `open` is dropped from the selector silently (`parseDayClosing` → null) | Show it as «Δεν διαβάζεται» | open |
+| L112 | In `running` mode an owner correction of closing 1's expenses does not reach the lines already copied into closing 2 (declined by the final review: each closing is its own record) | By design for now | open — accepted |
+| L113 | Accepted server asymmetries: the day detail reports `closings_planned = greatest(1, count)` for a day without a closing-1 open closing (the list reports the count); `owner_save_closing` accepts a first filing of a non-live closing of today that has fields and no version, but no read path offers it | Documented in CLAUDE.md | open — accepted |
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped
@@ -341,11 +365,28 @@ Stage 4 (store link entry, `stage-4-store-link-entry` at `39c5652`): `npm test` 
 
 Review fixes (2026-11-11, `fix/review-2026-11-11`): `npm test` 821/821 on 62 files, `npm run typecheck` clean, `npm run build` ok. New test file `tests/data/timeoutFetch.test.ts` (timeout, caller abort passes through, no timer left after an in-time response) plus cases for both error mappers, `TodayScreen` (date, stale day, `expectedOverride`) and the Athens time formatters.
 
+Stage 5 (multiple closings per day, `stage-5-multi-closing` after the fix wave `affc2d6`, 2026-11-17): `npm test -- --exclude '.claude/**'` 954/954 on 66 files, `npm run typecheck` clean (`npm run build` ok in the fix wave). New: `tests/app/closingLabel.test.ts`, `tests/features/owner/closingPlan.test.tsx`; extended: router (closing segment), deviceApi/ownerApi parameter names (`p_closing_no`, `start_next_closing`, `set_closing_plan`), both error mappers, live parsers (`closing_no`, `closing_started`), stored snapshot/queue back-compat, sync engine (`wrong_closing`, other-closing loads/broadcasts), register (start-next flow, frozen submit target, share card label), «Σήμερα» (per-closing key), history parsers/model (`combineDay`, `summarizeDay`), week/day/correction screens per closing. SQL: `170_multi_closing.sql` and `180_multi_closing_history.sql` written; `090`/`100`/`110`/`160` adjusted to the new signatures and payloads — **none of them run** (the migrations are not applied).
+
 CI (GitHub Actions: `npm ci` → typecheck → test on Node 22) ran green on GitHub for `b281da3` —
 https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
 CI now runs the production build (`npm run build`) as well, after test.
 
 ## Not verified
+- Stage 5 (multiple closings per day), NOT verified — nothing of it has run outside Vitest:
+  - Migrations `20261117000001_multi_closing` and `20261117000002_multi_closing_history` are not applied to dev (apply
+    both together, then advisors).
+  - SQL tests `170`, `180` and the adjusted `090`, `100`, `110`, `160` have never run.
+  - Two-session concurrency (M45): two simultaneous `start_next_closing` calls (one starts, the other gets the repeat);
+    a `set_closing_field(p_closing_no => 1)` blocked behind a start must return `wrong_closing`; also a submit and an
+    owner «Καταχώρηση αλλαγών» racing a start.
+  - 180 T4 assumes nothing creates today's closing 1 before its `set_closing_plan` call; check when it runs.
+  - Real phones: the start-next flow with two phones, in both cash modes (`separate`: empty boxes; `running`: expenses
+    carried over), the «Nο κλείσιμο από M» header, the share card label, `wrong_closing` notices on the second phone.
+  - An old cached phone bundle in a shop that turns on several closings (expected from the code: fine until closing 2
+    starts, then every write/submit is `wrong_closing` → `unknown` in the old build).
+  - `ClosingPlanCard` and the day's closing selector/«Σύνολο ημέρας» never viewed in a browser.
+  - Declined by the final review (L112): in `running` mode an owner correction of closing 1's expenses does not reach
+    lines already copied into closing 2.
 - Legal fixes (branch `legal-fixes`). Done 2026-11-16 on dev via the connector: the privilege probe of plan
   `2026-11-14-legal-fixes` Task 3 Step 1 passed (a `security definer` function called as `authenticated` deleted an
   `auth.users` row; rolled back), so no Edge Function is needed; the `auth.sessions` columns `user_id`, `created_at`,

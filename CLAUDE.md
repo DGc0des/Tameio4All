@@ -7,7 +7,8 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 `docs/superpowers/specs/2026-11-07-live-closing-and-history-design.md` (stage 2 live closing; its «History
 dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superpowers/plans/` (stage 3:
 `2026-11-11-stage-3-history-and-corrections.md`; stage 4 store link entry: `2026-11-11-stage-4-store-link-entry.md`,
-spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
+spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`; stage 5 multiple closings per day:
+`2026-11-17-stage-5-multiple-closings-per-day.md`, spec `docs/superpowers/specs/2026-11-17-multiple-closings-per-day-design.md`).
 
 ## Architecture
 - `src/core/` — pure TypeScript money logic. No packages, no DOM, no Supabase. Every UI and
@@ -18,9 +19,10 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   bridge from text to money. The draft is never stored on its own any more — it is derived from the live
   closing's fields (`draftFromFields`).
 - `src/features/register/live/` — the live shared closing engine. `fields.ts` (field model, key regex, value
-  guards, `Snapshot`/`PendingEdit`/`ServerField` types), `merge.ts` (pure snapshot + pending edits → draft,
-  last-write-wins reducers, the +1 revision rule), `syncEngine.ts` (per-author send queue, replay, stale/wrong_day
-  handling, sign-out `drain`),
+  guards, `Snapshot`/`PendingEdit`/`ServerField` types; stage 5: `MAX_CLOSINGS`, `isClosingNo`, `CashMode`/`isCashMode`,
+  `sameClosing`), `merge.ts` (pure snapshot + pending edits → draft,
+  last-write-wins reducers, the +1 revision rule), `syncEngine.ts` (per-author send queue, replay, stale/wrong_day/
+  wrong_closing handling, sign-out `drain`; every edit belongs to one closing, see stage 5),
   `useLiveClosing.ts` (React binding; takes a `Writer`).
 - `src/data/local/` — the only code that touches localStorage: theme, `phone.ts` (stored staff session +
   cached device context) and `openClosing.ts` (per shop: cached snapshot, pending edit queue, entry mode).
@@ -32,29 +34,39 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   union; `client.ts` builds the PKCE client. `supabase.ts` exports `getSupabase()`: the ONE shared
   client (owner and phone use the same instance). `deviceApi.ts` (the `DeviceApi` interface),
   `device.ts` (`createDeviceApi`, the one path for phone reads/writes: context, staff list, `join`,
-  sign in/out, open closing, `setField`, submit, suggestions (`suggestionData(token)`: needs the staff token))
+  sign in/out, open closing, `setField`, submit, `startNextClosing(token, date, closingNo)` (stage 5), suggestions
+  (`suggestionData(token)`: needs the staff token))
   and `deviceErrors.ts` (`mapDeviceError` →
   closed `DeviceError`). `live.ts` (`openShopChannel`) is the realtime channel wrapper (private channel
-  `shop:<shopId>`: `field` and `submitted` broadcasts in, presence in/out) plus the shape-checked parsers
-  (`parseSnapshot`, `parseServerField`, `parseStaleCurrent`). `history.ts` has the shape-checked parsers of the
+  `shop:<shopId>`: `field`, `submitted` and `closing_started` broadcasts in, presence in/out) plus the shape-checked parsers
+  (`parseSnapshot`, `parseServerField`, `parseStaleCurrent`, `parseSubmitInfo`, `parseFieldBroadcast`, `parseClosingStarted`). `history.ts` has the shape-checked parsers of the
   owner history payloads (`parseHistoryList`, `parseDayDetail`; they import `isIsoDate` from `src/app/dates.ts`).
 - `src/features/owner/` — owner area (lazy-loaded from `#/owner`): `model/` is pure (settings
   reducer, terms, preview, limits, messages); screens get an injected `OwnerApi`. The shop tabs are
   «Σήμερα» · «Ιστορικό» · «Ρυθμίσεις» · «Προσωπικό» · «Συσκευές». «Σήμερα» (`TodayScreen`, the first tab): the
   owner sees and edits today's live closing through `todayWriter.ts` (`createTodayWriter`, the owner `Writer`
-  adapter over `OwnerApi`). A bare shop route still lands on «Ρυθμίσεις». «Συσκευές» (`DevicesScreen`) shows the
+  adapter over `OwnerApi`). A bare shop route still lands on «Ρυθμίσεις». «Ρυθμίσεις» also holds `settings/ClosingPlanCard.tsx`
+  («Κλεισίματα ανά ημέρα»: count 1..6 and the cash mode, read with `OwnerApi.closingPlan` from `shops`, saved on its own
+  with `OwnerApi.setClosingPlan` → `set_closing_plan`; not part of the published config). «Συσκευές» (`DevicesScreen`) shows the
   store link card (`StoreLinkCard`: link, QR via `QrCode`/qrcode-generator, the code as XXXX-XXXX-XXXX-XXXX, copy,
   print, «Νέος σύνδεσμος» with confirmation) and the device list (last use, last cashier, «Αφαίρεση»).
  Deletion (LG2): «Προσωπικό» «Οριστική διαγραφή» (confirmation sheet → `OwnerApi.eraseStaff`; `listStaff` hides erased
  rows), the last card of «Ρυθμίσεις» `DangerZoneCard` (type the shop name → `deleteShop`, then `clearShop` +
  `clearOwnerDraft` and back to the shop list), and «Διαγραφή λογαριασμού» on the shop list (type the account email →
  `deleteAccount`, which signs out of this browser; every listed shop's local data is cleared).
-- `src/features/owner/history/` — «Ιστορικό» (stage 3): `types.ts` (`HistoryList`/`HistoryDay`/`DayDetail`/
-  `ClosingVersion`), pure `model.ts` (`summarizeInputs`/`summarizeOpen`, `weekCells`, `breakdown`, `snapshotFromInputs`,
-  `applyLocalEdit`; every number goes through `evaluateTotals`/`planEnvelope`, never throws on unreadable
-  stored data), and three screens over an injected `OwnerApi`: `HistoryScreen` (Monday–Sunday week of day cards via `weekCells`; «today» only from the server's `listClosings`), `DayScreen` (one
-  day: versions, breakdown, Φάκελος), `CorrectionEditor` (edit + save a correction). Routes:
-  `#/owner/shop/<id>/history` and `…/history/<YYYY-MM-DD>` (`router.ts`; a malformed date segment is dropped).
+- `src/features/owner/history/` — «Ιστορικό» (stage 3, per closing since stage 5): `types.ts` (`HistoryList`/`HistoryDay`/
+  `HistoryClosing`/`DayDetail`/`DayClosing`/`ClosingVersion`), pure `model.ts` (`summarizeInputs`/`summarizeOpen`, `weekCells`,
+  `breakdown`, `snapshotFromInputs`, `applyLocalEdit`, stage 5 `combineDay`/`summarizeDay`/`summarizeDetail`; every number
+  goes through `evaluateTotals`/`planEnvelope`, never throws on unreadable
+  stored data), and screens over an injected `OwnerApi`: `HistoryScreen` (Monday–Sunday week of day cards via `weekCells`; «today» only from the server's `listClosings`), `DayScreen` (one
+  day: the «Σύνολο ημέρας» card and a closing selector when the day has several closings, then `ClosingView` for the shown
+  closing: versions, breakdown, Φάκελος, «Διόρθωση»/«Επαναφορά»), `CorrectionEditor` (edit + save a correction). Routes:
+  `#/owner/shop/<id>/history`, `…/history/<YYYY-MM-DD>` and `…/history/<YYYY-MM-DD>/<n>` (closing `n`, 1..6; `router.ts`;
+  a malformed date segment is dropped, a malformed closing segment is dropped to the day route; without `n` or with a
+  number the day does not have, `DayScreen` shows the highest-numbered closing).
+- `src/app/closingLabel.ts` (stage 5, pure): `closingLabel(2)` «2ο κλείσιμο», `closingOfLabel(2, 3)` «2ο κλείσιμο από 3»
+  (no «από» for a 1-closing plan; callers then show nothing), `closingsDoneLabel(1, 3)` «1 από 3 κλεισίματα».
+  `src/features/register/StartNextSheet.tsx`: `canStartNext` (pure) and the «Έναρξη Nου κλεισίματος» sheet.
 - `src/features/phone/` — phone shell (lazy `PhoneEntry` builds the real `DeviceApi`): `model/gate.ts` is the
   pure gate reducer (loading → unconfigured | offline_no_cache | load_error | unpaired → signed_out → ready); `PhoneApp`
   renders only from it; `JoinScreen` (the entry screen: tries a link's key once, or the typed store code; no name/PIN — that is `SignInScreen`), `SignInScreen`.
@@ -105,7 +117,7 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
 - Schema 2 is a cross-file invariant: `validateClosingInputs` and `private.inputs_shape_ok` both accept 1|2;
   `submit_closing` accepts only 2 (`bad_inputs` otherwise); schema-2 expenses need `id` (1–64 chars) and `addedBy`
   (`{kind:'staff',id: uuid of a staff of the shop}` or `{kind:'owner'}`); `submit_closing` further requires each line to
-  be a live, not removed `e:<id>` field with that same author (`owner_save_closing` checks a stored author only for today's lines that exist as an `e:<id>` field; for past days and for today's lines with no `e:<id>` field it keeps the staff-of-the-shop rule, owner lines allowed). Change one side and the other needs a
+  be a live, not removed `e:<id>` field of the closing it names, with that same author (`owner_save_closing` checks a stored author only for lines of the **live** closing (today, highest number) that exist as an `e:<id>` field; for past days, for earlier closings of today and for live-closing lines with no `e:<id>` field it keeps the staff-of-the-shop rule, owner lines allowed). Change one side and the other needs a
   migration/commit in the same change.
 - **Erasure** (migration `20261115000001_erasure`, LG2). `owner_erase_staff(staff)` keeps the staff row as a
  permanent tombstone (closings reference it): name «Διαγραμμένος υπάλληλος <first 8 hex of the id>», `pin_hash` null,
@@ -234,11 +246,14 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   register). A phone in a store with nobody signed in renders only the sign-in screen (no register fields, no amounts).
 
 ### Live shared closing (stage 2)
-- **Open closing.** One row per shop per business day in `open_closings` (+ `open_closing_fields`), created by
-  `get_open_closing`/`owner_get_open_closing` on first use. Its config is **pinned** at creation (`config_id`): a
-  publish later the same day does not change today's closing. The snapshot returned to clients carries `config`,
-  `config_id`, `business_date`, `revision`, `fields[]` and `last_submit`; the register takes its config from it,
-  not from `device_context`. No client has direct table access.
+- **Open closing.** One row per shop per business day **per closing number** in `open_closings` (+ `open_closing_fields`;
+  unique `(shop_id, business_date, closing_no)` since stage 5). Closing 1 is created by `private.open_closing_for` on
+  first use (`get_open_closing`/`owner_get_open_closing` or a write); later ones only by `start_next_closing` (see
+  «Multiple closings per day (stage 5)»). Its config is **pinned** at closing 1's creation (`config_id`) and copied to the
+  day's later closings: a publish later the same day does not change today's closings. The snapshot returned to clients
+  carries `config`, `config_id`, `business_date`, `revision`, `fields[]`, `last_submit` and (stage 5) `closing_no`,
+  `closings_planned`, `cash_mode`; the register takes its config from it, not from `device_context`. No client has
+  direct table access.
 - **Field model** (`fields.ts`; values are strict shapes — no missing and no extra properties; `text` ≤ 200
   Unicode code points):
 
@@ -268,10 +283,13 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   9 digits → clamped to 0..30, anything else → 0), which `write_closing_field` uses for both caps (visible lines ≤ max,
   all `e:<id>` rows ≤ max × 5). Its `jsonb_array_elements` calls take `[]` unless the config value is an array, so no
   junk config makes a field write raise.
-- **One write path.** Phones write only through `set_closing_field(token, date, key, value, base_version)`, owners
-  through `owner_set_closing_field(shop, date, key, value, base_version)` (migration `…0003_live_fixes`; the date is
-  the snapshot's — the day on screen — and anything but the shop's business date is `wrong_day`, like the phone).
-  Both go through `private.write_closing_field` (latest body: `20261114000007_max_expenses_clamp`), which validates, stamps the author
+- **One write path.** Phones write only through `set_closing_field(token, date, key, value, base_version, closing_no default 1)`, owners
+  through `owner_set_closing_field(shop, date, key, value, base_version, closing_no default 1)` (date rule from migration
+  `…0003_live_fixes`, the closing number from `20261117000001_multi_closing`; the date is
+  the snapshot's — the day on screen — and anything but the shop's business date is `wrong_day`, like the phone; a closing
+  that is not the live one is `wrong_closing`).
+  Both go through `private.write_closing_field(shop, staff, owner, closing_no, key, value, base_version)` (latest body:
+  `20261117000001_multi_closing`; the 6-argument form was dropped), which validates, stamps the author
   (expense `addedBy` is set server-side on creation and kept on later writes), bumps the field `version` and the
   closing `revision`, returns `{ok:true, version, revision, value}` — `value` is what was **stored** (the client's
   ack applies it, never only what it sent: the author may differ) — and broadcasts a `field` event on `shop:<shopId>` **inside the function** (`realtime.send`,
@@ -294,6 +312,7 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   reloaded snapshot on startup (otherwise a replay after a remount would silently overwrite a newer value).
   `stale` → adopt the server value (a stale write with the same value counts as an ack), `network` → keep and
   retry (fixed 3 s, no backoff), `wrong_day` (phone and owner) → drop edits of the old day, tell the person, resync,
+  `wrong_closing` (phone and owner, stage 5) → drop this author's edits of that closing, `WRONG_CLOSING_NOTICE`, resync,
   `bad_field`/`too_many_expenses` → drop the item, notice, resync; any other error (`session_invalid`,
   `device_revoked`, …) → keep the item, halt the engine and call `onFatal` (phone: `onServerError` → gate; owner:
   `ownerErrorMessage`). A halted engine reports non-live; `restart()` resumes it.
@@ -323,9 +342,11 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
 - **Presence** (who is looking at the register, `name` only) is the only thing clients publish directly.
   Owner presence name is «Ιδιοκτήτης». Presence names are self-declared by clients (cosmetic only; nothing
   trusts them — authorship of fields comes from the server).
-- **Submit.** `submit_closing(token, config_id, date, inputs, revision, key)` (the 5-arg stage-1 form is gone).
-  Order of checks: session → date/inputs → idempotency-key lookup (a repeat is answered before anything else) →
-  `wrong_day` → `config_mismatch` (config must be the closing's pinned one) → revision. A `revision` that is not
+- **Submit.** `submit_closing(token, config_id, date, inputs, revision, key, closing_no default 1)` (latest body:
+  `20261117000001_multi_closing`; the 5-arg stage-1 and the 6-arg stage-2 forms are gone).
+  Order of checks: session → config of the shop / date/inputs → idempotency-key lookup (a repeat is answered before
+  anything else; it must also match `closing_no`) → `wrong_day` → lock the live closing → `wrong_closing` (not the live
+  closing) → `config_mismatch` (config must be the closing's pinned one) → revision. A `revision` that is not
   exactly the current one (including `null` or a future value) → `{ok:false,error:'draft_changed',revision}`,
   nothing stored. A successful submit stores a `closings` row, records `last_submit` on the open closing and
   broadcasts `submitted`; the open closing and its fields are kept (resubmit with a new key stores another
@@ -337,8 +358,10 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   stay server-attributed. A retry of an already stored submit is answered by the idempotency lookup before this check.
 - **Idempotency key** (client): minted when the submit sheet opens, kept while the inputs are unchanged and not
   yet acknowledged (retry / reopened sheet reuse it); an edit, a successful submit, or `draft_changed` makes the
-  next opening mint a new key. `draft_changed` is not a failure: it does **not** go to `onServerError` (the sheet
-  resyncs and asks the cashier to review); every other submit/suggestion failure does (the gate decides). The
+  next opening mint a new key. `draft_changed` (and, stage 5, `wrong_closing`) is not a failure: it does **not** go to
+  `onServerError` (the sheet resyncs and asks the cashier to review); every other submit/suggestion failure does (the gate decides).
+  The sheet freezes `{draft, derived, revision, configId, closingNo}` when it opens and submits exactly that
+  (`SubmitTarget`), never the register's current snapshot. The
   register submits only through `DeviceApi.submit` as the signed-in cashier; nothing is stored as a local
   "submission".
 - **Wrong day.** The server only accepts writes and submits for the session's business date (owner writes: the
@@ -350,18 +373,20 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
 - Expense suggestions come from `DeviceApi.suggestionData(token)` (refetched after each successful submit); the owner
   Today view has no suggestion history. `expense_suggestion_data(p_token)` checks `private.staff_session` first and returns
   no rows (never raises) without a live session; the shop comes from the session. Without a live staff session a phone can
-  read only the shop name, the config and the staff names. An `unknown` or `network` suggestion failure never blocks the register (the gate ignores both, e.g. an old build calling
+  read only the shop name, the config and the staff names. Since stage 5 the rows come from the current version of every
+  closing of a day, except a `running` day (see stage 5), which contributes only its highest-numbered closing. An `unknown` or `network` suggestion failure never blocks the register (the gate ignores both, e.g. an old build calling
   the dropped zero-argument form); `session_invalid`/`wrong_day`/`not_a_device`/`device_revoked` from it go to the gate like
   any other phone call.
 - **Owner «Σήμερα»** shows the same boxes, totals and Φάκελος as the register: it reuses `LiveClosingView`, the
  register's `BottomBar` (without `onSubmit` there is no Υποβολή button) and `EnvelopeSheet` over the same
  `deriveClosing` → `planEnvelope` result. No Υποβολή from the owner; once a cashier has submitted, the owner can
- record later changes with «Καταχώρηση αλλαγών» (see «Today's versions» below). It shows the snapshot's business date
+ record later changes with «Καταχώρηση αλλαγών» (see «The live closing's versions» below). It shows the snapshot's business date
  and renders a snapshot only when its `businessDate` equals the one of the last successful load in this mount (no
  cached closing of another day, none while offline at startup).
 - **`last_submit.revision`** (migration `…0003_today_save_and_submit_revision`): the open closing's revision at that
  submit. `changedSinceSubmit(snapshot)` (`fields.ts`) = `revision > lastSubmit.revision` → «Άλλαξε μετά την υποβολή»
- on the phone header and «Σήμερα». Absent on older rows (`SubmitInfo.revision` optional) → no notice.
+ on the phone header and «Σήμερα». Absent on older rows (`SubmitInfo.revision` optional) → no notice. Since stage 5
+ `last_submit` (and the `submitted` broadcast) also carries `closing_no` (`SubmitInfo.closingNo`, optional: absent = 1).
 
 ### Closing history (stage 3)
 - **`closings` is an append-only version log.** A correction inserts a new row and never updates or deletes
@@ -371,9 +396,12 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   (the version it replaced). `closings_kind_shape`: a `staff` row has `staff_id` and `device_user_id` and no
   `corrected_by`/`corrects_closing_id`; an `owner_correction` row has `corrected_by` and neither `staff_id` nor
   `device_user_id` (both are nullable now).
-- **Current version of a day = the non-voided row with the highest `seq`** for (shop, business date) —
-  `private.current_closing(shop, date)` is the helper. The list, the day detail and the save guard use it;
-  `expense_suggestion_data(p_token)` (staff token required) and `owner_get_closing_day` repeat the same `seq desc` rule inline — change all together. Never order versions by `created_at` (100 T1 backdates one to prove it).
+- **Current version of a closing = the non-voided row with the highest `seq`** for (shop, business date, `closing_no`)
+  (per closing since stage 5; before, per day) — `private.current_closing(shop, date, closing_no)` is the helper (the
+  2-argument form was dropped in `20261117000002_multi_closing_history`). `owner_list_closings` and the save guard
+  (`owner_save_closing`) use it; `expense_suggestion_data(p_token)` (staff token required, `distinct on (business_date,
+  closing_no) … seq desc`) and `owner_get_closing_day` (versions per closing, `seq desc`) repeat the same rule inline —
+  change all together. Never order versions by `created_at` (100 T1 backdates one to prove it).
 - **Totals are never stored or computed in SQL**: every number in history comes from `evaluateTotals`/
   `deriveClosing`/`planEnvelope` with the config of that version (`config_id`; the day detail carries every
   version's config, the list only the current versions'). Stored `config`/`inputs` are untrusted: they go
@@ -383,42 +411,52 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   over 366 days or `from > to` → `bad_range`) and `owner_get_closing_day(shop, date)`; both
   `private.require_owner` first. The owner's browser never computes the business date: `today`, `from` and `to`
   come from the response.
-- **Unsubmitted day**: an `open_closings` row of the shop with `business_date` before the shop's business date,
-  at least one `open_closing_fields` row, and no non-voided `closings` row for that date. The list shows it as
-  `status:'unsubmitted'`; `day.open` is set only when `versions` is empty and the date is such a day.
-- **One owner write path: `owner_save_closing(shop, date, config_id, inputs, expected_current_id, key, revision default null)`**
- (latest body: `…0003_today_save_and_submit_revision`; the 6-argument form was dropped). Check order: `require_owner` → `bad_inputs` (key 1–100
-  chars, `private.inputs_shape_ok`, `schema` exactly 2, every `{kind:'staff'}` expense author is a staff row of
+- **Unsubmitted closing** (per closing since stage 5; was «unsubmitted day»): an `open_closings` row of the shop with
+  `business_date` before the shop's business date, at least one `open_closing_fields` row, and no non-voided `closings`
+  row for that date **and closing number**. The list shows it as a `status:'unsubmitted'` entry of its day; in the day
+  detail a closing's `open` is set only when its `versions` is empty (and only such closings of a past date are listed
+  without versions). A day can mix submitted and unsubmitted closings.
+- **One owner write path: `owner_save_closing(shop, date, config_id, inputs, expected_current_id, key, revision default null, closing_no default 1)`**
+ (latest body: `20261117000002_multi_closing_history`; the 6- and 7-argument forms were dropped). Check order: `require_owner` → `bad_inputs` (key 1–100
+  chars, `closing_no` 1..6, `private.inputs_shape_ok`, `schema` exactly 2, every `{kind:'staff'}` expense author is a staff row of
   *this* shop, active or not; owner lines are fine) → idempotency lookup (same key + owner row + same inputs/
-  config/date → `repeat:true`; else `idempotency_conflict`) → advisory lock on the day, then `open_closings … for
+  config/date/`closing_no` → `repeat:true`; else `idempotency_conflict`) → advisory lock on the day **and closing**
+  (`closing-day:<shop>:<date>:<n>`), then that closing's `open_closings … for
   update` (so it serializes with a staff submit) → **the idempotency lookup again, under the locks** (a concurrent
-  same-key retry gets `repeat`, not `closing_changed`) → current-version guard: when a current exists
+  same-key retry gets `repeat`, not `closing_changed`) → a date after today → `no_closing_day` → is it the live closing
+  (today and that row is `private.open_closing_for`'s) → current-version guard on `current_closing(shop, date, closing_no)`: when a current exists
   `expected_current_id` must equal it (`closing_changed` + `current_id` otherwise) and `config_id` must be its
   `config_id` (`config_mismatch`); when none exists `expected_current_id` must be null (`closing_changed`, `current_id`
-  null) and the day must be an unsubmitted day (`no_closing_day`) with `config_id` = the open closing's pinned
- one (`config_mismatch`) → insert `owner_correction` (`corrects_closing_id` = the replaced current, null for a first
+  null) and the closing must be an unsubmitted, non-live closing with at least one field (`no_closing_day`) with `config_id` = its open closing's pinned
+ one (`config_mismatch`) → live closing only: `config_mismatch`, `draft_changed`, stored authors → insert `owner_correction`
+ with `closing_no` (`corrects_closing_id` = the replaced current, null for a first
  filing) `on conflict (shop_id, idempotency_key) do nothing` and answer a lost same-key race like the lookup.
  A date after the shop's business date → `no_closing_day`. Never add another owner write path for closings
  (`submit_closing` is the staff one).
-- **Today's versions come only from the live closing.** For the shop's business date a current version must exist
- (`no_closing_day`; the owner never files today first), `revision` must equal the open closing's (`draft_changed`
+- **The live closing's versions come only from the live closing.** Since stage 5 this rule applies to the **live**
+ closing only (today's highest number); an earlier closing of today is corrected like a past day (next bullet). For the
+ live closing a current version must exist
+ (`no_closing_day`; the owner never files it first), `revision` must equal its open closing's (`draft_changed`
  + revision, nothing stored), a line that exists as `e:<id>` must carry its stored author (`bad_inputs`), and a
  successful save sets `last_submit` (`staff_name` «Ιδιοκτήτης», with `revision`) and broadcasts `submitted`. So a
  later cashier resubmit is built from the same live fields and cannot silently drop the owner's change. The UI:
  «Καταχώρηση αλλαγών» in «Σήμερα» (shown while `changedSinceSubmit`; guarded on `lastSubmit.closingId`, idempotency
  key kept while the inputs are unchanged; the remembered newer version after `closing_changed`, `expectedOverride`
- = `{forSubmit, id}`, is used only while `forSubmit` equals the current `lastSubmit.closingId`); `DayScreen` offers no «Διόρθωση»/«Επαναφορά» when `businessDate ===
- today` (from the server). Edits made after a submit and never re-saved are still not in history (only flagged).
-- **Past-day owner saves are isolated from the live closing**: they do not touch `open_closings` (`revision`,
- `last_submit`), write no `open_closing_fields` and broadcast nothing. Staff still submit only for the shop's
- business date.
+ = `{forSubmit, closingNo, id}`, is used only while `forSubmit` equals the current `lastSubmit.closingId` and `closingNo`
+ the snapshot's; the save key `{key, inputs, closingNo}` is re-minted for another closing); `ClosingView` offers no
+ «Διόρθωση»/«Επαναφορά» for the live closing (`businessDate === today` **and** `closingNo === liveClosingNo`, both from the
+ server; it shows «Οι σημερινές αλλαγές γίνονται από «Σήμερα».»). Earlier closings of today get both. Edits made after a
+ submit and never re-saved are still not in history (only flagged).
+- **Owner saves of a non-live closing (a past day, or an earlier closing of today) are isolated from the live closing**:
+ they do not touch `open_closings` (`revision`, `last_submit`), write no `open_closing_fields` and broadcast nothing. Staff
+ still submit only for the shop's business date and its live closing.
 - **`closing_changed` is never retried automatically.** `CorrectionEditor` shows a sheet: «Φόρτωση νέας» (refetch
   the day; the editor remounts on the new current version, the owner's local edits are dropped) or, when the
   error carries a `currentId`, «Αποθήκευση πάνω της» (resend the same inputs guarded on that newer version). The
   idempotency key is kept across retries of the same inputs and re-minted by every edit and after `closing_changed`.
   `config_mismatch` offers «Φόρτωση νέας» only.
 - **The correction editor is local.** It starts from `snapshotFromInputs` (the current version) or the
-  unsubmitted day's open snapshot, applies box edits with `applyLocalEdit`, derives through `deriveClosing`
+  unsubmitted closing's open snapshot, applies box edits with `applyLocalEdit`, derives through `deriveClosing`
   (blocked by `envelopeBlockReason`, and by «Δεν άλλαξε κάτι» for an unchanged correction) and saves through
   `OwnerApi.saveClosing`. It never uses `useLiveClosing`, the sync engine or `setTodayField`; no field is sent
   per edit. Existing expense lines keep their `id` and `addedBy`; lines the owner adds are `{kind:'owner'}`;
@@ -427,22 +465,29 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
 - **Change marks and «Επαναφορά» (DayScreen).** An owner correction is shown against its original: the newest
  `staff` version older than it (`originalOf`); `diffBreakdown` marks changed/added/removed lines with the original
  value, and the header names the original submitter. «Επαναφορά» on an older version re-saves its inputs through
- `OwnerApi.saveClosing` (guarded on the current id; offered only for a past day, the current `config_id`, schema 2
+ `OwnerApi.saveClosing` (guarded on the current id of the same closing; offered only for a closing that is not the live one, the current `config_id`, schema 2
  and inputs that differ from the current) — a new `owner_correction` row, nothing is deleted.
 - **Cross-file invariant: history payload shapes.** `private.closing_version_json` and the `owner_list_closings`/
   `owner_get_closing_day`/`owner_save_closing` results are parsed by `history.ts` (`parseHistoryList`,
   `parseDayDetail`) and `owner.ts` (`saveClosing`):
   - `version` = `{id, kind, author_name, created_at, config_id, inputs, corrects_closing_id|null}` (`author_name`
     = the staff's name, or «Ιδιοκτήτης» for an owner row);
-  - `list` = `{ok, today, from, to, configs:{<config_id>:config}, days:[{business_date, status:'submitted',
-    version_count, current:version} | {business_date, status:'unsubmitted', open:<closing_snapshot>}]}`, newest day first;
-  - `day` = `{ok, today, business_date, versions:[version…] (seq desc, [0] current), configs, staff_names (every staff
-    of the shop, active or not), open: <closing_snapshot>|null}`;
+  - `list` (stage 5) = `{ok, today, from, to, configs:{<config_id>:config}, days:[{business_date, cash_mode,
+    closings_planned, closings:[entry…] (closing_no ascending)}]}`, newest day first; `entry` = `{closing_no,
+    status:'submitted', version_count, current:version}` | `{closing_no, status:'unsubmitted', open:<closing_snapshot>}`;
+    a day without a closing-1 open closing (rows from before stage 2) reports `'separate'` and
+    `closings_planned` = its number of distinct closings;
+  - `day` (stage 5) = `{ok, today, business_date, cash_mode, closings_planned, live_closing_no (today's highest open
+    closing number when the date is today, else null), closings:[{closing_no, versions:[version…] (seq desc, [0]
+    current), open: <closing_snapshot>|null (only when versions is empty)}] (closing_no ascending; may be empty),
+    configs (of every version of the day), staff_names (every staff of the shop, active or not)}`; a day without a
+    closing-1 open closing reports `'separate'` and `closings_planned = greatest(1, number of closings)`;
  - `save` = `{ok:true, closing_id, repeat}` | `{ok:false, error:'closing_changed', current_id}` |
- `{ok:false, error:'draft_changed', revision}` (today only) |
+ `{ok:false, error:'draft_changed', revision}` (live closing only) |
  `{ok:false, error:'bad_inputs'|'config_mismatch'|'no_closing_day'|'idempotency_conflict'}`.
-  The parsers drop a bad day/version individually (a bad top level → `null` → `unknown`/`bad_response`); change a shape on
-  one side → a migration + the parser in the same commit.
+  The parsers drop a bad day/entry/closing/version individually (a day left with no entry, or with a bad `cash_mode`/
+  `closings_planned`, is dropped; a duplicate `closing_no` in the day detail keeps the first; a bad top level → `null` →
+  `unknown`/`bad_response`); change a shape on one side → a migration + the parser in the same commit.
 - **Cross-file invariant: the author check.** `owner_save_closing` accepts a staff `addedBy` only if that staff row
   belongs to the shop; `validateClosingInputs` (schema-2 expense rules) and `private.inputs_shape_ok` check the
   rest. The server accepts any staff author of the shop on any line (including changing an existing
@@ -452,6 +497,95 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`).
   `mapError` alone gives `closing_changed` a null `currentId`; `saveClosing` in `owner.ts` builds it from the
   payload's `current_id` (the editor offers «Αποθήκευση πάνω της» only with an id).
 - `private.current_closing` and `private.closing_version_json` are `private.*` helpers: no client execute.
+
+### Multiple closings per day (stage 5)
+**Status 2026-11-17: migrations written, NOT applied to dev; SQL tests 170/180 written, not run.** (The adjusted
+090/100/110/160 were not run either; nothing was checked in a browser or on a phone.) **Deploy rule:** migrations
+`20261117000001_multi_closing` and `20261117000002_multi_closing_history` are applied together (between them
+`owner_save_closing` still reads `open_closings` by shop + date only), and the client that reads the new history
+payloads ships with them (the old parsers cannot read the new `list`/`day` shapes).
+- **Closing numbers 1..6.** `open_closings.closing_no` and `closings.closing_no` (default 1, check 1..6); unique
+  `(shop_id, business_date, closing_no)` on `open_closings`; index `closings_shop_date_no_seq_idx`. The shop's plan:
+  `shops.closings_per_day` (1..6, default 1) and `shops.cash_mode` (`'separate'` default | `'running'`). Existing rows read
+  as closing 1 of a 1-closing `'separate'` day (column defaults).
+- **The live closing** = the highest-numbered open closing of the shop's business date: `private.open_closing_for(shop)`
+  (when the day has none it creates closing 1, pinning the shop's latest config and its current plan). Every write,
+  submit and start goes to it; `get_open_closing`/`owner_get_open_closing` return it.
+- **The plan is pinned per day.** Closing 1 copies `closings_per_day` → `open_closings.closings_planned` and `cash_mode`,
+  plus the config; every later closing of the day copies all three from the closing it follows. `set_closing_plan(shop,
+  count, mode)` (owner: `require_owner`, shop row `for no key update`, `bad_closing_plan` 22023 for a count outside 1..6,
+  an unknown mode or nulls) changes only `shops`: it takes effect on the next business day whose closing 1 is created after
+  it (also today, if nobody has opened today's closing yet); a day already started keeps its plan
+  (`ClosingPlanCard`: «Αποθηκεύτηκε. Μια ημέρα που έχει ήδη ξεκινήσει μένει όπως ξεκίνησε.»; at count 1 it stores
+  `'separate'`). The owner reads the plan from `shops` (`OwnerApi.closingPlan`; existing select grant + `shops_owner_read`).
+- **Explicit start, never automatic.** `start_next_closing(token, date, closing_no)` — `closing_no` = the closing the
+  phone shows as live. Check order: staff session → `wrong_day` → lock the live row `for update` (the lock writers and
+  submit take) and re-read the day's highest row → **repeat**: the highest is `closing_no + 1` → `{ok:true, closing}`
+  with its snapshot, nothing new → `wrong_closing` (`closing_no` is not the highest, or the highest is not the row we
+  locked) → `no_more_closings` (`closing_no >= closings_planned`) → `not_submitted` (no `last_submit`, or
+  `last_submit.revision` ≠ the closing's `revision`) → insert closing `n + 1` (same config, plan and mode, revision 0) →
+  broadcast `closing_started` `{business_date, closing_no}` → `{ok:true, closing:<snapshot>}`. **`running` copies only
+  expenses:** the visible lines (`e:<id>` with `removed` false, and their `:d`/`:a`) at version 1 with the same authors;
+  `d:`/`c:` boxes start empty. `separate` starts empty. `maxExpenses` stays per closing, so in `running` it limits the day.
+  Phone UI: the header button «Έναρξη Nου κλεισίματος» shows only when `canStartNext` (number < plan, submitted, not
+  changed since, no unsent edits of this closing); the `StartNextSheet` confirms; ok / `wrong_closing` → close + resync
+  (the returned snapshot is never applied by hand); `not_submitted`/`no_more_closings` → message in the sheet + resync;
+  session/day errors → `onServerError`. The owner cannot start a closing.
+- **`wrong_closing`.** `private.write_closing_field` and `submit_closing` lock the live row and refuse a `closing_no` that
+  is not it, or when a higher row exists (`{ok:false,error:'wrong_closing'}`, nothing stored); `start_next_closing`
+  holds the same lock while inserting, so a write blocked behind a start sees the new row (argued, not tested with two
+  sessions). The engine: every `PendingEdit` carries `closingNo` (stored items without one = 1); an edit is shown, sent and
+  merged only while the snapshot is the same closing (`sameClosing`); `wrong_closing` drops this author's edits of that
+  closing with `WRONG_CLOSING_NOTICE` and resyncs; a load of another closing drops them the same way (of another day:
+  `WRONG_DAY_NOTICE`); a `field`/`submitted` broadcast of another closing and every `closing_started` → resync. Owner
+  «Σήμερα» maps `wrong_closing` through `todayWriter` the same way. Other authors' hidden items of an earlier closing stay
+  stored until the day changes (never sent). The phone gate treats `wrong_closing`/`not_submitted`/`no_more_closings`
+  as no-ops.
+- **Payloads.** The snapshot adds `closing_no`, `closings_planned`, `cash_mode`; the `field` broadcast and `last_submit`/
+  the `submitted` broadcast add `closing_no`; `closing_started` is new. Client parsers read an absent `closing_no` /
+  `closings_planned` as 1 and an absent `cash_mode` as `'separate'` (an older server or cached data); a present but
+  invalid value drops that message/snapshot.
+- **Old builds.** The new arguments are trailing `p_closing_no int default 1` (`set_closing_field`,
+  `owner_set_closing_field`, `submit_closing`, `owner_save_closing`), so an older client keeps working in a 1-closing
+  shop. In a shop with several closings an old phone build reads the live snapshot but its writes and submits name
+  closing 1: once closing 2 has started they are `wrong_closing`, which the old build does not know (it maps to
+  `unknown`), and it has no start button. Not checked on a device.
+- **Idempotency.** A same-key repeat must also match `closing_no` in `submit_closing` and `owner_save_closing`; the same key
+  naming another closing is `idempotency_conflict`. The phone's key is minted per opening of the submit sheet; «Σήμερα»
+  re-mints its key for another closing.
+- **Day result** (`combineDay`, pure, history model; never in SQL): only submitted closings count (each its current
+  version, through `summarizeInputs` → `evaluateTotals`). `running` = the highest-numbered submitted closing's summary.
+  `separate` = per total, the sum over the closings (so a float subtracted in a total is subtracted once per closing),
+  expenses summed; `null` («—») when any closing is unreadable or the closings do not share one `config_id`. Done/planned
+  = submitted count / `max(closings_planned, number of closings)` («N από M κλεισίματα»). The week card shows the day
+  result (a day with no submitted closing shows its newest open one), «N από M» and «Δεν υποβλήθηκε το Nο» for a multi-closing
+  day; `DayScreen` shows «Σύνολο ημέρας» and the closing pills when the day has (or plans) more than one closing.
+- **Corrections per closing.** `owner_save_closing(…, closing_no)` locks, guards and inserts per closing; `CorrectionEditor`
+  and «Επαναφορά» send the shown closing's number, «Σήμερα» the snapshot's. Only the live closing needs the live revision
+  and authors and records `last_submit`. Read from the SQL, not tested: a «Καταχώρηση αλλαγών» that lands just after a
+  start is saved as a correction of the now earlier closing (no revision check). **Declined by the final review:** in
+  `running` mode an owner correction of closing 1's expenses does not reach the lines already copied into closing 2.
+- **Suggestions.** `expense_suggestion_data(p_token)` takes the current version of every `(business_date, closing_no)` of the
+  last 180 days; for a day whose closing-1 open closing is `'running'` only the highest-numbered closing (its lines repeat
+  in every closing).
+- **Accepted server asymmetries.** The day detail of a day without a closing-1 open closing reports `closings_planned =
+  greatest(1, count)` (the list uses the count of its closings, always ≥ 1). `owner_save_closing` accepts a first filing of
+  a non-live closing of today that has fields and no version, but no read path offers it (open closings are listed only
+  for past dates, and a later closing can only start after a submit).
+- **Cross-file invariants (change together):**
+  - the 1..6 limit: SQL checks on `shops.closings_per_day`, `open_closings.closing_no`/`closings_planned`,
+    `closings.closing_no`, `set_closing_plan`, `owner_save_closing` ↔ `MAX_CLOSINGS`/`isClosingNo` (`fields.ts`, the one
+    TS definition), `MAX_CLOSINGS_PER_DAY` (`owner/model/limits.ts`, = `MAX_CLOSINGS`) and the router's closing segment
+    (canonical integer + `isClosingNo`);
+  - the cash-mode values `'separate'|'running'`: SQL checks on `shops.cash_mode`/`open_closings.cash_mode`,
+    `set_closing_plan`, the `'running'` literal in `expense_suggestion_data` and `start_next_closing` ↔ `CashMode`/
+    `isCashMode` (`fields.ts`; `ClosingPlanCard` and `StartNextSheet` texts per mode);
+  - the snapshot keys `closing_no`/`closings_planned`/`cash_mode` (`private.closing_snapshot`) ↔ `parseSnapshot`
+    (`live.ts`) and the stored-snapshot reader in `data/local/openClosing.ts`;
+  - phone error strings `wrong_closing`, `not_submitted`, `no_more_closings` ↔ `deviceErrors.ts` (`PLAIN`), the phone's
+    `deviceErrorMessage` (`phone/model/messages.ts`) and `gate.ts`;
+  - owner error strings `bad_closing_plan`, `wrong_closing` ↔ `errors.ts` (`mapError`) and `ownerErrorMessage`;
+  - the history payload shapes (above) ↔ `parseHistoryList`/`parseDayDetail` (`history.ts`).
 
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.
