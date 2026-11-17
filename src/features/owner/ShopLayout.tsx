@@ -27,6 +27,8 @@ export interface ShopLayoutProps {
   navigate: OwnerNavigate;
   store: KeyValueStore;
   now: () => Date;
+  /** origin + pathname, for invite links; defaults to the current page. */
+  redirectBase?: string;
   email: string | null;
   /** The signed-in account's auth uid (the pending-edit queue author of «Σήμερα»). */
   userId: string | null;
@@ -45,7 +47,7 @@ const TABS: { tab: ShopTab; label: string }[] = [
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'missing' } | { status: 'ready'; name: string; role: ShopRole; myName: string };
 
-export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store, now, email, userId, onSignOut, onExit }: ShopLayoutProps) {
+export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store, now, redirectBase, email, userId, onSignOut, onExit }: ShopLayoutProps) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -170,6 +172,7 @@ export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store,
           store={store}
           now={now}
           role={load.role}
+          redirectBase={redirectBase}
           me={me}
           historyRange={historyRange?.shopId === shopId ? historyRange : null}
           onHistoryRange={keepHistoryRange}
@@ -199,12 +202,13 @@ interface TabBodyProps {
   store: KeyValueStore;
   now: () => Date;
   role: ShopRole;
+  redirectBase?: string;
   me: { name: string; id: string };
   historyRange: HistoryRange | null;
   onHistoryRange: (from: string, to: string) => void;
 }
 
-function TabBody({ tab, date, closingNo, api, shopId, shopName, navigate, store, now, role, me, historyRange, onHistoryRange }: TabBodyProps) {
+function TabBody({ tab, date, closingNo, api, shopId, shopName, navigate, store, now, role, redirectBase, me, historyRange, onHistoryRange }: TabBodyProps) {
   if (tab === 'today') return <TodayScreen key={shopId} api={api} shopId={shopId} store={store} now={now} me={me} />;
   if (tab === 'history') {
     return date ? (
@@ -215,7 +219,7 @@ function TabBody({ tab, date, closingNo, api, shopId, shopName, navigate, store,
     );
   }
   if (tab === 'settings') {
-    return <SettingsScreen key={shopId} api={api} shopId={shopId} shopName={shopName} navigate={navigate} store={store} now={now} />;
+    return <SettingsScreen key={shopId} api={api} shopId={shopId} shopName={shopName} navigate={navigate} store={store} now={now} redirectBase={redirectBase} />;
   }
   if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} role={role} />;
   return <DevicesScreen api={api} shopId={shopId} shopName={shopName} />;

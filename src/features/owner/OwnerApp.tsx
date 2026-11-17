@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AuthRedirect } from '../../app/authRedirect';
 import type { OwnerRoute } from '../../app/router';
+import { loadPendingInvite, savePendingInvite } from '../../data/local/pendingInvite';
 import type { KeyValueStore } from '../../data/local/storage';
 import type { OwnerApi, Result, SessionInfo } from '../../data/remote/ownerApi';
 import { Card } from '../../ui/Card';
 import { ForgotScreen, LinkErrorScreen, LoginScreen, ResetScreen, SignupScreen } from './AuthScreens';
+import { InviteScreen } from './InviteScreen';
 import { NewShopScreen } from './NewShopScreen';
 import { Go, OwnerHeader, type OwnerNavigate } from './OwnerUi';
 import { ShopLayout } from './ShopLayout';
@@ -69,7 +71,12 @@ function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redir
           const r = await exchange.current;
           if (cancelled) return;
           if (!r.ok) setLinkError(true);
-          else navigate(redirect.kind === 'recovery' ? { name: 'reset' } : { name: 'shops' }, { replace: true });
+          else if (redirect.kind === 'recovery') navigate({ name: 'reset' }, { replace: true });
+          else {
+            // A signup confirmation resumes an invite opened before the account existed.
+            const pending = redirect.kind === 'signup' ? loadPendingInvite(store) : null;
+            navigate(pending !== null ? { name: 'invite', token: pending } : { name: 'shops' }, { replace: true });
+          }
         }
       }
       const s = await api.session();
@@ -122,8 +129,10 @@ function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redir
     case 'signup':
       return owner ? <Go to={{ name: 'shops' }} navigate={navigate} /> : <SignupScreen api={api} session={session} navigate={navigate} redirectBase={redirectBase} />;
     case 'invite':
-      // Task 6 replaces this with InviteScreen
-      return owner ? <Go to={{ name: 'shops' }} navigate={navigate} /> : login;
+      if (owner) return <InviteScreen api={api} token={route.token} store={store} navigate={navigate} />;
+      // Keep the token across login / signup (and the confirmation email's round trip).
+      if (route.token !== null) savePendingInvite(store, route.token);
+      return login;
     case 'forgot':
       return <ForgotScreen api={api} navigate={navigate} redirectBase={redirectBase} />;
     case 'reset':
@@ -162,6 +171,7 @@ function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redir
           navigate={navigate}
           store={store}
           now={now}
+          redirectBase={redirectBase}
           email={owner.email}
           userId={owner.userId}
           onSignOut={() => void signOut()}
