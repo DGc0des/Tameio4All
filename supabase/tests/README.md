@@ -11,8 +11,8 @@ Run a file against the **dev** project only:
 A pass finishes without error. A failure raises an exception whose message starts with the test id
 (`T3 owner B can read shop A`).
 
-Test user ids: owner A `…a1`, owner B `…b1`, stranger `…51` (regular users); phones `…d1`, `…d2`
-(anonymous users). All use the `@test.local` domain.
+Test user ids: owner A `…a1`, owner B `…b1`, stranger `…51`, shop members M `…c1`, N `…c2` (regular users); phones
+`…d1`, `…d2` (anonymous users). All use the `@test.local` domain.
 
 Files: `010` table access/RLS, `020` owner functions, `030` store join and phone functions, `040` closings and
 suggestions, `050` owner app support, `060` staff sessions, business date and day-change time, `070` session
@@ -80,6 +80,21 @@ Older files adjusted to the two stage-5 migrations (assertions changed only as f
 (detail `closings[0].versions`), T11 (list `closings[0]`), T15 (3-argument `current_closing`); `160` T5 (detail
 `closings[0].versions`). **Run on dev 2026-11-17 after both stage-5 migrations: 080, 090, 100, 110, 130 and 160 pass
 unchanged.**
+
+`190` shop roles (`20261117000003_shop_roles`, stage 6 part 1): `owner_invite_member` (32-character token, one row per
+shop sharing one `invite_id` and token hash, the raw token in no column, a foreign shop in the array → `not_owner` with
+nothing created, `bad_member`, `already_member`, `already_owner`, the 20-row cap per shop `too_many_members`),
+`invite_info` (a phone → `not_owner`, a random token → `invite_invalid`), `accept_shop_invite` (`invite_unconfirmed` is
+checked before `invite_wrong_email`, a reused token → `invite_invalid`), `private.shop_role`, `my_shops`; the manager's
+allowed calls and table writes on A1 (staff, store link, devices, «Σήμερα», history, a past-day correction recorded as
+the manager's) and every owner-only call refused (`not_owner` / 0 rows / no `closings` rows read); the accountant on A2
+(only `owner_list_closings`, `owner_get_closing_day` and the `shops` row; everything else refused; no realtime topic);
+expiry, `owner_list_members` statuses and `owner_reissue_invite`; removal cutting access at once and a re-invite making
+a new row; grants (T9); M's `owner_delete_account` tombstoning every row of M (T8, the last block). Back-dating, email
+confirmation changes and row checks run as postgres. Uses member M `…c1` (confirmed), N `…c2` (confirmed in T3 for one
+call, then from T6), stranger `…51`, phones `…d1` (A1), `…d2` (A2). **Written 2026-11-17, not yet run anywhere**
+(no local database); after applying the migration also re-run 020, 050, 080, 100, 110, 120, 160, 170, 180 (owner
+functions and policies were re-created).
 
 `080` and `090` also assert the Realtime side: `realtime.send` swallows insert errors (it only logs a
 WARNING) and, on a project whose `realtime.messages` has no partitions (the Realtime service creates the daily
