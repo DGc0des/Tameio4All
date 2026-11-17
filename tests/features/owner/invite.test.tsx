@@ -18,8 +18,9 @@ function renderScreen(api: OwnerApi, token: string | null = TOKEN) {
   const store = memoryStore();
   if (token) savePendingInvite(store, token);
   const navigate = vi.fn();
-  render(<InviteScreen api={api} token={token} store={store} navigate={navigate} />);
-  return { store, navigate };
+  const onSwitchAccount = vi.fn(() => Promise.resolve());
+  render(<InviteScreen api={api} token={token} store={store} navigate={navigate} onSwitchAccount={onSwitchAccount} />);
+  return { store, navigate, onSwitchAccount };
 }
 
 describe('InviteScreen', () => {
@@ -64,6 +65,25 @@ describe('InviteScreen', () => {
     expect(loadPendingInvite(store) === null).toBe(clears);
   });
 
+  it('wrong account: «Σύνδεση με άλλο λογαριασμό» keeps the token and signs out', async () => {
+    const api = fakeApi({ inviteInfo: vi.fn(() => ok(info)), acceptInvite: vi.fn(() => fail<string[]>({ code: 'invite_wrong_email' })) });
+    const { store, navigate, onSwitchAccount } = renderScreen(api);
+    expect(screen.queryByRole('button', { name: 'Σύνδεση με άλλο λογαριασμό' })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Αποδοχή' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Σύνδεση με άλλο λογαριασμό' }));
+    await waitFor(() => expect(onSwitchAccount).toHaveBeenCalledTimes(1));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(loadPendingInvite(store)).toBe(TOKEN);
+  });
+
+  it.each(['invite_unconfirmed', 'invite_expired'] as const)('offers no account switch for %s', async (code) => {
+    const api = fakeApi({ inviteInfo: vi.fn(() => ok(info)), acceptInvite: vi.fn(() => fail<string[]>({ code })) });
+    renderScreen(api);
+    fireEvent.click(await screen.findByRole('button', { name: 'Αποδοχή' }));
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('button', { name: 'Σύνδεση με άλλο λογαριασμό' })).toBeNull();
+  });
+
   it('shows an info error (expired) and clears the token', async () => {
     const { store } = renderScreen(fakeApi({ inviteInfo: vi.fn(() => fail<typeof info>({ code: 'invite_expired' })) }));
     expect((await screen.findByRole('alert')).textContent).toContain('έληξε');
@@ -105,5 +125,70 @@ describe('OwnerApp invite route', () => {
   it('after a signup redirect with no stored invite goes to the shops', async () => {
     const { navigate } = start({ name: 'shops' }, fakeApi(), memoryStore(), { redirect: { kind: 'signup', code: 'c' } });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ name: 'shops' }, { replace: true }));
+  });
+
+  /** A session that starts signed out and becomes the invited person's after a password login. */
+  const loginApi = () => {
+    let signedIn = false;
+    return fakeApi({
+      session: vi.fn(() => Promise.resolve(signedIn ? { email: 'm@test.gr', userId: 'u1', anonymous: false } : null)),
+      signIn: vi.fn(() => {
+        signedIn = true;
+        return Promise.resolve({ ok: true as const, data: undefined });
+      }),
+      inviteInfo: vi.fn(() => ok(info)),
+    });
+  };
+  const signInThroughForm = () => {
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'm@test.gr' } });
+    fireEvent.change(screen.getByLabelText('Κωδικός'), { target: { value: 'secret123' } });
+    fireEvent.submit(screen.getByLabelText('Κωδικός').closest('form')!);
+  };
+
+  it('signed out on the invite route, then a password login: lands on the invitation', async () => {
+    const api = loginApi();
+    const { store } = start({ name: 'invite', token: TOKEN }, api);
+    await screen.findByRole('heading', { name: 'Σύνδεση ιδιοκτήτη' });
+    expect(loadPendingInvite(store)).toBe(TOKEN);
+    signInThroughForm();
+    expect(await screen.findByRole('button', { name: 'Αποδοχή' })).toBeTruthy();
+    expect(api.inviteInfo).toHaveBeenCalledWith(TOKEN);
+  });
+
+  it('a stored invite, then a password login on the login route: resumes the invite', async () => {
+    const api = loginApi();
+    const store = memoryStore();
+    savePendingInvite(store, TOKEN);
+    const { navigate } = start({ name: 'login' }, api, store);
+    await screen.findByRole('heading', { name: 'Σύνδεση ιδιοκτήτη' });
+    expect(navigate).not.toHaveBeenCalled();
+    signInThroughForm();
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ name: 'invite', token: TOKEN }, { replace: true }));
+  });
+
+  it('a session on the shops route with a stored invite goes to the invite', async () => {
+    const store = memoryStore();
+    savePendingInvite(store, TOKEN);
+    const { navigate } = start({ name: 'shops' }, fakeApi(), store);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ name: 'invite', token: TOKEN }, { replace: true }));
+  });
+
+  it('a session on the shops route with no stored invite stays on the shops', async () => {
+    const { navigate } = start({ name: 'shops' }, fakeApi({ listShops: vi.fn(() => ok([])) }), memoryStore());
+    await screen.findByText('Δεν έχεις ακόμα κατάστημα.');
+    expect(navigate).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'invite' }), expect.anything());
+  });
+
+  it('wrong account: switching signs out and shows the login on the invite route, the token kept', async () => {
+    const api = fakeApi({ inviteInfo: vi.fn(() => ok(info)), acceptInvite: vi.fn(() => fail<string[]>({ code: 'invite_wrong_email' })) });
+    const store = memoryStore();
+    savePendingInvite(store, TOKEN);
+    const { navigate } = start({ name: 'invite', token: TOKEN }, api, store);
+    fireEvent.click(await screen.findByRole('button', { name: 'Αποδοχή' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Σύνδεση με άλλο λογαριασμό' }));
+    expect(await screen.findByRole('heading', { name: 'Σύνδεση ιδιοκτήτη' })).toBeTruthy();
+    expect(api.signOut).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(loadPendingInvite(store)).toBe(TOKEN);
   });
 });

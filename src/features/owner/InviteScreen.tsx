@@ -15,14 +15,19 @@ interface Props {
   token: string | null;
   store: KeyValueStore;
   navigate: OwnerNavigate;
+  /** Signs out, keeping the pending token and the invite route (the login then shows). */
+  onSwitchAccount: () => Promise<void>;
 }
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; info: InviteInfo };
 
 /** The invited person (signed in) sees what is offered and accepts it. */
-export function InviteScreen({ api, token, store, navigate }: Props) {
+export function InviteScreen({ api, token, store, navigate, onSwitchAccount }: Props) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const accept = useAction();
+  /** The signed-in account is not the invited email: offer to sign in with another one. */
+  const [wrongEmail, setWrongEmail] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     if (token === null) return;
@@ -53,7 +58,18 @@ export function InviteScreen({ api, token, store, navigate }: Props) {
     if (token === null) return;
     const r = await accept.run(() => api.acceptInvite(token));
     if (r.ok) return leave();
+    setWrongEmail(r.error.code === 'invite_wrong_email');
     if (r.error.code === 'invite_expired' || r.error.code === 'invite_invalid') clearPendingInvite(store);
+  };
+
+  const switchAccount = async () => {
+    if (switching) return;
+    setSwitching(true);
+    try {
+      await onSwitchAccount();
+    } finally {
+      setSwitching(false);
+    }
   };
 
   return (
@@ -89,6 +105,11 @@ export function InviteScreen({ api, token, store, navigate }: Props) {
               <p>ως {ROLE_LABEL[load.info.role]}</p>
               <p className="notice-soft">για {load.info.email}</p>
               <ErrorText state={accept.state} />
+              {wrongEmail && (
+                <button type="button" className="btn btn-text" disabled={switching} onClick={() => void switchAccount()}>
+                  Σύνδεση με άλλο λογαριασμό
+                </button>
+              )}
               <div className="sheet-actions">
                 <button type="button" className="btn btn-text" onClick={leave}>
                   Όχι τώρα
