@@ -45,7 +45,7 @@ const fresh = (store: KeyValueStore, shopId: string, author: string): EngineStat
 /**
  * React binding of the sync engine. One engine (and one live channel) per mount of (store, shopId,
  * me.name, me.id); the writer, clock and onFatal are read through refs, so a new object per render is fine.
- * `me.id` is the queue's author (the cashier's staff id, or OWNER_QUEUE_AUTHOR): only that person's
+ * `me.id` is the queue's author (the cashier's staff id, or `office:<uid>` for an office-side person): only that person's
  * stored edits are shown and sent. `now` only stamps `updatedAt` of this client's acknowledged fields.
  */
 export function useLiveClosing(

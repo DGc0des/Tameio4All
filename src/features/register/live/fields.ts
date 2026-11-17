@@ -144,13 +144,13 @@ export const changedSinceSubmit = (s: Snapshot): boolean =>
  */
 export type FieldAck = { version: number; revision: number; value?: unknown };
 
-/** Queue owner of the owner's «Σήμερα» edits (staff edits carry the cashier's staff id, a uuid). */
-export const OWNER_QUEUE_AUTHOR = 'owner';
 
 export interface PendingEdit {
   /**
-   * Who typed it: the cashier's staff id, or OWNER_QUEUE_AUTHOR. An engine shows and sends only its own
-   * author's items (they are sent with that person's credentials); others stay stored, hidden.
+   * Who typed it: the cashier's staff id, or `office:<uid>` for an office-side person (owner, manager) in «Σήμερα»
+   * (`officeQueueAuthor`). An engine shows and sends only its own author's items (they are sent with that person's
+   * credentials); others stay stored, hidden. Items of the pre-stage-6 author 'owner' are never sent again and are
+   * dropped after their day (`savePending`).
    */
   author: string;
   key: FieldKey;
