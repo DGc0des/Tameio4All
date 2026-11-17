@@ -245,7 +245,9 @@ end $$;
 -- Accept an invite: every live row of the token. The email and its confirmation come from auth.users (never the
 -- JWT). Check order: non-anonymous → token among live rows (invite_invalid) → not expired (invite_expired) → email
 -- confirmed (invite_unconfirmed) → email matches (invite_wrong_email). A row of a shop the caller owns, or where the
--- caller already is a live member, is marked removed instead. Returns the accepted shop ids (already_member if none).
+-- caller already is a live member, is marked removed instead of accepted. Returns the accepted shop ids. When no row
+-- is accepted it raises already_member, which rolls back the whole call: those rows are then NOT marked removed and
+-- the token stays usable.
 create function public.accept_shop_invite(p_token text) returns uuid[]
 language plpgsql security definer set search_path = '' as $$
 declare

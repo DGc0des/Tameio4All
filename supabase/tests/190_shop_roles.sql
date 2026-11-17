@@ -7,7 +7,8 @@
 -- email confirmation changes run as postgres (the migration owner).
 -- Users: owner A `…a1` (shops A1, A2), owner B `…b1` (shop B), member M `…c1` (m@test.local, confirmed),
 -- member N `…c2` (n@test.local, not confirmed until T6), stranger `…51`, phones `…d1` (A1), `…d2` (A2).
--- T8 deletes M's account, so it runs after every other M call.
+-- T8 deletes M's account, so it runs after every other M call. T7b/T7c: removed member and stranger refused, a
+-- withdrawn invite is invalid.
 begin;
 insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created_at, updated_at, email_confirmed_at) values
   ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'a1@test.local', false, now(), now(), now()),
@@ -674,6 +675,183 @@ do $$ begin
     raise exception 'T7 removed row lost its name or member_uid';
   end if;
 end $$;
+-- T7b every call of T4 (allowed and owner-only) and T5 on A1 is refused for the removed M and for the stranger …51;
+-- nothing changes. (A1 has no phone left after T4: owner_remove_device uses d2 of A2, where M is only an accountant.)
+select set_config('t.key1b', (select key from public.shop_join_keys where shop_id = current_setting('t.a1')::uuid), true);
+select set_config('t.cl_a1', (select count(*)::text from public.closings where shop_id = current_setting('t.a1')::uuid), true);
+select set_config('t.st_a1', (select count(*)::text from public.staff where shop_id = current_setting('t.a1')::uuid), true);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000c1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$
+declare
+  a1 uuid := current_setting('t.a1')::uuid;
+  bd date := current_setting('t.bd1')::date;
+  q text;
+  n int;
+begin
+  foreach q in array array[
+    format('select public.create_staff(%L, %L, %L)', a1, 'ΚΩΣΤΑΣ', '444444'),
+    format('select public.set_staff_pin(%L, %L)', current_setting('t.maria'), '555555'),
+    format('select public.unlock_staff(%L)', current_setting('t.maria')),
+    format('select public.owner_get_join_key(%L)', a1),
+    format('select public.owner_rotate_join_key(%L)', a1),
+    format('select * from public.owner_list_devices(%L)', a1),
+    format('select public.owner_remove_device(%L)', '00000000-0000-0000-0000-0000000000d2'),
+    format('select public.owner_get_open_closing(%L)', a1),
+    format('select public.owner_set_closing_field(%L, %L::date, %L, %L::jsonb, null)', a1, bd, 'c:wolt', '{"text":"99"}'),
+    format('select public.owner_list_closings(%L, null, null)', a1),
+    format('select public.owner_get_closing_day(%L, %L::date)', a1, bd - 5),
+    format('select public.owner_save_closing(%L, %L::date, %L::uuid, %L::jsonb, %L::uuid, %L)', a1, bd - 5,
+           current_setting('t.cfg1'), current_setting('t.fix'), current_setting('t.m_fix'), 'rm-fix-1'),
+    format('select public.publish_config(%L, 1, %L::jsonb)', a1, '{"schema":1}'),
+    format('select public.set_closing_plan(%L, 2, %L)', a1, 'separate'),
+    format('select public.set_day_change_time(%L, %L::time)', a1, '05:00'),
+    format('select public.owner_delete_shop(%L, %L)', a1, 'Shop A1'),
+    format('select public.owner_erase_staff(%L)', current_setting('t.maria')),
+    format('select public.owner_invite_member(array[%L]::uuid[], %L, %L, %L)', a1, 'x@test.local', 'Χ', 'manager'),
+    format('select * from public.owner_list_members(%L)', a1),
+    format('select public.owner_set_member_role(%L, %L)', current_setting('t.n_a1'), 'manager'),
+    format('select public.owner_remove_member(%L)', current_setting('t.n_a1')),
+    format('select public.owner_reissue_invite(%L)', current_setting('t.n_a1'))
+  ] loop
+    begin
+      execute q;
+      raise exception 'T7 removed M ran: %', q;
+    exception when others then
+      if sqlerrm like 'T7 %' then raise; end if;
+      if sqlstate <> '42501' or sqlerrm <> 'not_owner' then raise exception 'T7 removed M %: expected not_owner, got % %', q, sqlstate, sqlerrm; end if;
+    end;
+  end loop;
+  if private.can_use_shop_topic('shop:' || a1) then raise exception 'T7 removed M allowed on the shop topic'; end if;
+  update public.staff set name = 'Hack', active = false where shop_id = a1;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'T7 removed M updated staff'; end if;
+  update public.devices set label = 'Hack' where shop_id = a1;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'T7 removed M updated devices'; end if;
+  update public.shops set name = 'Hack' where id = a1;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'T7 removed M renamed the shop'; end if;
+  if exists (select 1 from public.staff where shop_id = a1) or exists (select 1 from public.devices where shop_id = a1)
+     or exists (select 1 from public.shop_configs where shop_id = a1) or exists (select 1 from public.closings where shop_id = a1)
+     or exists (select 1 from public.shops where id = a1) then
+    raise exception 'T7 removed M reads a table row of A1';
+  end if;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000051","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$
+declare
+  a1 uuid := current_setting('t.a1')::uuid;
+  bd date := current_setting('t.bd1')::date;
+  q text;
+  n int;
+begin
+  foreach q in array array[
+    format('select public.create_staff(%L, %L, %L)', a1, 'ΚΩΣΤΑΣ', '444444'),
+    format('select public.set_staff_pin(%L, %L)', current_setting('t.maria'), '555555'),
+    format('select public.unlock_staff(%L)', current_setting('t.maria')),
+    format('select public.owner_get_join_key(%L)', a1),
+    format('select public.owner_rotate_join_key(%L)', a1),
+    format('select * from public.owner_list_devices(%L)', a1),
+    format('select public.owner_remove_device(%L)', '00000000-0000-0000-0000-0000000000d2'),
+    format('select public.owner_get_open_closing(%L)', a1),
+    format('select public.owner_set_closing_field(%L, %L::date, %L, %L::jsonb, null)', a1, bd, 'c:wolt', '{"text":"99"}'),
+    format('select public.owner_list_closings(%L, null, null)', a1),
+    format('select public.owner_get_closing_day(%L, %L::date)', a1, bd - 5),
+    format('select public.owner_save_closing(%L, %L::date, %L::uuid, %L::jsonb, %L::uuid, %L)', a1, bd - 5,
+           current_setting('t.cfg1'), current_setting('t.fix'), current_setting('t.m_fix'), 'st-fix-1'),
+    format('select public.publish_config(%L, 1, %L::jsonb)', a1, '{"schema":1}'),
+    format('select public.set_closing_plan(%L, 2, %L)', a1, 'separate'),
+    format('select public.set_day_change_time(%L, %L::time)', a1, '05:00'),
+    format('select public.owner_delete_shop(%L, %L)', a1, 'Shop A1'),
+    format('select public.owner_erase_staff(%L)', current_setting('t.maria')),
+    format('select public.owner_invite_member(array[%L]::uuid[], %L, %L, %L)', a1, 'x@test.local', 'Χ', 'manager'),
+    format('select * from public.owner_list_members(%L)', a1),
+    format('select public.owner_set_member_role(%L, %L)', current_setting('t.n_a1'), 'manager'),
+    format('select public.owner_remove_member(%L)', current_setting('t.n_a1')),
+    format('select public.owner_reissue_invite(%L)', current_setting('t.n_a1'))
+  ] loop
+    begin
+      execute q;
+      raise exception 'T7 stranger ran: %', q;
+    exception when others then
+      if sqlerrm like 'T7 %' then raise; end if;
+      if sqlstate <> '42501' or sqlerrm <> 'not_owner' then raise exception 'T7 stranger %: expected not_owner, got % %', q, sqlstate, sqlerrm; end if;
+    end;
+  end loop;
+  if private.can_use_shop_topic('shop:' || a1) then raise exception 'T7 stranger allowed on the shop topic'; end if;
+  update public.staff set name = 'Hack', active = false where shop_id = a1;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'T7 stranger updated staff'; end if;
+  update public.devices set label = 'Hack' where shop_id = a1;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'T7 stranger updated devices'; end if;
+  update public.shops set name = 'Hack' where id = a1;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'T7 stranger renamed the shop'; end if;
+  if exists (select 1 from public.staff where shop_id = a1) or exists (select 1 from public.devices where shop_id = a1)
+     or exists (select 1 from public.shop_configs where shop_id = a1) or exists (select 1 from public.closings where shop_id = a1)
+     or exists (select 1 from public.shops where id = a1) then
+    raise exception 'T7 stranger reads a table row of A1';
+  end if;
+end $$;
+reset role;
+do $$ begin
+  if (select key from public.shop_join_keys where shop_id = current_setting('t.a1')::uuid) <> current_setting('t.key1b')
+     or (select count(*) from public.closings where shop_id = current_setting('t.a1')::uuid) <> current_setting('t.cl_a1')::bigint
+     or (select count(*) from public.staff where shop_id = current_setting('t.a1')::uuid) <> current_setting('t.st_a1')::bigint
+     or exists (select 1 from public.staff where shop_id = current_setting('t.a1')::uuid and (name = 'Hack' or erased_at is not null))
+     or (select name from public.shops where id = current_setting('t.a1')::uuid) <> 'Shop A1'
+     or (select count(*) from public.shop_configs where shop_id = current_setting('t.a1')::uuid) <> 1
+     or (select closings_per_day from public.shops where id = current_setting('t.a1')::uuid) <> 1
+     or not exists (select 1 from public.devices where user_id = '00000000-0000-0000-0000-0000000000d2')
+     or (select role from public.shop_members where id = current_setting('t.n_a1')::uuid) <> 'accountant'
+     or (select removed_at from public.shop_members where id = current_setting('t.n_a1')::uuid) is not null
+     or exists (select 1 from public.shop_members where shop_id = current_setting('t.a1')::uuid and email = 'x@test.local')
+     or exists (select 1 from public.open_closing_fields f join public.open_closings o on o.id = f.open_closing_id
+                 where o.shop_id = current_setting('t.a1')::uuid and f.key = 'c:wolt' and f.value ->> 'text' = '99') then
+    raise exception 'T7b a refused call changed something';
+  end if;
+end $$;
+
+-- T7c a withdrawn invite (removed while pending): invite_info and accept_shop_invite answer invite_invalid.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+select set_config('t.tok_w', public.owner_invite_member(array[current_setting('t.a1')::uuid], 's1@test.local', 'Βασίλης', 'accountant'), true);
+reset role;
+select set_config('t.w_a1', (select id::text from public.shop_members where shop_id = current_setting('t.a1')::uuid and email = 's1@test.local' and removed_at is null), true);
+set local role authenticated;
+select public.owner_remove_member(current_setting('t.w_a1')::uuid);
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000051","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+do $$
+declare q text;
+begin
+  foreach q in array array[
+    format('select public.invite_info(%L)', current_setting('t.tok_w')),
+    format('select public.accept_shop_invite(%L)', current_setting('t.tok_w'))
+  ] loop
+    begin
+      execute q;
+      raise exception 'T7c withdrawn invite used: %', q;
+    exception when others then
+      if sqlerrm like 'T7c %' then raise; end if;
+      if sqlstate <> '22023' or sqlerrm <> 'invite_invalid' then raise exception 'T7c %: expected invite_invalid, got % %', q, sqlstate, sqlerrm; end if;
+    end;
+  end loop;
+  if private.shop_role(current_setting('t.a1')::uuid) is not null then raise exception 'T7c the withdrawn invitee has a role'; end if;
+end $$;
+reset role;
+do $$ begin
+  if (select user_id from public.shop_members where id = current_setting('t.w_a1')::uuid) is not null
+     or (select accepted_at from public.shop_members where id = current_setting('t.w_a1')::uuid) is not null then
+    raise exception 'T7c withdrawn row was accepted';
+  end if;
+end $$;
+
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
 set local role authenticated;
 select set_config('t.tok_m2', public.owner_invite_member(array[current_setting('t.a1')::uuid], 'm@test.local', 'Μαρία Ξανά', 'manager'), true);
@@ -723,6 +901,25 @@ begin
   if not (select relrowsecurity from pg_class where oid = 'public.shop_members'::regclass) then
     raise exception 'T9 RLS off on shop_members';
   end if;
+  -- every new function is security definer (except the token generator, which reads nothing) and pins search_path
+  foreach f in array array['public.owner_invite_member(uuid[],text,text,text)', 'public.owner_list_members(uuid)',
+                           'public.owner_set_member_role(uuid,text)', 'public.owner_remove_member(uuid)',
+                           'public.owner_reissue_invite(uuid)', 'public.invite_info(text)',
+                           'public.accept_shop_invite(text)', 'public.my_shops()',
+                           'private.shop_role(uuid)', 'private.require_role(uuid,text[])'] loop
+    if not (select p.prosecdef from pg_proc p where p.oid = f::regprocedure) then
+      raise exception 'T9 % is not security definer', f;
+    end if;
+  end loop;
+  foreach f in array array['public.owner_invite_member(uuid[],text,text,text)', 'public.owner_list_members(uuid)',
+                           'public.owner_set_member_role(uuid,text)', 'public.owner_remove_member(uuid)',
+                           'public.owner_reissue_invite(uuid)', 'public.invite_info(text)',
+                           'public.accept_shop_invite(text)', 'public.my_shops()',
+                           'private.shop_role(uuid)', 'private.require_role(uuid,text[])', 'private.new_invite_token()'] loop
+    if not exists (select 1 from pg_proc p, unnest(p.proconfig) c where p.oid = f::regprocedure and c like 'search_path=%') then
+      raise exception 'T9 % has no search_path in proconfig', f;
+    end if;
+  end loop;
   -- the re-created owner-side functions keep their grants
   foreach f in array array['public.create_staff(uuid,text,text)', 'public.owner_save_closing(uuid,date,uuid,jsonb,uuid,text,bigint,int)',
                            'public.owner_list_closings(uuid,date,date)', 'public.owner_get_closing_day(uuid,date)',

@@ -6,7 +6,7 @@
 -- One transaction, ends in ROLLBACK. Owner/member/phone calls run as `authenticated`; results are stored with
 -- set_config and read back as postgres. T5 reads realtime.messages as postgres (skipped where it has no partition, like 080).
 -- Users: owner A `…a1` (shop A: ΜΑΡΙΑ, phone `…d1`), manager M `…c1` (m@test.local). Order: T1, T2, T5, T3 (removal),
--- T4 (re-invite), T3b (removal + account deletion).
+-- T4 (re-invite), T3b (removal + account deletion), T6 (the owner's live save).
 begin;
 insert into auth.users (id, instance_id, aud, role, email, is_anonymous, created_at, updated_at, email_confirmed_at) values
   ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'a1@test.local', false, now(), now(), now()),
@@ -233,6 +233,23 @@ begin
   end if;
   if exists (select 1 from jsonb_array_elements(current_setting('t.day')::jsonb #> '{closings,0,versions}') x where x ->> 'author_name' like 'Νίκος%') then
     raise exception 'T3b M''s name left in a version';
+  end if;
+end $$;
+
+-- T6 the plain owner saves the live closing (on top of M's live version): last_submit names «Ιδιοκτήτης».
+select set_config('t.rev', (select revision::text from public.open_closings
+  where shop_id = current_setting('t.a')::uuid and business_date = current_setting('t.bd')::date), true);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","is_anonymous":false}', true);
+set local role authenticated;
+select set_config('t.save_a_live', public.owner_save_closing(current_setting('t.a')::uuid, current_setting('t.bd')::date, current_setting('t.cfg')::uuid,
+  current_setting('t.fix')::jsonb, current_setting('t.m_live')::uuid, 'k-a-live', current_setting('t.rev')::bigint)::text, true);
+select set_config('t.snap', public.owner_get_open_closing(current_setting('t.a')::uuid)::text, true);
+reset role;
+do $$ begin
+  if (current_setting('t.save_a_live')::jsonb ->> 'ok') <> 'true' then raise exception 'T6 owner''s live save failed: %', current_setting('t.save_a_live'); end if;
+  if current_setting('t.snap')::jsonb #>> '{closing,last_submit,staff_name}' is distinct from 'Ιδιοκτήτης'
+     or current_setting('t.snap')::jsonb #>> '{closing,last_submit,closing_id}' is distinct from (current_setting('t.save_a_live')::jsonb ->> 'closing_id') then
+    raise exception 'T6 last_submit after the owner''s save: %', current_setting('t.snap')::jsonb -> 'closing' -> 'last_submit';
   end if;
 end $$;
 
