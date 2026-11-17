@@ -8,7 +8,8 @@ Configurable, sellable version of tameioV2 (cash-register closing). Design:
 dashboard» and «Owner corrections» sections are stage 3). Plans: `docs/superpowers/plans/` (stage 3:
 `2026-11-11-stage-3-history-and-corrections.md`; stage 4 store link entry: `2026-11-11-stage-4-store-link-entry.md`,
 spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`; stage 5 multiple closings per day:
-`2026-11-17-stage-5-multiple-closings-per-day.md`, spec `docs/superpowers/specs/2026-11-17-multiple-closings-per-day-design.md`).
+`2026-11-17-stage-5-multiple-closings-per-day.md`, spec `docs/superpowers/specs/2026-11-17-multiple-closings-per-day-design.md`; stage 6 shop roles: `2026-11-17-stage-6-shop-roles.md`,
+spec `docs/superpowers/specs/2026-11-17-shop-roles-design.md`).
 
 ## Architecture
 - `src/core/` — pure TypeScript money logic. No packages, no DOM, no Supabase. Every UI and
@@ -54,6 +55,11 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`; stage 5 mul
  rows), the last card of «Ρυθμίσεις» `DangerZoneCard` (type the shop name → `deleteShop`, then `clearShop` +
  `clearOwnerDraft` and back to the shop list), and «Διαγραφή λογαριασμού» on the shop list (type the account email →
  `deleteAccount`, which signs out of this browser; every listed shop's local data is cleared).
+ Roles (stage 6): the shop list (`my_shops`) carries each shop's role and `myName`; `ShopLayout` shows the tabs of
+ `allowedTabs(role)` (owner: all five; manager: «Σήμερα» · «Ιστορικό» · «Προσωπικό» · «Συσκευές»; accountant: «Ιστορικό»)
+ and sends a tab the role lacks to `landingTab(role)` (replace); actions by `can(role, …)` (`model/roles.ts`). «Ρυθμίσεις»
+ (owner only) holds the «Συνεργάτες» card (`settings/MembersCard.tsx`: invite, link/mailto, role change, removal,
+ reissue). `InviteScreen` (`#/owner/invite/<token>`) shows the invite to the signed-in person and accepts it.
 - `src/features/owner/history/` — «Ιστορικό» (stage 3, per closing since stage 5): `types.ts` (`HistoryList`/`HistoryDay`/
   `HistoryClosing`/`DayDetail`/`DayClosing`/`ClosingVersion`), pure `model.ts` (`summarizeInputs`/`summarizeOpen`, `weekCells`,
   `breakdown`, `snapshotFromInputs`, `applyLocalEdit`, stage 5 `combineDay`/`summarizeDay`/`summarizeDetail`; every number
@@ -136,9 +142,9 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`; stage 5 mul
  `confirm_mismatch` has a `mapError` case and the Greek message «Το όνομα δεν ταιριάζει. Γράψε το ακριβώς όπως φαίνεται.».
  `clearShop(store, shop)` (`data/local/openClosing.ts`) removes a deleted shop's queue (every author's), snapshot and
  entry mode.
-- Internal `private.*` helpers are not callable by clients, except `private.is_shop_owner` and
-  `private.can_use_shop_topic` (both executable by `authenticated`; row-level security / realtime policies need
-  them; each only answers a boolean about the caller's own access).
+- Internal `private.*` helpers are not callable by clients, except `private.is_shop_owner`,
+  `private.can_use_shop_topic` and (stage 6) `private.shop_role` (all executable by `authenticated`; row-level security /
+  realtime policies need them; each only answers about the caller's own access).
 - Database: a new table or function in `public` needs an explicit `revoke … from public, anon` (default
   privileges still grant new objects to anon/authenticated); table grants chosen deliberately.
 - Owner functions report "not yours" and "doesn't exist" the same way (`not_owner`), so ids can't be
@@ -300,8 +306,8 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`; stage 5 mul
   Rejected writes do not bump `revision`. The expense cap (`maxExpenses` of the pinned config) counts visible
   (not removed) lines; creating or un-removing a line needs a free slot (`too_many_expenses`).
 - **Offline replay.** The client keeps a pending edit queue per shop (`data/local/openClosing.ts`), each edit with
-  its `baseVersion` and its **author** (`PendingEdit.author`: the cashier's staff id, or `OWNER_QUEUE_AUTHOR` =
-  `'owner'`); replay sends them in order. **The queue is per author:** an engine (`EngineState.author`, from
+  its `baseVersion` and its **author** (`PendingEdit.author`: the cashier's staff id, or `office:<uid>` for an
+  office-side person since stage 6 (`officeQueueAuthor`); the old `'owner'` author is never sent again); replay sends them in order. **The queue is per author:** an engine (`EngineState.author`, from
   `useLiveClosing`'s `me.id`) loads, shows and sends only its author's items — they go out with that person's
   credentials, so cashier A's unsent edits are never sent as cashier B, nor the owner's as a phone's in a shared
   browser. Other authors' items stay stored, hidden; `savePending(store, shop, author, mine, currentDate)` is a
@@ -595,6 +601,69 @@ payloads ships with them (the old parsers cannot read the new `list`/`day` shape
     `deviceErrorMessage` (`phone/model/messages.ts`) and `gate.ts`;
   - owner error strings `bad_closing_plan`, `wrong_closing` ↔ `errors.ts` (`mapError`) and `ownerErrorMessage`;
   - the history payload shapes (above) ↔ `parseHistoryList`/`parseDayDetail` (`history.ts`).
+
+### Shop roles (stage 6)
+**Status: migrations written, NOT applied to dev; SQL tests 190/200 not run; nothing viewed in a browser.** Spec
+`docs/superpowers/specs/2026-11-17-shop-roles-design.md`, plan `docs/superpowers/plans/2026-11-17-stage-6-shop-roles.md`,
+migrations `20261117000003_shop_roles` and `20261117000004_office_names`.
+**Deploy rule:** apply `…000003` and `…000004` together, before the client ships (the client's `listShops` needs
+`my_shops`; `…000004` needs `require_role`). With the Supabase «Confirm email» setting off, `invite_unconfirmed` adds
+nothing (every account counts as confirmed) — verify it is on.
+- **`shop_members`** (no client table access; RLS on; every read/write through functions): `id`, `shop_id`, `invite_id`
+  (shared by the rows of one multi-shop invite), `email` (lower-cased, trimmed, ≤ 254 chars), `display_name` (1–40,
+  trimmed), `role` (`'manager'|'accountant'`; the owner is `shops.owner_id`, never a row), `invite_token_hash` (sha256;
+  null once accepted/removed), `invited_at`, `invite_expires_at` (+7 days), `user_id` (access link, null until accepted,
+  set null when the auth user is deleted), `member_uid` (permanent attribution key: no foreign key, never cleared),
+  `accepted_at`, `removed_at` (removal keeps the row). Live-row uniqueness: one live row per `(shop_id, email)` and per
+  `(shop_id, user_id)` (`where removed_at is null`). Cap: 20 live rows per shop (`too_many_members`). A re-invite of a
+  removed person is a new row. Account deletion turns every row of the person into a tombstone: «Διαγραμμένος
+  συνεργάτης <first 8 hex of member_uid>», no email, removed, no `user_id` — the text is produced only in SQL
+  (`owner_delete_account`); the client never builds it.
+- **Role helpers.** `private.shop_role(shop)` → `'owner'|'manager'|'accountant'|null` for the caller (a live, accepted
+  row; anonymous/no caller → null; executable by `authenticated` for the policies). `private.require_role(shop, roles)`
+  raises `not_owner` (42501) — the same answer as "doesn't exist", so a probe cannot tell them apart.
+  `private.is_shop_owner`/`require_owner` keep meaning owner only.
+- **Cross-file invariant: the function → role map** (SQL guards and policies ↔ `allowedTabs`/`can` in
+  `src/features/owner/model/roles.ts`; change both together):
+
+  | Roles | Functions / table paths | Client |
+  |---|---|---|
+  | owner | `publish_config`, `set_closing_plan`, `set_day_change_time`, `owner_delete_shop`, `owner_erase_staff`, shops update policy (rename), closings read/update policies, `owner_invite_member`, `owner_list_members`, `owner_set_member_role`, `owner_remove_member`, `owner_reissue_invite` | «Ρυθμίσεις»; `can`: `eraseStaff`, `manageMembers`, `editShop` |
+  | owner, manager | `create_staff`, `set_staff_pin`, `unlock_staff`, staff/devices read + update policies, `owner_get_join_key`, `owner_rotate_join_key`, `owner_list_devices`, `owner_remove_device`, `owner_get_open_closing`, `owner_set_closing_field`, `owner_save_closing`, shop_configs read, the `shop:<id>` realtime topic (`can_use_shop_topic`) | «Σήμερα», «Προσωπικό», «Συσκευές»; `can`: `correct` |
+  | owner, manager, accountant | `owner_list_closings`, `owner_get_closing_day`, shops read policy, `my_shops` | «Ιστορικό» |
+
+  Role strings `'owner'|'manager'|'accountant'` live in SQL (`shop_members.role` CHECK, `shop_role`, the guards) and in
+  `ShopRole`/`isShopRole`/`isMemberRole` (`roles.ts`).
+- **Invites.** `owner_invite_member(shops[], email, name, role)` returns the raw token once (32 chars `^[A-HJ-NP-Z2-9]{32}$`,
+  made only by `private.new_invite_token`; cross-file invariant with `parseInviteToken`/`INVITE_TOKEN_RE` in
+  `src/app/inviteToken.ts`). The link is `<origin+pathname>#/owner/invite/<token>` (router `{name:'invite', token}`; the
+  token sits in the hash). The owner sends it himself (copy/share/mailto); there is no server email. An invite opened
+  while signed out is kept in `src/data/local/pendingInvite.ts` (saved by `OwnerApp` in an effect while the invite route is
+  shown signed out) and resumed after any sign-in: a signup confirmation redirect, or a non-anonymous session present on
+  the `login`/`shops` route (once per signed-in person per mount, `replace`). Accepting always needs the explicit
+  «Αποδοχή»; «Όχι τώρα», an accept, `invite_expired` and `invite_invalid` clear the stored token. On `invite_wrong_email`
+  «Σύνδεση με άλλο λογαριασμό» signs out and stays on the invite route with the token kept.
+- **Accept checks** (`accept_shop_invite`; `invite_info` shares the first ones): non-anonymous caller (`not_owner`) →
+  token among live rows (`invite_invalid`; also a used, reissued or withdrawn token) → not expired (`invite_expired`) →
+  `auth.users.email_confirmed_at` set (`invite_unconfirmed`) → `auth.users.email` equals the invited email
+  (`invite_wrong_email`); the email comes from `auth.users`, never the JWT. A row of a shop the caller owns or is already a
+  live member of is marked removed instead; if nothing is accepted the call raises `already_member` (everything rolls back).
+- **Eight owner error strings**, each with a `mapError` case and a Greek `ownerErrorMessage`: `too_many_members`,
+  `already_member`, `already_owner`, `bad_member`, `invite_invalid`, `invite_expired`, `invite_unconfirmed`,
+  `invite_wrong_email`.
+- **Office names** (`…000004`): `private.office_name(shop, uid)` is the only producer of office-side names (no client
+  execute): the member's `display_name` from the row with the latest `accepted_at` (removed rows count, so a removed
+  manager keeps his name on past work; a deleted account shows the tombstone), else «Ιδιοκτήτης». It feeds
+  `updated_by_name` (snapshot, stale `current`, `field` broadcast), `author_name` (versions) and `last_submit.staff_name`
+  of an office save. The client never builds these names (`ClosingView` prints the version's `authorName`). Expense lines
+  with `addedBy {kind:'owner'}` mean "added from the office side" (owner or manager; the shape is unchanged) and history
+  labels them «Διαχείριση» (`OFFICE_NAME`, history `model.ts`).
+- **Queue author** of an office-side person in «Σήμερα» is `office:<uid>` (`officeQueueAuthor`, `ShopLayout` builds `me`):
+  two office people in one browser never send each other's queued edits. Items stored under the pre-stage-6 author
+  `'owner'` stay hidden and are dropped after their day by `savePending`.
+- **Removal** takes effect at once for every function call, table policy and realtime **join**. Known limit (like
+  stage 2): a removed member already joined to `shop:<id>` keeps *receiving* broadcasts until the channel rejoins or the
+  access token refreshes.
 
 ## Conventions
 - Code/comments English, UI Greek. Tests in `tests/`, importing real core functions.

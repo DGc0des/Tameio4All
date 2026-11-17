@@ -5,6 +5,13 @@ updated: 2026-11-17
 
 Newest first. Back to [[index]].
 
+## 2026-11-17 — stage 6: shop roles (built, reviewed, final fix wave; NOT applied)
+- `stage-6-roles`: manager/accountant roles per shop, email-bound invite links, role guards in every owner function/policy,
+  office names from SQL (`private.office_name`). Migrations `…000003_shop_roles` + `…000004_office_names` written, NOT applied.
+- Fix wave: history shows the server author name, office lines «Διαχείριση»; pending invite resumes after any sign-in;
+  «Σύνδεση με άλλο λογαριασμό»; per-person queue tests; SQL 190/200 additions (not run). Vitest 1020/1020.
+- Next: apply both migrations together, run SQL 190/200 + re-run 010–180, check «Confirm email» is on, real invite round trip.
+
 ## 2026-11-17 — stage 5 bug check (read-only review, nothing changed)
 - Read both stage-5 migrations, the sync engine, register, «Σήμερα» and history code. No data-loss or locking bug found;
   typecheck clean, Vitest 954/954.

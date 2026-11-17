@@ -10,6 +10,7 @@
 - [ ] Stage 3 — owner closing history and corrections («Ιστορικό» tab: closings as an append-only version log, range list, day detail with versions + Φάκελος, owner corrections saved as new versions with conflict handling, filing an unsubmitted day): code complete, merged to `main`; «Ιστορικό» is a week view (Mon–Sun, three cards per row on wide screens); SQL 010–110 all pass on dev (run whole in the SQL editor on 2026-11-11, after the three stage-3 migrations); pending the manual browser check (see Not verified)
 - [ ] Stage 4 — store link entry (a permanent store link / QR / code replaces the single-use pairing code; name + PIN on the phone; silent re-join with the stored key; owner «Αφαίρεση» and «Νέος σύνδεσμος»): code complete, merged to `main`; migrations `…0003_today_save_and_submit_revision` and `20261112000001_store_join_keys` applied to dev on 2026-11-11; SQL run: 010–120 all pass on dev (2026-11-11, after both migrations; 010 via the connector, 020–120 in the dashboard SQL editor, run by the user); pending the real-device check (see Not verified). **The deployed client must be the stage-4 build: the old pairing calls no longer exist on dev.**
 - [ ] Stage 5 — multiple closings per day (closings numbered 1..6, the live closing = the highest, an explicit «Έναρξη Nου κλεισίματος» by a cashier, cash mode `separate`/`running`, plan pinned per day, history/corrections/suggestions per closing, the day result in the history model): code complete on branch `stage-5-multi-closing` (head `affc2d6` before the docs commit); migrations `20261117000001_multi_closing` + `20261117000002_multi_closing_history` **applied to dev 2026-11-17** (versions 20261117004655 / 20261117004755); SQL tests 170, 180, 080, 090, 100, 110, 130, 160 pass on dev; nothing seen in a browser or on a phone (see Not verified). **Deploy this branch's client together with the applied schema** (the history payload shapes changed).
+- [ ] Stage 6 — shop roles (per-shop `manager` and `accountant` next to the owner; email-bound invite links `#/owner/invite/<token>`, accepted by the invited account; «Συνεργάτες» card in «Ρυθμίσεις»; tabs and actions by role; every owner-side function and table policy guarded by role in SQL; office-side names (the manager's name, not «Ιδιοκτήτης») in fields, versions and `last_submit`; per-person «Σήμερα» queue `office:<uid>`): code complete on branch `stage-6-roles`; migrations `20261117000003_shop_roles` + `20261117000004_office_names` **written, NOT applied**; SQL tests 190/200 written, not run; Vitest 1020/1020, typecheck and build clean; nothing viewed in a browser (see Not verified). **Apply both migrations together, before the client ships.**
 - [ ] Plan 5 — closings, suggestions, PWA, deploy (closing history landed in stage 3)
 
 ## Product decisions
@@ -378,6 +379,17 @@ https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
 CI now runs the production build (`npm run build`) as well, after test.
 
 ## Not verified
+- Stage 6 (shop roles). NOT verified (nothing of it has run against a database):
+  - Migrations `20261117000003_shop_roles` and `20261117000004_office_names` not applied anywhere; SQL tests 190 and 200
+    never run (written only); SQL tests 010–180 not re-run against the new function bodies; security/performance
+    advisors not checked.
+  - Nothing viewed in a browser: shop list with role badges, tabs per role, «Συνεργάτες» card, InviteScreen.
+  - The real invite round trip: the email link opened on a phone, signup, the confirmation email, then «Αποδοχή»;
+    the pending invite resumed after a password login in another browser.
+  - Two office people in one browser (owner and manager taking turns): each sends only their own queued «Σήμερα» edits.
+  - A manager removed while «Σήμερα» is open (writes refused at once; the open channel keeps receiving until rejoin or
+    token refresh — the accepted realtime limit).
+  - The Supabase «Confirm email» setting is on for the project (without it `invite_unconfirmed` adds nothing).
 - Stage 5 (multiple closings per day). Applied to dev 2026-11-17; SQL tests 170, 180, 080, 090, 100, 110, 130, 160 pass.
   Still NOT verified:
   - Two-session concurrency (M45): two simultaneous `start_next_closing` calls (one starts, the other gets the repeat);
