@@ -93,7 +93,7 @@ describe('ShopsScreen', () => {
     await screen.findByRole('button', { name: 'Α' });
     fireEvent.click(screen.getByRole('button', { name: 'Διαγραφή λογαριασμού' }));
     const sheet = screen.getByRole('dialog');
-    expect(sheet.textContent).toContain('Σβήνονται οριστικά ο λογαριασμός σου και όλα τα καταστήματά σου.');
+    expect(sheet.textContent).toContain('Σβήνονται οριστικά ο λογαριασμός σου και όλα τα καταστήματά σου. Η πρόσβασή σου σε καταστήματα άλλων τελειώνει.');
     const confirmButton = within(sheet).getByRole('button', { name: 'Διαγραφή' }) as HTMLButtonElement;
     await waitFor(() => expect(api.session).toHaveBeenCalled());
     fireEvent.change(within(sheet).getByLabelText('Email για επιβεβαίωση'), { target: { value: 'other@test.gr' } });

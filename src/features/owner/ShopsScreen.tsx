@@ -58,7 +58,7 @@ function DeleteAccountSheet({ api, store, shops, onDeleted, onClose }: {
 
   return (
     <Sheet title="Διαγραφή λογαριασμού" onClose={onClose}>
-      <p>Σβήνονται οριστικά ο λογαριασμός σου και όλα τα καταστήματά σου. Γράψε το email σου για επιβεβαίωση.</p>
+      <p>Σβήνονται οριστικά ο λογαριασμός σου και όλα τα καταστήματά σου. Η πρόσβασή σου σε καταστήματα άλλων τελειώνει. Γράψε το email σου για επιβεβαίωση.</p>
       <input
         className="text-field"
         aria-label="Email για επιβεβαίωση"
