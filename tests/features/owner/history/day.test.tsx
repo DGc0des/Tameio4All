@@ -505,6 +505,23 @@ describe('ShopLayout day route', () => {
     expect(api.listClosings).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['accountant', false],
+    ['manager', true],
+    ['owner', true],
+  ] as const)('%s on a past history day: «Διόρθωση» shown = %s', async (role, shown) => {
+    const api = fakeApi({
+      listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί', role, myName: 'Νίκος' }])),
+      closingDay: vi.fn(() => ok(day())),
+    });
+    render(
+      <ShopLayout api={api} shopId={SHOP} tab="history" date={DATE} navigate={vi.fn()} store={memoryStore()} now={NOW}
+        email="o@test.gr" userId="u1" onSignOut={vi.fn()} onExit={vi.fn()} />,
+    );
+    expect(await screen.findByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Διόρθωση' }) !== null).toBe(shown);
+  });
+
   it('hands the route closing number to the day screen', async () => {
     const closings: DayClosing[] = [
       { closingNo: 1, versions: [version('a1', { authorName: 'ΑΛΕΞΗΣ', createdAt: '2026-11-09T09:10:00Z' })], open: null },

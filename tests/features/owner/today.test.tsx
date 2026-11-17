@@ -119,6 +119,25 @@ describe('TodayScreen', () => {
     expect(api.setTodayField).not.toHaveBeenCalled();
   });
 
+  it('sends exactly the stored items of me.id (office:u1), never another office person\'s', async () => {
+    const store = memoryStore();
+    const item = (author: string, text: string, key: 'd:10000' | 'd:5000') => ({ author, key, value: { text, mode: 'amount' as const }, businessDate: '2026-11-07', closingNo: 1, baseVersion: null, queuedOffline: false, seq: 1 });
+    savePending(store, SHOP, 'office:u1', [item('office:u1', '11', 'd:10000')]);
+    savePending(store, SHOP, 'office:u2', [item('office:u2', '22', 'd:5000')]);
+    const channels: FakeLive[] = [];
+    const api = fakeApi({
+      todayClosing: vi.fn(() => ok(snap())),
+      live: vi.fn((_s: string, _m: { name: string }, h: LiveHandlers) => { const l = fakeLive(h); channels.push(l); return l; }),
+    });
+    render(<TodayScreen api={api} shopId={SHOP} store={store} now={() => new Date(2026, 10, 7, 22, 0)} me={{ name: 'Νίκος', id: 'office:u1' }} />);
+    await loaded();
+    act(() => channels[0]!.emitStatus('live'));
+    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledTimes(1));
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(api.setTodayField).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api.setTodayField).mock.calls[0]!.slice(0, 5)).toEqual([SHOP, '2026-11-07', 1, 'd:10000', { text: '11', mode: 'amount' }]);
+  });
+
   it('remembers the entry mode per shop on this device', async () => {
     const { store } = setup();
     await loaded();
