@@ -41,7 +41,7 @@ describe('login', () => {
   it('validates, signs in, and re-reads the session', async () => {
     const session = vi.fn()
       .mockResolvedValueOnce(null)
-      .mockResolvedValue({ email: 'owner@test.gr', anonymous: false });
+      .mockResolvedValue({ email: 'owner@test.gr', userId: 'owner-uid', anonymous: false });
     const api = signedOut({ session });
     const navigate = start({ name: 'login' }, api);
     await screen.findByRole('heading', { name: 'Σύνδεση ιδιοκτήτη' });
@@ -67,7 +67,7 @@ describe('login', () => {
   });
 
   it('requires confirmation before replacing a paired-phone session', async () => {
-    const api = signedOut({ session: vi.fn(() => Promise.resolve({ email: null, anonymous: true })) });
+    const api = signedOut({ session: vi.fn(() => Promise.resolve({ email: null, userId: 'anon-uid', anonymous: true })) });
     start({ name: 'login' }, api);
     expect(await screen.findByText(/συνδεδεμένη ως ταμείο/)).toBeTruthy();
     type('Email', 'owner@test.gr');

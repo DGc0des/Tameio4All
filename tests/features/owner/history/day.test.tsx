@@ -473,7 +473,7 @@ describe('DayScreen with several closings', () => {
 describe('ShopLayout day route', () => {
   it('renders the day screen (not the list) for tab=history with a date', async () => {
     const api = fakeApi({
-      listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί' }])),
+      listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])),
       closingDay: vi.fn(() => ok(day())),
     });
     render(
@@ -490,7 +490,7 @@ describe('ShopLayout day route', () => {
       { closingNo: 1, versions: [version('a1', { authorName: 'ΑΛΕΞΗΣ', createdAt: '2026-11-09T09:10:00Z' })], open: null },
       { closingNo: 2, versions: [v2], open: null },
     ];
-    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί' }])), closingDay: vi.fn(() => ok(day({ closingsPlanned: 2, closings }))) });
+    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])), closingDay: vi.fn(() => ok(day({ closingsPlanned: 2, closings }))) });
     render(
       <ShopLayout api={api} shopId={SHOP} tab="history" date={DATE} closingNo={1} navigate={vi.fn()} store={memoryStore()} now={NOW}
         email="o@test.gr" onSignOut={vi.fn()} onExit={vi.fn()} />,

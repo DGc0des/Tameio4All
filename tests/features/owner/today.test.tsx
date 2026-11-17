@@ -349,7 +349,7 @@ describe('TodayScreen', () => {
 
 describe('ShopLayout today tab', () => {
   it('has «Σήμερα» as the first tab', async () => {
-    render(<ShopLayout api={fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'JJ' }])) })} shopId={SHOP} tab="today" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={vi.fn()} />);
+    render(<ShopLayout api={fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'JJ', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])) })} shopId={SHOP} tab="today" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={vi.fn()} />);
     const nav = await screen.findByRole('navigation', { name: 'Ενότητες καταστήματος' });
     const tabs = nav.querySelectorAll('button');
     expect(tabs[0]!.textContent).toBe('Σήμερα');

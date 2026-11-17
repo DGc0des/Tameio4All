@@ -25,6 +25,14 @@ export type OwnerError =
   | { code: 'too_many_staff' }
   | { code: 'too_many_versions' }
   | { code: 'confirm_mismatch' }
+  | { code: 'too_many_members' }
+  | { code: 'already_member' }
+  | { code: 'already_owner' }
+  | { code: 'bad_member' }
+  | { code: 'invite_invalid' }
+  | { code: 'invite_expired' }
+  | { code: 'invite_wrong_email' }
+  | { code: 'invite_unconfirmed' }
   | { code: 'bad_name' }
   | { code: 'invalid_credentials' }
   | { code: 'email_not_confirmed' }
@@ -58,7 +66,15 @@ export function mapError(err: unknown): OwnerError {
     return { code: message };
   }
   if (message === 'not_owner' || message === 'staff_name_taken' || message === 'bad_pin_format' || message === 'bad_config' || message === 'bad_field' || message === 'too_many_expenses' || message === 'wrong_day'
-      || message === 'too_many_shops' || message === 'too_many_staff' || message === 'too_many_versions' || message === 'confirm_mismatch') {
+      || message === 'too_many_shops' || message === 'too_many_staff' || message === 'too_many_versions' || message === 'confirm_mismatch'
+      || message === 'too_many_members'
+      || message === 'already_member'
+      || message === 'already_owner'
+      || message === 'bad_member'
+      || message === 'invite_invalid'
+      || message === 'invite_expired'
+      || message === 'invite_wrong_email'
+      || message === 'invite_unconfirmed') {
     return { code: message };
   }
   switch (code) {

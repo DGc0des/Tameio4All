@@ -18,14 +18,14 @@ describe('ShopsScreen', () => {
   it('auto-opens the only shop on first load', async () => {
     const navigate = vi.fn();
     const onLoaded = vi.fn();
-    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό' }])) })} store={memoryStore()} navigate={navigate} autoOpen onLoaded={onLoaded} onSignOut={vi.fn()} onExit={vi.fn()} />);
+    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])) })} store={memoryStore()} navigate={navigate} autoOpen onLoaded={onLoaded} onSignOut={vi.fn()} onExit={vi.fn()} />);
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ name: 'shop', shopId: A, tab: 'settings' }, { replace: true }));
     expect(onLoaded).toHaveBeenCalled();
   });
 
   it('lists several shops and offers a new one', async () => {
     const navigate = vi.fn();
-    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α' }, { id: B, name: 'Β' }])) })} store={memoryStore()} navigate={navigate} autoOpen onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={vi.fn()} />);
+    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α', role: 'owner' as const, myName: 'Ιδιοκτήτης' }, { id: B, name: 'Β', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])) })} store={memoryStore()} navigate={navigate} autoOpen onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Β' }));
     expect(navigate).toHaveBeenCalledWith({ name: 'shop', shopId: B, tab: 'settings' });
     fireEvent.click(screen.getByRole('button', { name: '+ Νέο κατάστημα' }));
@@ -34,7 +34,7 @@ describe('ShopsScreen', () => {
 
   it('does not auto-open when coming back to the list', async () => {
     const navigate = vi.fn();
-    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α' }])) })} store={memoryStore()} navigate={navigate} autoOpen={false} onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={vi.fn()} />);
+    render(<ShopsScreen api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])) })} store={memoryStore()} navigate={navigate} autoOpen={false} onLoaded={vi.fn()} onSignOut={vi.fn()} onExit={vi.fn()} />);
     await screen.findByRole('button', { name: 'Α' });
     expect(navigate).not.toHaveBeenCalled();
   });
@@ -59,7 +59,7 @@ describe('ShopsScreen', () => {
     const onSignOut = vi.fn();
     const store = memoryStore();
     saveSnapshot(store, A, { id: 'oc', businessDate: '2026-09-29', configId: 'c1', config: {}, revision: 0, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {} });
-    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α' }])) });
+    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Α', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])) });
     render(<ShopsScreen api={api} store={store} navigate={vi.fn()} autoOpen={false} onLoaded={vi.fn()} onSignOut={onSignOut} onExit={vi.fn()} />);
     await screen.findByRole('button', { name: 'Α' });
     fireEvent.click(screen.getByRole('button', { name: 'Διαγραφή λογαριασμού' }));
@@ -130,7 +130,7 @@ describe('NewShopScreen', () => {
 
 describe('ShopLayout', () => {
   it('shows the shop name, renames it, and switches tabs', async () => {
-    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό' }])) });
+    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])) });
     const navigate = vi.fn();
     render(<ShopLayout api={api} shopId={A} tab="settings" navigate={navigate} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={vi.fn()} />);
     expect(await screen.findByRole('heading', { name: 'Δοκιμαστικό' })).toBeTruthy();
@@ -150,14 +150,14 @@ describe('ShopLayout', () => {
 
   it('exits back to the register from the footer', async () => {
     const onExit = vi.fn();
-    render(<ShopLayout api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό' }])) })} shopId={A} tab="settings" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={onExit} />);
+    render(<ShopLayout api={fakeApi({ listShops: vi.fn(() => ok([{ id: A, name: 'Δοκιμαστικό', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])) })} shopId={A} tab="settings" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={onExit} />);
     await screen.findByRole('heading', { name: 'Δοκιμαστικό' });
     fireEvent.click(screen.getByRole('button', { name: '← Ταμείο' }));
     expect(onExit).toHaveBeenCalled();
   });
 
   it('shows a load error with retry', async () => {
-    const listShops = vi.fn().mockReturnValueOnce(fail({ code: 'network' })).mockReturnValue(ok([{ id: A, name: 'Δοκιμαστικό' }]));
+    const listShops = vi.fn().mockReturnValueOnce(fail({ code: 'network' })).mockReturnValue(ok([{ id: A, name: 'Δοκιμαστικό', role: 'owner' as const, myName: 'Ιδιοκτήτης' }]));
     render(<ShopLayout api={fakeApi({ listShops })} shopId={A} tab="settings" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={vi.fn()} />);
     expect((await screen.findByRole('alert')).textContent).toContain('Δεν υπάρχει σύνδεση');
     fireEvent.click(screen.getByRole('button', { name: 'Ξανά' }));

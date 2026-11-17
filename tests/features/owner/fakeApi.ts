@@ -10,7 +10,7 @@ export const fail = <T,>(error: Extract<Result<T>, { ok: false }>['error']): Pro
 /** A signed-in owner with one empty shop unless overridden. Every method is a vi.fn. */
 export function fakeApi(overrides: Partial<OwnerApi> = {}): OwnerApi {
   const base: OwnerApi = {
-    session: vi.fn(() => Promise.resolve({ email: 'owner@test.gr', anonymous: false })),
+    session: vi.fn(() => Promise.resolve({ email: 'owner@test.gr', userId: 'owner-uid', anonymous: false })),
     onAuthChange: vi.fn(() => () => {}),
     signIn: vi.fn(() => ok(undefined)),
     signUp: vi.fn(() => ok(undefined)),
@@ -19,6 +19,13 @@ export function fakeApi(overrides: Partial<OwnerApi> = {}): OwnerApi {
     updatePassword: vi.fn(() => ok(undefined)),
     signOut: vi.fn(() => Promise.resolve()),
     listShops: vi.fn(() => ok([])),
+    inviteMember: vi.fn(() => ok('A'.repeat(32))),
+    listMembers: vi.fn(() => ok([])),
+    setMemberRole: vi.fn(() => ok(undefined)),
+    removeMember: vi.fn(() => ok(undefined)),
+    reissueInvite: vi.fn(() => ok('A'.repeat(32))),
+    inviteInfo: vi.fn(() => ok({ shops: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Δοκιμαστικό' }], role: 'manager' as const, displayName: 'Νίκος', email: 'nikos@test.gr', expiresAt: '2026-11-24T00:00:00Z' })),
+    acceptInvite: vi.fn(() => ok(['11111111-1111-4111-8111-111111111111'])),
     createShop: vi.fn(() => ok('11111111-1111-4111-8111-111111111111')),
     renameShop: vi.fn(() => ok(undefined)),
     latestConfig: vi.fn(() => ok(null)),

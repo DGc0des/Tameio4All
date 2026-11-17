@@ -531,7 +531,7 @@ describe('ShopLayout history week', () => {
   }
   const harnessApi = () =>
     fakeApi({
-      listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί' }, { id: OTHER, name: 'Άλλο' }])),
+      listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί', role: 'owner' as const, myName: 'Ιδιοκτήτης' }, { id: OTHER, name: 'Άλλο', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])),
       listClosings: vi.fn(echo(days)),
     });
 
@@ -565,7 +565,7 @@ describe('ShopLayout history week', () => {
 
 describe('ShopLayout history tab', () => {
   it('lists «Ιστορικό» second, marked current on the history tab', async () => {
-    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί' }])) });
+    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])) });
     render(
       <ShopLayout api={api} shopId={SHOP} tab="history" navigate={vi.fn()} store={memoryStore()} now={() => new Date(2026, 10, 11, 12)}
         email="o@test.gr" onSignOut={vi.fn()} onExit={vi.fn()} />,

@@ -50,6 +50,22 @@ export function ownerErrorMessage(e: OwnerError): string {
       return 'Πάρα πολλές αλλαγές ρυθμίσεων σήμερα. Δοκίμασε ξανά αύριο.';
     case 'confirm_mismatch':
       return 'Το όνομα δεν ταιριάζει. Γράψε το ακριβώς όπως φαίνεται.';
+    case 'too_many_members':
+      return 'Έφτασες το όριο των 20 συνεργατών σε αυτό το κατάστημα.';
+    case 'already_member':
+      return 'Αυτό το email έχει ήδη πρόσβαση ή πρόσκληση σε αυτό το κατάστημα.';
+    case 'already_owner':
+      return 'Είσαι ο ιδιοκτήτης αυτού του καταστήματος.';
+    case 'bad_member':
+      return 'Έλεγξε το όνομα, το email και τον ρόλο.';
+    case 'invite_invalid':
+      return 'Η πρόσκληση δεν ισχύει πια. Ζήτα νέα από τον ιδιοκτήτη.';
+    case 'invite_expired':
+      return 'Η πρόσκληση έληξε. Ζήτα νέα από τον ιδιοκτήτη.';
+    case 'invite_wrong_email':
+      return 'Η πρόσκληση είναι για άλλο email. Συνδέσου με το email της πρόσκλησης.';
+    case 'invite_unconfirmed':
+      return 'Επιβεβαίωσε πρώτα το email σου από το μήνυμα που σου στείλαμε.';
     case 'bad_name':
       return 'Το όνομα είναι κενό ή πολύ μεγάλο.';
     case 'invalid_credentials':
