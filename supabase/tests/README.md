@@ -30,15 +30,16 @@ T2/T4/T6 write as the migration owner; uses phones `…d1`, `…d2`). Since that
 the bad-format cases (020 T4, 030 T7, 150 T1–T3) use 4- and 5-digit strings. `060`/`070` also create a throwaway phone `…d1`; `060` uses `…d2` as an unpaired phone. `20261114000007_max_expenses_clamp` (final review I1): `020` T2d/T3c (`create_shop`/`publish_config` refuse a
 `maxExpenses` that is not a JSON integer 0..30 as `bad_config`) and T13 (0 and 30 accepted, owner B); `080` T-M42-5 (a
 junk/huge stored `maxExpenses` → cap 0, `too_many_expenses`, no exception; config written as the migration owner),
-T-M42-6 (a stored 100 behaves as 30) and T-M42-7 (`private.max_expenses` values and grants). Written, not yet run.
+T-M42-6 (a stored 100 behaves as 30) and T-M42-7 (`private.max_expenses` values and grants). `080` (including these)
+passed on dev 2026-11-17; the `020` cases were not run in that session.
 
 `160` erasure and deletion (`20261115000001_erasure`, LG2/L81): `owner_erase_staff` (tombstone row, the old name in no
 row of the shop incl. `last_submit`, a pre-erase token dead, the erased author's line still submittable, the erased row
 not updatable/re-PINable/unlockable), `owner_delete_shop` (typed-name confirmation, every table empty for the shop, its
 anonymous phone users kept and able to join another store), `owner_delete_account`, `private.purge_stale` (90-day sessions, 30-day unused anonymous
 users; writes `auth.sessions` as the migration owner), grants and the `purge_stale` cron job; T9 deletes owner A, so it
-is the last block; uses phones `…d1`–`…d3`, `…d5`, `…d6`. **Written, not yet applied or run** (the migration needs the
-privilege probe of plan `2026-11-14-legal-fixes` Task 3 Step 1 first). After applying, also re-run `020`, `060`, `110`,
+is the last block; uses phones `…d1`–`…d3`, `…d5`, `…d6`. The migration is applied on dev; the file **passed on dev
+2026-11-17** (run after the stage-5 migrations, with the stage-5 T5 adjustment). After applying, also re-run `020`, `060`, `110`,
 `140`, `150` (they touch `staff`).
 
 `170` several closings per day (`20261117000001_multi_closing`, stage 5 part 1): shop defaults (1 closing,
@@ -54,7 +55,8 @@ submits them); the config pin across closings; a new day starting at closing 1 (
 the migration owner, like 060 T8); grants and dropped overloads; T11 the `field`/`submitted` `closing_no` and the
 `closing_started` broadcast (skipped without `realtime.messages` partitions, like 090 T8). Uses phones `…d1`–`…d4`.
 That migration changes two `090` checks, already adjusted (see below): T0 (7-argument `submit_closing`) and T1 (5
-`last_submit` keys with `closing_no`). **Written, not run** (the migration is not applied).
+`last_submit` keys with `closing_no`). **Run on dev 2026-11-17, passes** (after both stage-5 migrations were applied;
+realtime partitions present, T11 not skipped).
 
 `180` history, corrections and suggestions per closing (`20261117000002_multi_closing_history`, stage 5 part 2):
 `owner_list_closings` days with `cash_mode`/`closings_planned`/`closings:[entry…]` (an old-style day without an open
@@ -68,15 +70,16 @@ revision needed, no open closing changed) and for the live closing (`draft_chang
 `closing_no` on that closing only); suggestions for a `'separate'` day (every closing) and a `'running'` day (only the
 last closing); grants and the dropped 7-argument `owner_save_closing` / 2-argument `current_closing`. Past days are
 written as the migration owner (back-dated `closings`/`open_closings` rows, like 100). Uses phone `…d1`. T4 assumes
-nothing creates today's closing 1 before its `set_closing_plan` call — check that when it first runs. **Written, not
-run** (the migration is not applied). Both stage-5 migrations are applied together; then run 170, 180, 090, 100, 110
+nothing creates today's closing 1 before its `set_closing_plan` call (held on its first run). **Run on dev 2026-11-17,
+passes.** Both stage-5 migrations are applied together; then run 170, 180, 090, 100, 110
 and 160. Neither file can test the `start_next_closing` races (one transaction each): those need two sessions.
 Older files adjusted to the two stage-5 migrations (assertions changed only as far as the new contract requires):
 `090` T0 (7-argument `submit_closing`; the 6-argument one is gone) and T1 (5 `last_submit` keys incl. `closing_no`);
 `100` T0/T1 (3-argument `current_closing`), T2–T4 (a list day's entry is `closings[0]`), T6 (the detail's
 `closings[0].versions`/`open`; an empty day has `closings: []`); `110` T0 (8-argument `owner_save_closing`), T3/T6
 (detail `closings[0].versions`), T11 (list `closings[0]`), T15 (3-argument `current_closing`); `160` T5 (detail
-`closings[0].versions`). **Written, not yet applied or run.**
+`closings[0].versions`). **Run on dev 2026-11-17 after both stage-5 migrations: 080, 090, 100, 110, 130 and 160 pass
+unchanged.**
 
 `080` and `090` also assert the Realtime side: `realtime.send` swallows insert errors (it only logs a
 WARNING) and, on a project whose `realtime.messages` has no partitions (the Realtime service creates the daily
