@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ownerHash, parseAppRoute, parseOwnerRoute, type OwnerRoute } from '../../src/app/router';
 
+const TOKEN = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ID = '3f2c1a9e-5b7d-4c8e-9f10-112233445566';
 
 describe('owner routes', () => {
@@ -83,5 +84,15 @@ describe('owner routes', () => {
     expect(parseAppRoute('#/tare')).toEqual({ area: 'register', route: 'register' });
     expect(parseAppRoute('#/owner')).toEqual({ area: 'owner', route: { name: 'shops' } });
     expect(parseAppRoute('#/ownerx')).toEqual({ area: 'register', route: 'register' });
+  });
+});
+
+describe('invite route', () => {
+  it('parses and round-trips', () => {
+    expect(parseOwnerRoute(`/invite/${TOKEN}`)).toEqual({ name: 'invite', token: TOKEN });
+    expect(parseOwnerRoute('/invite/bad')).toEqual({ name: 'invite', token: null });
+    expect(parseOwnerRoute(`/invite/${TOKEN}/x`)).toEqual({ name: 'shops' });
+    expect(ownerHash({ name: 'invite', token: TOKEN })).toBe(`#/owner/invite/${TOKEN}`);
+    expect(parseAppRoute(ownerHash({ name: 'invite', token: TOKEN }))).toEqual({ area: 'owner', route: { name: 'invite', token: TOKEN } });
   });
 });

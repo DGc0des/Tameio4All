@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { isClosingNo } from '../features/register/live/fields';
 import { isIsoDate } from './dates';
+import { parseInviteToken } from './inviteToken';
 
 export type Route = 'register';
 
@@ -22,6 +23,7 @@ export type OwnerRoute =
   | { name: 'reset' }
   | { name: 'shops' }
   | { name: 'new' }
+  | { name: 'invite'; token: string | null }
   | {
       name: 'shop';
       shopId: string;
@@ -48,6 +50,7 @@ export function parseOwnerRoute(rest: string): OwnerRoute {
   if (parts.length === 1 && (first === 'login' || first === 'signup' || first === 'forgot' || first === 'reset' || first === 'new')) {
     return { name: first };
   }
+  if (first === 'invite' && id !== undefined && parts.length === 2) return { name: 'invite', token: parseInviteToken(id) };
   // A fifth part (a closing of a history day) is allowed only after a history day; checked below.
   if (first === 'shop' && id !== undefined && parts.length <= 5) {
     const shopId = id.toLowerCase();
@@ -81,6 +84,7 @@ export function ownerHash(route: OwnerRoute): string {
     const closing = isClosingNo(route.closingNo) ? `/${route.closingNo}` : '';
     return `${base}/${route.date}${closing}`;
   }
+  if (route.name === 'invite') return route.token === null ? `${OWNER_PREFIX}/invite` : `${OWNER_PREFIX}/invite/${route.token}`;
   return `${OWNER_PREFIX}/${route.name}`;
 }
 

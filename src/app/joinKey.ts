@@ -8,7 +8,7 @@ const JOIN_MARK = '#/join/';
 const ROUTE_RE = /^#\/join(?:\/(.*))?$/;
 
 /** Greek capitals that look like Latin ones on the printed card (a cashier on a Greek keyboard types these). */
-const GREEK_LOOKALIKES: Record<string, string> = {
+export const GREEK_LOOKALIKES: Record<string, string> = {
   Α: 'A', Β: 'B', Ε: 'E', Ζ: 'Z', Η: 'H', Ι: 'I', Κ: 'K', Μ: 'M', Ν: 'N', Ο: 'O', Ρ: 'P', Τ: 'T', Υ: 'Y', Χ: 'X',
 };
 

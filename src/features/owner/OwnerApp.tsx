@@ -121,6 +121,9 @@ function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redir
       return owner ? <Go to={{ name: 'shops' }} navigate={navigate} /> : login;
     case 'signup':
       return owner ? <Go to={{ name: 'shops' }} navigate={navigate} /> : <SignupScreen api={api} session={session} navigate={navigate} redirectBase={redirectBase} />;
+    case 'invite':
+      // Task 6 replaces this with InviteScreen
+      return owner ? <Go to={{ name: 'shops' }} navigate={navigate} /> : login;
     case 'forgot':
       return <ForgotScreen api={api} navigate={navigate} redirectBase={redirectBase} />;
     case 'reset':
