@@ -117,6 +117,19 @@ const newPresenceKey = (): string =>
     ? crypto.randomUUID()
     : `p-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 
+/**
+ * Presence is cosmetic and Supabase closes the channel of a client that tracks too often
+ * (`ClientPresenceRateLimitReached`; tabbing through boxes sends a blur + a focus per box). So at most one
+ * track per this interval: the latest focus is sent at the end of the window, an unchanged one not at all.
+ */
+export const PRESENCE_MIN_INTERVAL_MS = 1000;
+
+/**
+ * realtime-js never rejoins a channel the server closed (it drops it from its registry): reopen a fresh
+ * one after this cooldown. Errors and timeouts are rejoined by realtime-js itself.
+ */
+export const REOPEN_AFTER_CLOSE_MS = 10_000;
+
 /** After this long waiting for an older channel of the same topic to finish leaving, the reopen reports offline (and keeps waiting). */
 export const REMOVAL_TIMEOUT_MS = 3000;
 
@@ -137,7 +150,9 @@ const removalsOf = (client: object): Map<string, Promise<unknown>> => {
  * server does, from the write functions). After close() no handler is called again.
  *
  * Status: 'connecting' first; after an error the status goes offline -> live again (supabase-js
- * rejoins by itself) with no 'connecting' in between. Going offline also reports empty presence.
+ * rejoins by itself) with no 'connecting' in between. A channel the server closed (e.g. presence rate
+ * limit) is not rejoined by supabase-js: after REOPEN_AFTER_CLOSE_MS a fresh one is opened (offline -> live).
+ * Presence tracks are throttled (PRESENCE_MIN_INTERVAL_MS). Going offline also reports empty presence.
  *
  * supabase-js hands back an existing channel for the same topic, and a closed channel only leaves
  * its registry after an async unsubscribe. So the channel is created only after any older one for
@@ -153,9 +168,29 @@ export function openShopChannel(client: SupabaseClient, shopId: string, me: { na
   let subscribed = false;
   let focus: FieldKey | null = null;
   let ch: RealtimeChannel | null = null;
+  // Throttle state of the current channel: what it last tracked, when, and a pending trailing send.
+  let sentFocus: FieldKey | null | undefined;
+  let lastTrackAt = -Infinity;
+  let trackTimer: ReturnType<typeof setTimeout> | null = null;
+  let reopenTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearTrackTimer = () => {
+    if (trackTimer !== null) clearTimeout(trackTimer);
+    trackTimer = null;
+  };
 
   const track = () => {
-    if (closed || !subscribed || !ch) return;
+    if (closed || !subscribed || !ch || trackTimer !== null) return;
+    if (focus === sentFocus) return;
+    const wait = lastTrackAt + PRESENCE_MIN_INTERVAL_MS - Date.now();
+    if (wait > 0) {
+      trackTimer = setTimeout(() => {
+        trackTimer = null;
+        track();
+      }, wait);
+      return;
+    }
+    sentFocus = focus;
+    lastTrackAt = Date.now();
     void Promise.resolve(ch.track({ name: me.name, focus })).catch(() => {});
   };
 
@@ -206,23 +241,25 @@ export function openShopChannel(client: SupabaseClient, shopId: string, me: { na
     if (closed) return;
     const mine = client.channel(topic, { config: { private: true, presence: { key: selfKey } } });
     ch = mine;
+    // Callbacks of a channel this wrapper has replaced (after a server close) are ignored.
+    const dead = () => closed || ch !== mine;
     mine.on('broadcast', { event: 'field' }, (msg: { payload?: unknown }) => {
-      if (closed) return;
+      if (dead()) return;
       const f = parseFieldBroadcast(msg.payload);
       if (f) h.onField(f);
     });
     mine.on('broadcast', { event: 'submitted' }, (msg: { payload?: unknown }) => {
-      if (closed) return;
+      if (dead()) return;
       const s = parseSubmitInfo(msg.payload);
       if (s) h.onSubmitted(s);
     });
     mine.on('broadcast', { event: 'closing_started' }, (msg: { payload?: unknown }) => {
-      if (closed) return;
+      if (dead()) return;
       const e = parseClosingStarted(msg.payload);
       if (e) h.onClosingStarted(e);
     });
     mine.on('presence', { event: 'sync' }, () => {
-      if (closed) return;
+      if (dead()) return;
       const out: { name: string; focus: FieldKey | null }[] = [];
       for (const [key, metas] of Object.entries(mine.presenceState() as Record<string, unknown[]>)) {
         if (key === selfKey) continue;
@@ -234,15 +271,26 @@ export function openShopChannel(client: SupabaseClient, shopId: string, me: { na
       h.onPresence(out);
     });
     mine.subscribe((status: string) => {
-      if (closed) return;
+      if (dead()) return;
       if (status === 'SUBSCRIBED') {
         subscribed = true;
+        sentFocus = undefined; // a (re)joined channel has no presence of ours yet
         h.onStatus('live');
         track();
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
         subscribed = false;
+        clearTrackTimer();
         h.onStatus('offline');
         h.onPresence([]);
+        if (status === 'CLOSED' && reopenTimer === null) {
+          // Closed by the server (we never get here after close()): realtime-js will not rejoin it.
+          reopenTimer = setTimeout(() => {
+            reopenTimer = null;
+            if (dead()) return;
+            ch = null;
+            void start();
+          }, REOPEN_AFTER_CLOSE_MS);
+        }
       }
     });
   };
@@ -258,6 +306,9 @@ export function openShopChannel(client: SupabaseClient, shopId: string, me: { na
     close() {
       if (closed) return;
       closed = true;
+      clearTrackTimer();
+      if (reopenTimer !== null) clearTimeout(reopenTimer);
+      reopenTimer = null;
       if (ch) {
         const inflight = removalsOf(client);
         const p: Promise<unknown> = Promise.resolve(client.removeChannel(ch)).catch(() => {});

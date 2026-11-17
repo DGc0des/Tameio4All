@@ -340,6 +340,10 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`; stage 5 mul
   Known clash: an owner signing in on a paired phone's browser leaves the register mounted-but-hidden, so opening
   «Σήμερα» for the same shop there would open a second channel on one topic (see `live.ts`).
 - **Presence** (who is looking at the register, `name` only) is the only thing clients publish directly.
+  Presence `track()` is throttled in `openShopChannel` (`PRESENCE_MIN_INTERVAL_MS` = 1 s, latest focus only): Supabase
+  closes the channel of a client that tracks too often (`ClientPresenceRateLimitReached`, H25). Never call `track` per
+  keystroke/focus without the throttle. realtime-js never rejoins a server-closed channel; `openShopChannel` reopens a
+  fresh one after `REOPEN_AFTER_CLOSE_MS` = 10 s (errors/timeouts are rejoined by realtime-js itself).
   Owner presence name is «Ιδιοκτήτης». Presence names are self-declared by clients (cosmetic only; nothing
   trusts them — authorship of fields comes from the server).
 - **Submit.** `submit_closing(token, config_id, date, inputs, revision, key, closing_no default 1)` (latest body:

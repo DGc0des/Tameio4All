@@ -4,7 +4,7 @@ import { createDeviceApi } from '../../src/data/remote/device';
 import { fromServerResult } from '../../src/data/remote/deviceErrors';
 import { mapError } from '../../src/data/remote/errors';
 import {
-  openShopChannel, parseClosingStarted, parseFieldBroadcast, parseSnapshot, parseSubmitInfo, REMOVAL_TIMEOUT_MS, type LiveHandlers,
+  openShopChannel, parseClosingStarted, parseFieldBroadcast, parseSnapshot, parseSubmitInfo, PRESENCE_MIN_INTERVAL_MS, REMOVAL_TIMEOUT_MS, REOPEN_AFTER_CLOSE_MS, type LiveHandlers,
 } from '../../src/data/remote/live';
 import { createOwnerApi } from '../../src/data/remote/owner';
 
@@ -251,6 +251,7 @@ describe('openShopChannel', () => {
     expect(h.onStatus).toHaveBeenLastCalledWith('live');
     expect(c.ch.track).toHaveBeenCalledWith({ name: 'ΜΑΡΙΑ', focus: null });
     live.setFocus('c:wolt');
+    await new Promise((r) => setTimeout(r, PRESENCE_MIN_INTERVAL_MS + 20));
     expect(c.ch.track).toHaveBeenLastCalledWith({ name: 'ΜΑΡΙΑ', focus: 'c:wolt' });
     for (const st of ['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED']) {
       c.ch.status('SUBSCRIBED');
@@ -425,6 +426,75 @@ describe('openShopChannel slow removal', () => {
       expect(c.created).toHaveLength(1);
       expect(h.onStatus.mock.calls.length).toBe(calls);
       expect(h.onPresence).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('openShopChannel presence throttle and server close', () => {
+  it('sends at most one track per interval, only the latest focus, and skips unchanged ones', async () => {
+    vi.useFakeTimers();
+    try {
+      const c = channelClient();
+      const live = openShopChannel(c.client, 's', { name: 'ΜΑΡΙΑ' }, mkHandlers());
+      await vi.advanceTimersByTimeAsync(1);
+      c.ch.status('SUBSCRIBED');
+      expect(c.ch.track).toHaveBeenCalledTimes(1);
+      // tabbing through boxes: blur (null) + focus per box, many times a second
+      for (const k of ['d:500', 'd:1000', 'd:2000', 'c:wolt'] as const) {
+        live.setFocus(null);
+        live.setFocus(k);
+      }
+      expect(c.ch.track).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(PRESENCE_MIN_INTERVAL_MS);
+      expect(c.ch.track).toHaveBeenCalledTimes(2);
+      expect(c.ch.track).toHaveBeenLastCalledWith({ name: 'ΜΑΡΙΑ', focus: 'c:wolt' });
+      // back and forth inside a window ends where it started: nothing to send
+      live.setFocus(null);
+      live.setFocus('c:wolt');
+      await vi.advanceTimersByTimeAsync(PRESENCE_MIN_INTERVAL_MS * 3);
+      expect(c.ch.track).toHaveBeenCalledTimes(2);
+      live.close();
+      live.setFocus('d:500');
+      await vi.advanceTimersByTimeAsync(PRESENCE_MIN_INTERVAL_MS * 3);
+      expect(c.ch.track).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a channel closed by the server (presence rate limit) reopens a fresh one after a cooldown', async () => {
+    vi.useFakeTimers();
+    try {
+      const c = channelClient();
+      const h = mkHandlers();
+      const live = openShopChannel(c.client, 's', { name: 'ΜΑΡΙΑ' }, h);
+      await vi.advanceTimersByTimeAsync(1);
+      const first = c.ch;
+      first.status('SUBSCRIBED');
+      // realtime-js drops a server-closed channel from its registry and never rejoins it
+      c.registry.splice(c.registry.indexOf(first), 1);
+      first.status('CLOSED');
+      expect(h.onStatus).toHaveBeenLastCalledWith('offline');
+      await vi.advanceTimersByTimeAsync(REOPEN_AFTER_CLOSE_MS - 100);
+      expect(c.created).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(c.created).toHaveLength(2);
+      const second = c.ch;
+      expect(second).not.toBe(first);
+      // the dead channel's late callbacks are ignored
+      first.status('SUBSCRIBED');
+      expect(h.onStatus).toHaveBeenLastCalledWith('offline');
+      second.status('SUBSCRIBED');
+      expect(h.onStatus).toHaveBeenLastCalledWith('live');
+      expect(second.track).toHaveBeenCalledWith({ name: 'ΜΑΡΙΑ', focus: null });
+      // close() during a cooldown cancels the reopen
+      c.registry.splice(c.registry.indexOf(second), 1);
+      second.status('CLOSED');
+      live.close();
+      await vi.advanceTimersByTimeAsync(REOPEN_AFTER_CLOSE_MS * 2);
+      expect(c.created).toHaveLength(2);
     } finally {
       vi.useRealTimers();
     }

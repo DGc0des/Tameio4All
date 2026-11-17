@@ -340,6 +340,12 @@ below is applied to dev (2026-11-17) and its SQL tests pass; the two-session con
 | L112 | In `running` mode an owner correction of closing 1's expenses does not reach the lines already copied into closing 2 (declined by the final review: each closing is its own record) | By design for now | open — accepted |
 | L113 | Accepted server asymmetries: the day detail reports `closings_planned = greatest(1, count)` for a day without a closing-1 open closing (the list reports the count); `owner_save_closing` accepts a first filing of a non-live closing of today that has fields and no version, but no read path offers it | Documented in CLAUDE.md | open — accepted |
 
+## Field report 2026-11-16 (live closing offline while typing)
+
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| H25 | Entering a closing showed «Εκτός σύνδεσης» and the boxes stopped syncing. Every box focus and blur sent a presence `track()` (tabbing = 2 per box), so quick entry hit Supabase's per-client presence limit; the server closed the channel (`ClientPresenceRateLimitReached` in the dev realtime logs, 2026-11-15 23:48 UTC). realtime-js never rejoins a server-closed channel, so `openShopChannel` stayed `offline` for good, and the engine sends writes only while live: every edit after that sat in the queue | `live.ts`: presence throttled to one track per `PRESENCE_MIN_INTERVAL_MS` (1 s), latest focus sent at the end of the window, an unchanged focus not sent; a channel closed by the server is replaced by a fresh one after `REOPEN_AFTER_CLOSE_MS` (10 s), and the dead channel's late callbacks are ignored. Tests in liveRemote «presence throttle and server close» | fixed — not verified on a real device |
+
 ## Tests
 Vitest, `tests/` — all import real `src/core` functions:
 money (incl. `centsToPlain` negatives), denominations, config (validation, cycles, defaults, JSON-shaped
@@ -403,6 +409,9 @@ CI now runs the production build (`npm run build`) as well, after test.
   Also not verified: a phone whose anonymous identity was purged after 30 idle days (expected: the sign-in fails, a new
   anonymous session is created and the stored key re-joins silently — never seen on a device); lawyer review of the
   texts (A5); the Supabase and Vercel DPAs (A2); the ownership letter for tameioV2 (A1).
+- H25 (presence throttle + reopen after a server close): unit tests only. Not yet checked on a real phone: fast entry
+  across many boxes stays «live», no new `ClientPresenceRateLimitReached` in the realtime logs, and a forced server close
+  comes back live in ~10 s. The exact per-client limit is not documented; 1 s was chosen with margin.
 - Review fixes 2026-11-11 (M38, L87–L89), NOT verified: the 15 s timeout has only run against fakes — not on a real
   phone with a stalled network (devtools throttling "offline after connect", or a captive Wi-Fi), and not that
   supabase-js surfaces the timeout to `mapDeviceError`/`mapError` as `Error: request_timeout` / `AuthRetryableFetchError`
