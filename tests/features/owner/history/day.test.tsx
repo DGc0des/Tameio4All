@@ -108,7 +108,7 @@ describe('DayScreen', () => {
     expect(milk.textContent).toContain('ΜΑΡΙΑ');
     const lemons = expenses.getByText('Λεμόνια').closest('li')!;
     expect(lemons.textContent).toContain(formatEuro(1200));
-    expect(lemons.textContent).toContain('Ιδιοκτήτης');
+    expect(lemons.textContent).toContain('Διαχείριση');
 
     const totals = within(region('Σύνολα'));
     expect(b.totals.length).toBe(juiceBarPreset.totals.length);
@@ -166,12 +166,19 @@ describe('DayScreen', () => {
     const stamp = '2026-11-09T12:32:00Z';
     const corrected = version('v3', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', createdAt: stamp, correctsId: 'v2' });
     setup(day({ versions: [corrected, v2, v1] }));
-    expect(await screen.findByText('Διορθώθηκε από ιδιοκτήτη · Δευ 09/11 14:32')).toBeTruthy();
+    expect(await screen.findByText('Διορθώθηκε · Ιδιοκτήτης · Δευ 09/11 14:32')).toBeTruthy();
     cleanup();
 
     const entered = version('v3', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', createdAt: stamp, correctsId: null });
     setup(day({ versions: [entered] }));
-    expect(await screen.findByText('Καταχωρήθηκε από ιδιοκτήτη · Δευ 09/11 14:32')).toBeTruthy();
+    expect(await screen.findByText('Καταχωρήθηκε · Ιδιοκτήτης · Δευ 09/11 14:32')).toBeTruthy();
+  });
+
+  it('a correction made by a manager names the manager (the server name), not the owner', async () => {
+    const corrected = version('v3', { kind: 'owner_correction', authorName: 'Νίκος', createdAt: '2026-11-09T12:32:00Z', correctsId: 'v2' });
+    setup(day({ versions: [corrected, v2, v1] }));
+    expect(await screen.findByText('Διορθώθηκε · Νίκος · Δευ 09/11 14:32')).toBeTruthy();
+    expect(screen.queryByText(/ιδιοκτήτη/)).toBeNull();
   });
 
   describe('owner corrections against the cashier original', () => {

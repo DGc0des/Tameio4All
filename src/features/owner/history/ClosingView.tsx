@@ -40,10 +40,11 @@ export interface ClosingViewProps {
   newId?: () => string;
 }
 
+/** Who filed a version: the name comes from the server (`author_name`; office names only from SQL). */
 const stampOf = (v: ClosingVersion): string =>
   v.kind === 'staff'
     ? `Υποβλήθηκε ${formatTimeEl(v.createdAt)} · ${v.authorName}`
-    : `${v.correctsId !== null ? 'Διορθώθηκε' : 'Καταχωρήθηκε'} από ιδιοκτήτη · ${formatStampEl(v.createdAt)}`;
+    : `${v.correctsId !== null ? 'Διορθώθηκε' : 'Καταχωρήθηκε'} · ${v.authorName} · ${formatStampEl(v.createdAt)}`;
 
 const configOf = (day: DayDetail, id: string): unknown => (Object.hasOwn(day.configs, id) ? day.configs[id] : undefined);
 
