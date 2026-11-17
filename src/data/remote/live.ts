@@ -217,7 +217,7 @@ export function openShopChannel(client: SupabaseClient, shopId: string, me: { na
       if (s) h.onSubmitted(s);
     });
     mine.on('broadcast', { event: 'closing_started' }, (msg: { payload?: unknown }) => {
-      if (dead()) return;
+      if (closed) return;
       const e = parseClosingStarted(msg.payload);
       if (e) h.onClosingStarted(e);
     });
