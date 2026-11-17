@@ -96,7 +96,7 @@ the matrix says otherwise** — the SQL test enumerates them (see Testing).
 `shop_members` (new): `id`, `shop_id` (→ shops, cascade), `user_id` (→ auth.users, null until accepted),
 `email` (lower-cased, as invited), `display_name` (1–40 chars, typed by the owner at invite), `role`
 (`'manager' | 'accountant'`), `invited_at`, `invite_token_hash` (sha256, like staff session tokens),
-`invite_expires_at` (invited_at + 7 days), `accepted_at`, `removed_at`. RLS on, no client table access; read
+`invite_id` (shared by the rows of one multi-shop invite), `invite_expires_at` (invited_at + 7 days), `accepted_at`, `removed_at`. RLS on, no client table access; read
 and write only through functions.
 
 - One live (not removed) row per `(shop_id, lower(email))`, and per `(shop_id, user_id)` once accepted.
@@ -115,8 +115,14 @@ and write only through functions.
 
 ## Invite flow
 
-1. Owner, on a new «Συνεργάτες» card (in «Ρυθμίσεις», since it is owner-only), enters name, email and role →
-   `owner_invite_member(shop, email, name, role)` → returns the raw invite token once (only its hash is stored).
+1. Owner, on a new «Συνεργάτες» card (in «Ρυθμίσεις», since it is owner-only), enters name, email and role, and
+   ticks which of their shops the invite covers (the current shop pre-ticked; the list shows only shops the owner
+   owns) → `owner_invite_member(shops uuid[], email, name, role)` → returns the raw invite token once (only its hash
+   is stored). It creates one `shop_members` row per shop, all sharing one `invite_id` and token hash; every shop
+   must be the caller's (`not_owner` otherwise, nothing created) and each shop's cap and uniqueness are checked.
+   **One person can hold a role in many shops (decided by the user: e.g. an accountant for all of an owner's
+   stores).** Adding a shop later = another invite for that shop; an existing member of shop A invited to shop B
+   just accepts the new link. Role is per shop (the same person may be manager in one and accountant in another).
 2. The app builds the invite link `<origin+pathname>#/invite/<token>` and shows it with copy / share / a
    `mailto:` button prefilled with the shop name and the link. **No email is sent by the server** (decided by the
    user: the owner sends the link, like the store link).
@@ -125,12 +131,13 @@ and write only through functions.
    «Αποδοχή» → `accept_shop_invite(token)`.
 4. `accept_shop_invite` checks: non-anonymous session, token hash matches a live, unexpired, unaccepted row,
    **and the session's email (`auth.jwt() ->> 'email'`) equals the invited email** (case-insensitive). Then sets
-   `user_id`, `accepted_at`, clears the token. Errors: `invite_invalid` (unknown, used, removed),
+   `user_id`, `accepted_at` on every live row of that invite (all its shops; removed ones are skipped), clears
+   the token. Errors: `invite_invalid` (unknown, used, removed),
    `invite_expired`, `invite_wrong_email` («Η πρόσκληση είναι για άλλο email»). It also requires the auth user's
    `email_confirmed_at` to be set (read from `auth.users` in the definer function), so the email match means
    something even if dashboard email confirmation is off (`invite_unconfirmed`).
 5. Owner sees members with status (Σε αναμονή / Ενεργός), can «Αλλαγή ρόλου» (`owner_set_member_role`),
-   «Αφαίρεση» (`owner_remove_member`), and «Νέος σύνδεσμος» for a pending invite (re-mints the token, resets
+   «Αφαίρεση» (`owner_remove_member`, per shop), and «Νέος σύνδεσμος» for a pending invite (re-mints the token, resets
    expiry).
 
 The shared-browser rule applies unchanged: opening an invite in a browser holding a paired phone's anonymous
