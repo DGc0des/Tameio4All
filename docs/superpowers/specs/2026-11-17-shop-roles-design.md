@@ -123,7 +123,7 @@ and write only through functions.
    **One person can hold a role in many shops (decided by the user: e.g. an accountant for all of an owner's
    stores).** Adding a shop later = another invite for that shop; an existing member of shop A invited to shop B
    just accepts the new link. Role is per shop (the same person may be manager in one and accountant in another).
-2. The app builds the invite link `<origin+pathname>#/invite/<token>` and shows it with copy / share / a
+2. The app builds the invite link `<origin+pathname>#/owner/invite/<token>` (under the owner area, so it reuses its sign-in screens) and shows it with copy / share / a
    `mailto:` button prefilled with the shop name and the link. **No email is sent by the server** (decided by the
    user: the owner sends the link, like the store link).
 3. The invitee opens the link. If not signed in: the existing login/sign-up screens (email confirmation as
