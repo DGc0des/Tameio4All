@@ -5,7 +5,7 @@ import { formatEuro } from '../../../core/money';
 import type { OwnerApi } from '../../../data/remote/ownerApi';
 import { ownerErrorMessage } from '../model/messages';
 import type { OwnerNavigate } from '../OwnerUi';
-import { summarizeDay, summarizeOpen, weekCells, type Summary, type WeekCell } from './model';
+import { summarizeDay, summarizeOpen, weekCells, type DaySummary, type Summary, type WeekCell } from './model';
 import type { HistoryList } from './types';
 
 type Shown = { list: HistoryList; monday: string };
@@ -129,11 +129,11 @@ function WeekGrid({ shown, dimmed, navigate, shopId }: { shown: Shown; dimmed: b
   );
 }
 
-/** The card's numbers: the day's result from its submitted closings; a day with none shows its newest open closing. */
-function summaryOf(cell: WeekCell, list: HistoryList): Summary | null {
+/** The card's numbers: the day's result from its submitted closings (`info`); a day with none shows its newest open closing. */
+function summaryOf(cell: WeekCell, info: DaySummary | null): Summary | null {
   const day = cell.day;
   if (day === undefined) return null;
-  if (cell.kind === 'submitted') return summarizeDay(day, list.configs).result;
+  if (info !== null) return info.result;
   const last = day.closings[day.closings.length - 1];
   return last?.status === 'unsubmitted' ? summarizeOpen(last.open) : null;
 }
@@ -176,13 +176,14 @@ function DayCard({ cell, list, today, navigate, shopId }: { cell: WeekCell; list
     );
   }
 
-  const summary = summaryOf(cell, list);
   const day = cell.day;
+  // One summarizeDay per card: the numbers, the «N από M» line and whether a closing is unsubmitted.
   const info = day !== undefined && cell.kind === 'submitted' ? summarizeDay(day, list.configs) : null;
+  const summary = summaryOf(cell, info);
   const multi = day !== undefined && (day.closingsPlanned > 1 || day.closings.length > 1);
   const submittedEntries = day?.closings.flatMap((c) => (c.status === 'submitted' ? [c] : [])) ?? [];
   const latest = submittedEntries[submittedEntries.length - 1];
-  const unsubmittedNo = [...(day?.closings ?? [])].reverse().find((c) => c.status === 'unsubmitted')?.closingNo;
+  const unsubmittedNo = info?.hasUnsubmitted ? [...(day?.closings ?? [])].reverse().find((c) => c.status === 'unsubmitted')?.closingNo : undefined;
   return (
     <button type="button" className={cell.kind === 'unsubmitted' ? 'week-card is-unsubmitted' : 'week-card'} onClick={open}>
       {head}

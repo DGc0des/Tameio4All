@@ -68,11 +68,12 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
   const [envelopeOpen, setEnvelopeOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  // Idempotency key of «Καταχώρηση αλλαγών», kept while the inputs are unchanged and not yet acknowledged (like the phone's submit).
-  const saveKey = useRef<{ key: string; inputs: string } | null>(null);
+  // Idempotency key of «Καταχώρηση αλλαγών», kept while the closing and its inputs are unchanged and not yet acknowledged
+  // (like the phone's submit). Another closing of the day always mints a new key.
+  const saveKey = useRef<{ key: string; inputs: string; closingNo: number } | null>(null);
   // The current version the next save is guarded on, when the server named a newer one than last_submit. Valid only for
-  // the last_submit it was learned against: a newer submit arriving later replaces it.
-  const [expectedOverride, setExpectedOverride] = useState<{ forSubmit: string; id: string } | null>(null);
+  // the last_submit (and the closing) it was learned against: a newer submit or another closing replaces it.
+  const [expectedOverride, setExpectedOverride] = useState<{ forSubmit: string; closingNo: number; id: string } | null>(null);
   useEffect(() => {
     if (state.notice === null) return;
     setToast(state.notice);
@@ -131,12 +132,15 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
     if (lastSubmit === null || saving || saveBlocked !== null) return;
     const inputs = derived.inputs;
     const json = JSON.stringify(inputs);
-    if (saveKey.current?.inputs !== json) saveKey.current = { key: newId(), inputs: json };
+    if (saveKey.current?.inputs !== json || saveKey.current.closingNo !== snapshot.closingNo) {
+      saveKey.current = { key: newId(), inputs: json, closingNo: snapshot.closingNo };
+    }
+    const override = expectedOverride?.forSubmit === lastSubmit.closingId && expectedOverride.closingNo === snapshot.closingNo ? expectedOverride.id : null;
     setSaving(true);
     setSaveError(null);
     const r = await api.saveClosing(shopId, {
       businessDate: snapshot.businessDate, configId: snapshot.configId, closingNo: snapshot.closingNo, inputs,
-      expectedCurrentId: expectedOverride?.forSubmit === lastSubmit.closingId ? expectedOverride.id : lastSubmit.closingId, key: saveKey.current.key, revision: snapshot.revision,
+      expectedCurrentId: override ?? lastSubmit.closingId, key: saveKey.current.key, revision: snapshot.revision,
     });
     setSaving(false);
     if (r.ok) {
@@ -145,7 +149,7 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
       setToast('Οι αλλαγές καταχωρήθηκαν');
     } else {
       if (r.error.code === 'draft_changed') saveKey.current = null;
-      if (r.error.code === 'closing_changed' && r.error.currentId !== null) setExpectedOverride({ forSubmit: lastSubmit.closingId, id: r.error.currentId });
+      if (r.error.code === 'closing_changed' && r.error.currentId !== null) setExpectedOverride({ forSubmit: lastSubmit.closingId, closingNo: snapshot.closingNo, id: r.error.currentId });
       setSaveError(ownerErrorMessage(r.error));
     }
     void resync();

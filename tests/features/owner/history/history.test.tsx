@@ -192,12 +192,26 @@ describe('HistoryScreen week view', () => {
 
     it('a separate day with an unreadable closing shows «—» and still the done count', async () => {
       const bad = { ...v(2, 2), current: version('v2', { configId: 'bad' }) };
-      setup(list([multi({ closings: [v(1, 1), bad] })]));
+      const { navigate } = setup(list([multi({ closings: [v(1, 1), bad] })]));
       await screen.findByText(RANGE);
       const r = card('2026-11-10');
       expect(within(r).getByText('—')).toBeTruthy();
       expect(within(r).queryByText('Δεν διαβάζεται')).toBeNull();
       expect(within(r).getByText('2 από 3 κλεισίματα')).toBeTruthy();
+      // M9: the day is still listed and links to its day screen
+      fireEvent.click(r);
+      expect(navigate).toHaveBeenLastCalledWith({ name: 'shop', shopId: SHOP, tab: 'history', date: '2026-11-10' });
+    });
+
+    it('M9: a running day, plan 3, one submitted closing shows that closing\'s totals and «1 από 3 κλεισίματα»', async () => {
+      setup(list([multi({ cashMode: 'running', closings: [v(1, 2)] })]));
+      await screen.findByText(RANGE);
+      const r = card('2026-11-10');
+      for (const [label, euro] of expectedLines(v(1, 2).current.inputs)) {
+        expect(within(r).getByText(label).parentElement!.textContent).toContain(euro);
+      }
+      expect(within(r).getByText('1 από 3 κλεισίματα')).toBeTruthy();
+      expect(within(r).queryByText(/Δεν υποβλήθηκε/)).toBeNull();
     });
 
     it('a day with only unsubmitted closings keeps the unsubmitted look', async () => {

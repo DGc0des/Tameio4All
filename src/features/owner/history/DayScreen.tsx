@@ -34,15 +34,18 @@ const pickClosing = (day: DayDetail, closingNo: number | undefined): DayClosing 
 export function DayScreen({ api, shopId, date, closingNo, navigate, now, newId = randomId }: DayScreenProps) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [reload, setReload] = useState(0);
-  /** Kept across a refetch, so «Φόρτωση νέας» reopens the editor on the new current version. */
-  const [editing, setEditing] = useState(false);
+  /**
+   * The closing number being edited, or null. The editor shows only while it equals the shown closing, so another
+   * closing's editor never mounts; kept across a refetch, so «Φόρτωση νέας» reopens it on the new current version.
+   */
+  const [editing, setEditing] = useState<number | null>(null);
   /** The newest request; an older response is dropped. */
   const latest = useRef(0);
 
-  // Another day or another closing: edits never move with it.
+  // Another day: edits never move with it.
   useEffect(() => {
-    setEditing(false);
-  }, [shopId, date, closingNo]);
+    setEditing(null);
+  }, [shopId, date]);
 
   useEffect(() => {
     const request = ++latest.current;
@@ -58,7 +61,7 @@ export function DayScreen({ api, shopId, date, closingNo, navigate, now, newId =
 
   const retry = useCallback(() => setReload((n) => n + 1), []);
   const saved = useCallback(() => {
-    setEditing(false);
+    setEditing(null);
     setReload((n) => n + 1);
   }, []);
   const back = () => navigate({ name: 'shop', shopId, tab: 'history' });
@@ -67,6 +70,11 @@ export function DayScreen({ api, shopId, date, closingNo, navigate, now, newId =
   const shown = day === null ? null : pickClosing(day, closingNo);
   const multi = day !== null && (day.closings.length > 1 || day.closingsPlanned > 1);
   const result = useMemo(() => (day === null ? null : summarizeDetail(day)), [day]);
+  // Another closing shown: its edits are dropped (re-selecting the shown closing keeps them).
+  const shownNo = shown?.closingNo ?? null;
+  useEffect(() => {
+    if (shownNo !== null) setEditing((e) => (e === null || e === shownNo ? e : null));
+  }, [shownNo]);
 
   return (
     <>
@@ -135,9 +143,9 @@ export function DayScreen({ api, shopId, date, closingNo, navigate, now, newId =
           shopId={shopId}
           day={day}
           closing={shown}
-          editing={editing}
-          onEdit={() => setEditing(true)}
-          onCancelEdit={() => setEditing(false)}
+          editing={editing === shown.closingNo}
+          onEdit={() => setEditing(shown.closingNo)}
+          onCancelEdit={() => setEditing(null)}
           onSaved={saved}
           onReload={retry}
           now={now}

@@ -24,7 +24,7 @@ const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   id: 'oc-1', businessDate: '2026-11-07', configId: 'c1', config: juiceBarPreset, revision: 0, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {}, ...over,
 });
 
-function setup(over: Parameters<typeof fakeApi>[0] = {}, store = memoryStore()) {
+function setup(over: Parameters<typeof fakeApi>[0] = {}, store = memoryStore(), newId: () => string = () => 'id-1') {
   const channels: FakeLive[] = [];
   const api = fakeApi({
     todayClosing: vi.fn(() => ok(snap())),
@@ -35,7 +35,7 @@ function setup(over: Parameters<typeof fakeApi>[0] = {}, store = memoryStore()) 
     }),
     ...over,
   });
-  const view = render(<TodayScreen api={api} shopId={SHOP} store={store} now={() => new Date(2026, 10, 7, 22, 0)} newId={() => 'id-1'} />);
+  const view = render(<TodayScreen api={api} shopId={SHOP} store={store} now={() => new Date(2026, 10, 7, 22, 0)} newId={newId} />);
   return { api, store, channels, ...view };
 }
 /** Waits for the closing to render. */
@@ -284,6 +284,49 @@ describe('TodayScreen', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση αλλαγών' }));
       await waitFor(() => expect(saveClosing).toHaveBeenCalledTimes(2));
       expect(saveClosing.mock.calls[1]![1]).toEqual(expect.objectContaining({ expectedCurrentId: 'v3' }));
+    });
+
+    it('F3: a failed save on closing 2, then closing 3 is live with identical inputs: the next save mints a new key for closing 3', async () => {
+      let no = 2;
+      let k = 0;
+      const saveClosing = vi.fn((_shop: string, _save: unknown) => fail<{ closingId: string; repeat: boolean }>({ code: 'network' }));
+      const todayClosing = vi.fn(() => ok(submitted(4, 3, { closingNo: no, closingsPlanned: 3 })));
+      const { api, channels } = setup({ todayClosing, saveClosing }, memoryStore(), () => `key-${++k}`);
+      await loaded();
+      await goLive(channels, api);
+      fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση αλλαγών' }));
+      await waitFor(() => expect(saveClosing).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(3));
+      no = 3;
+      act(() => channels[0]!.emitClosingStarted({ businessDate: '2026-11-07', closingNo: 3 }));
+      expect(await screen.findByText('3ο κλείσιμο από 3')).toBeTruthy();
+      await act(async () => { await Promise.resolve(); });
+      fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση αλλαγών' }));
+      await waitFor(() => expect(saveClosing).toHaveBeenCalledTimes(2));
+      const first = saveClosing.mock.calls[0]![1] as { key: string; closingNo: number };
+      const second = saveClosing.mock.calls[1]![1] as { key: string; closingNo: number };
+      expect(first.closingNo).toBe(2);
+      expect(second.closingNo).toBe(3);
+      expect(second.key).not.toBe(first.key);
+    });
+
+    it('F3: a remembered version learned on closing 2 is not used for closing 3', async () => {
+      let no = 2;
+      const saveClosing = vi.fn((_shop: string, _save: unknown) => fail<{ closingId: string; repeat: boolean }>({ code: 'closing_changed', currentId: 'v2b' }));
+      const todayClosing = vi.fn(() => ok(submitted(4, 3, { closingNo: no, closingsPlanned: 3 })));
+      const { api, channels } = setup({ todayClosing, saveClosing });
+      await loaded();
+      await goLive(channels, api);
+      fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση αλλαγών' }));
+      await waitFor(() => expect(saveClosing).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(3));
+      no = 3;
+      act(() => channels[0]!.emitClosingStarted({ businessDate: '2026-11-07', closingNo: 3 }));
+      expect(await screen.findByText('3ο κλείσιμο από 3')).toBeTruthy();
+      await act(async () => { await Promise.resolve(); });
+      fireEvent.click(screen.getByRole('button', { name: 'Καταχώρηση αλλαγών' }));
+      await waitFor(() => expect(saveClosing).toHaveBeenCalledTimes(2));
+      expect(saveClosing.mock.calls[1]![1]).toEqual(expect.objectContaining({ closingNo: 3, expectedCurrentId: 'v2' }));
     });
 
     it('draft_changed shows its message and resyncs', async () => {

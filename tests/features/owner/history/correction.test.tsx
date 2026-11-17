@@ -340,5 +340,17 @@ describe('CorrectionEditor', () => {
       fireEvent.click(saveButton());
       expect(savedArgs(api, 0)).toEqual(expect.objectContaining({ closingNo: 1, expectedCurrentId: 'k1' }));
     });
+
+    it('M11: with no closing in the route, clicking the pill of the shown (highest) closing keeps the typed value', async () => {
+      const { api, go } = setup({ days: [two()] });
+      expect((await startCorrection() as HTMLInputElement).value).toBe('2');
+      type('100€', '9');
+      // The pill navigates to the closing already shown; the route now names it.
+      fireEvent.click(within(screen.getByRole('group', { name: 'Κλεισίματα' })).getByRole('button', { name: '2ο' }));
+      go(2);
+      expect(box('100€').value).toBe('9');
+      fireEvent.click(saveButton());
+      expect(savedArgs(api, 0)).toEqual(expect.objectContaining({ closingNo: 2, expectedCurrentId: 'k2' }));
+    });
   });
 });

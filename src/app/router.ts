@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { isClosingNo } from '../features/register/live/fields';
 import { isIsoDate } from './dates';
 
 export type Route = 'register';
@@ -36,8 +37,9 @@ export type AppRoute = { area: 'register'; route: Route } | { area: 'owner'; rou
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SHOP_TABS: readonly ShopTab[] = ['today', 'history', 'settings', 'staff', 'devices'];
 const OWNER_PREFIX = '#/owner';
-/** A closing number segment: 1..6, no leading zeros. */
-const CLOSING_SEGMENT_RE = /^[1-6]$/;
+/** A closing number segment: a canonical integer (no sign, no leading zeros) that is a valid closing number. */
+const CANONICAL_INT_RE = /^[1-9][0-9]*$/;
+const closingSegment = (s: string): number | null => (CANONICAL_INT_RE.test(s) && isClosingNo(Number(s)) ? Number(s) : null);
 
 /** `rest` is what follows `#/owner`. Anything malformed lands on the shops list. */
 export function parseOwnerRoute(rest: string): OwnerRoute {
@@ -55,8 +57,9 @@ export function parseOwnerRoute(rest: string): OwnerRoute {
       // A day (and closing) segment belongs to the history tab only; a malformed one is dropped, not an error.
       if (shopTab === 'history') {
         if (!isIsoDate(day)) return { name: 'shop', shopId, tab: 'history' };
-        if (closing === undefined || !CLOSING_SEGMENT_RE.test(closing)) return { name: 'shop', shopId, tab: 'history', date: day };
-        return { name: 'shop', shopId, tab: 'history', date: day, closingNo: Number(closing) };
+        const closingNo = closing === undefined ? null : closingSegment(closing);
+        if (closingNo === null) return { name: 'shop', shopId, tab: 'history', date: day };
+        return { name: 'shop', shopId, tab: 'history', date: day, closingNo };
       }
     }
   }
@@ -75,7 +78,7 @@ export function ownerHash(route: OwnerRoute): string {
   if (route.name === 'shop') {
     const base = `${OWNER_PREFIX}/shop/${route.shopId}/${route.tab}`;
     if (route.tab !== 'history' || route.date === undefined) return base;
-    const closing = route.closingNo !== undefined && CLOSING_SEGMENT_RE.test(String(route.closingNo)) ? `/${route.closingNo}` : '';
+    const closing = isClosingNo(route.closingNo) ? `/${route.closingNo}` : '';
     return `${base}/${route.date}${closing}`;
   }
   return `${OWNER_PREFIX}/${route.name}`;

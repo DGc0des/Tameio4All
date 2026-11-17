@@ -40,7 +40,7 @@ describe('owner routes', () => {
   });
 
   it('drops a malformed closing segment: the route is the day without a closing', () => {
-    for (const bad of ['0', '7', '02', 'x']) {
+    for (const bad of ['0', '7', '02', 'x', '+2', '2.0', '1e0', '60']) {
       const r = parseOwnerRoute(`/shop/${ID}/history/2026-11-16/${bad}`);
       expect(r).toEqual({ name: 'shop', shopId: ID, tab: 'history', date: '2026-11-16' });
       expect('closingNo' in r).toBe(false);
