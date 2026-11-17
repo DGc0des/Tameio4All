@@ -499,8 +499,12 @@ spec `docs/superpowers/specs/2026-11-11-store-link-entry-design.md`; stage 5 mul
 - `private.current_closing` and `private.closing_version_json` are `private.*` helpers: no client execute.
 
 ### Multiple closings per day (stage 5)
-**Status 2026-11-17: migrations written, NOT applied to dev; SQL tests 170/180 written, not run.** (The adjusted
-090/100/110/160 were not run either; nothing was checked in a browser or on a phone.) **Deploy rule:** migrations
+**Status 2026-11-17: both migrations applied to dev (`multi_closing` 20261117004655, `multi_closing_history`
+20261117004755, byte-identical to the repo files, after clean dry runs); SQL tests 170, 180, 080, 090, 100, 110, 130, 160
+pass on dev.** Not verified: the two-session concurrency check (M45); SQL files 010–070, 120, 140, 150 not re-run after
+them; performance/health advisors; the start-next flow on real phones (two phones, both cash modes); an old cached phone
+bundle in a multi-closing shop; `ClosingPlanCard` and the history day selector never viewed in a browser; the deployed
+(Vercel) client must be this branch's build. **Deploy rule:** migrations
 `20261117000001_multi_closing` and `20261117000002_multi_closing_history` are applied together (between them
 `owner_save_closing` still reads `open_closings` by shop + date only), and the client that reads the new history
 payloads ships with them (the old parsers cannot read the new `list`/`day` shapes).
@@ -544,7 +548,8 @@ payloads ships with them (the old parsers cannot read the new `list`/`day` shape
 - **Payloads.** The snapshot adds `closing_no`, `closings_planned`, `cash_mode`; the `field` broadcast and `last_submit`/
   the `submitted` broadcast add `closing_no`; `closing_started` is new. Client parsers read an absent `closing_no` /
   `closings_planned` as 1 and an absent `cash_mode` as `'separate'` (an older server or cached data); a present but
-  invalid value drops that message/snapshot.
+  invalid value drops that message/snapshot. (`last_submit`/the `submitted` broadcast are the exception: an absent
+  `closing_no` stays absent, `SubmitInfo.closingNo` undefined.)
 - **Old builds.** The new arguments are trailing `p_closing_no int default 1` (`set_closing_field`,
   `owner_set_closing_field`, `submit_closing`, `owner_save_closing`), so an older client keeps working in a 1-closing
   shop. In a shop with several closings an old phone build reads the live snapshot but its writes and submits name
@@ -566,7 +571,7 @@ payloads ships with them (the old parsers cannot read the new `list`/`day` shape
   start is saved as a correction of the now earlier closing (no revision check). **Declined by the final review:** in
   `running` mode an owner correction of closing 1's expenses does not reach the lines already copied into closing 2.
 - **Suggestions.** `expense_suggestion_data(p_token)` takes the current version of every `(business_date, closing_no)` of the
-  last 180 days; for a day whose closing-1 open closing is `'running'` only the highest-numbered closing (its lines repeat
+  last 180 days; for a day whose closing-1 open closing is `'running'` only the highest-numbered submitted closing (its lines repeat
   in every closing).
 - **Accepted server asymmetries.** The day detail of a day without a closing-1 open closing reports `closings_planned =
   greatest(1, count)` (the list uses the count of its closings, always ≥ 1). `owner_save_closing` accepts a first filing of

@@ -71,8 +71,8 @@ revision needed, no open closing changed) and for the live closing (`draft_chang
 last closing); grants and the dropped 7-argument `owner_save_closing` / 2-argument `current_closing`. Past days are
 written as the migration owner (back-dated `closings`/`open_closings` rows, like 100). Uses phone `…d1`. T4 assumes
 nothing creates today's closing 1 before its `set_closing_plan` call (held on its first run). **Run on dev 2026-11-17,
-passes.** Both stage-5 migrations are applied together; then run 170, 180, 090, 100, 110
-and 160. Neither file can test the `start_next_closing` races (one transaction each): those need two sessions.
+passes.** Both stage-5 migrations were applied to dev together on 2026-11-17. 010–070, 120, 140, 150 were not re-run
+after them. Neither file can test the `start_next_closing` races (one transaction each): those need two sessions.
 Older files adjusted to the two stage-5 migrations (assertions changed only as far as the new contract requires):
 `090` T0 (7-argument `submit_closing`; the 6-argument one is gone) and T1 (5 `last_submit` keys incl. `closing_no`);
 `100` T0/T1 (3-argument `current_closing`), T2–T4 (a list day's entry is `closings[0]`), T6 (the detail's
