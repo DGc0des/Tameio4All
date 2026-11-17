@@ -163,6 +163,7 @@ function ConnectedOwnerApp({ route, navigate, api, store, now = systemNow, redir
           store={store}
           now={now}
           email={owner.email}
+          userId={owner.userId}
           onSignOut={() => void signOut()}
           onExit={onExit}
         />

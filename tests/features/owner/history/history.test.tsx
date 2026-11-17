@@ -525,7 +525,7 @@ describe('ShopLayout history week', () => {
       <>
         <button type="button" onClick={() => setRoute({ name: 'shop', shopId: OTHER, tab: 'history' })}>test: other shop</button>
         <ShopLayout api={api} shopId={route.shopId} tab={route.tab} date={route.date} navigate={setRoute} store={store}
-          now={() => new Date(2026, 10, 11, 12)} email="o@test.gr" onSignOut={vi.fn()} onExit={vi.fn()} />
+          now={() => new Date(2026, 10, 11, 12)} email="o@test.gr" userId="u1" onSignOut={vi.fn()} onExit={vi.fn()} />
       </>
     );
   }
@@ -568,7 +568,7 @@ describe('ShopLayout history tab', () => {
     const api = fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])) });
     render(
       <ShopLayout api={api} shopId={SHOP} tab="history" navigate={vi.fn()} store={memoryStore()} now={() => new Date(2026, 10, 11, 12)}
-        email="o@test.gr" onSignOut={vi.fn()} onExit={vi.fn()} />,
+        email="o@test.gr" userId="u1" onSignOut={vi.fn()} onExit={vi.fn()} />,
     );
     const nav = await screen.findByRole('navigation', { name: 'Ενότητες καταστήματος' });
     const tabs = within(nav).getAllByRole('button');

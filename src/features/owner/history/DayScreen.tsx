@@ -24,6 +24,8 @@ export interface DayScreenProps {
   closingNo?: number;
   navigate: OwnerNavigate;
   now: () => Date;
+  /** Shows «Διόρθωση»/«Επαναφορά» (owner and manager). */
+  canCorrect: boolean;
   newId?: () => string;
 }
 
@@ -31,7 +33,7 @@ export interface DayScreenProps {
 const pickClosing = (day: DayDetail, closingNo: number | undefined): DayClosing | null =>
   day.closings.find((c) => c.closingNo === closingNo) ?? day.closings[day.closings.length - 1] ?? null;
 
-export function DayScreen({ api, shopId, date, closingNo, navigate, now, newId = randomId }: DayScreenProps) {
+export function DayScreen({ api, shopId, date, closingNo, navigate, now, canCorrect, newId = randomId }: DayScreenProps) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [reload, setReload] = useState(0);
   /**
@@ -149,6 +151,7 @@ export function DayScreen({ api, shopId, date, closingNo, navigate, now, newId =
           onSaved={saved}
           onReload={retry}
           now={now}
+          canCorrect={canCorrect}
           newId={newId}
         />
       )}

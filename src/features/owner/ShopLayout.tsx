@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { ShopTab } from '../../app/router';
 import type { KeyValueStore } from '../../data/local/storage';
 import type { OwnerApi } from '../../data/remote/ownerApi';
 import { Card } from '../../ui/Card';
 import { checkName, SHOP_NAME_MAX } from './model/limits';
 import { nameProblemMessage, ownerErrorMessage } from './model/messages';
+import { allowedTabs, can, landingTab, type ShopRole } from './model/roles';
 import { DevicesScreen } from './DevicesScreen';
 import { ErrorText, OwnerHeader, type OwnerNavigate } from './OwnerUi';
 import { OwnerStaffScreen } from './OwnerStaffScreen';
 import { DayScreen } from './history/DayScreen';
 import { HistoryScreen, type HistoryRange } from './history/HistoryScreen';
 import { TodayScreen } from './TodayScreen';
+import { officeQueueAuthor } from './todayWriter';
 import { SettingsScreen } from './settings/SettingsScreen';
 import { useAction } from './useAction';
 
@@ -26,6 +28,8 @@ export interface ShopLayoutProps {
   store: KeyValueStore;
   now: () => Date;
   email: string | null;
+  /** The signed-in account's auth uid (the pending-edit queue author of «Σήμερα»). */
+  userId: string | null;
   onSignOut: () => void;
   /** Leaves the owner area back to the register. */
   onExit: () => void;
@@ -39,9 +43,9 @@ const TABS: { tab: ShopTab; label: string }[] = [
   { tab: 'devices', label: 'Συσκευές' },
 ];
 
-type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'missing' } | { status: 'ready'; name: string };
+type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'missing' } | { status: 'ready'; name: string; role: ShopRole; myName: string };
 
-export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store, now, email, onSignOut, onExit }: ShopLayoutProps) {
+export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store, now, email, userId, onSignOut, onExit }: ShopLayoutProps) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -52,6 +56,14 @@ export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store,
   const [historyRange, setHistoryRange] = useState<({ shopId: string } & HistoryRange) | null>(null);
   const keepHistoryRange = useCallback((from: string, to: string) => setHistoryRange({ shopId, from, to }), [shopId]);
 
+  const role = load.status === 'ready' ? load.role : null;
+  const myName = load.status === 'ready' ? load.myName : '';
+  const me = useMemo(() => ({ name: myName, id: officeQueueAuthor(userId ?? 'unknown') }), [myName, userId]);
+  const tabAllowed = role === null || allowedTabs(role).includes(tab);
+  useEffect(() => {
+    if (role !== null && !tabAllowed) navigate({ name: 'shop', shopId, tab: landingTab(role) }, { replace: true });
+  }, [role, tabAllowed, navigate, shopId]);
+
   useEffect(() => {
     let cancelled = false;
     setLoad({ status: 'loading' });
@@ -59,7 +71,7 @@ export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store,
       if (cancelled) return;
       if (!r.ok) return setLoad({ status: 'error', message: ownerErrorMessage(r.error) });
       const shop = r.data.find((s) => s.id === shopId);
-      setLoad(shop ? { status: 'ready', name: shop.name } : { status: 'missing' });
+      setLoad(shop ? { status: 'ready', name: shop.name, role: shop.role, myName: shop.myName } : { status: 'missing' });
     });
     return () => {
       cancelled = true;
@@ -72,7 +84,7 @@ export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store,
     if (!n.ok) return rename.fail(nameProblemMessage(n.problem, SHOP_NAME_MAX));
     const r = await rename.run(() => api.renameShop(shopId, n.value));
     if (r.ok) {
-      setLoad({ status: 'ready', name: n.value });
+      setLoad((l) => (l.status === 'ready' ? { ...l, name: n.value } : l));
       setRenaming(false);
     }
   };
@@ -100,12 +112,15 @@ export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store,
     );
   }
 
+  if (!tabAllowed) return null;
+
   return (
     <div className="app">
       <OwnerHeader
         title={load.name}
         onBack={back}
         right={
+          can(load.role, 'editShop') && (
           <button
             type="button"
             className="icon-btn"
@@ -117,6 +132,7 @@ export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store,
           >
             ✎
           </button>
+          )
         }
       />
       {renaming && (
@@ -136,7 +152,7 @@ export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store,
         </Card>
       )}
       <nav className="tabs" aria-label="Ενότητες καταστήματος">
-        {TABS.map((t) => (
+        {TABS.filter((t) => allowedTabs(load.role).includes(t.tab)).map((t) => (
           <button key={t.tab} type="button" aria-current={t.tab === tab ? 'page' : undefined} onClick={() => navigate({ name: 'shop', shopId, tab: t.tab })}>
             {t.label}
           </button>
@@ -153,6 +169,8 @@ export function ShopLayout({ api, shopId, tab, date, closingNo, navigate, store,
           navigate={navigate}
           store={store}
           now={now}
+          role={load.role}
+          me={me}
           historyRange={historyRange?.shopId === shopId ? historyRange : null}
           onHistoryRange={keepHistoryRange}
         />
@@ -180,16 +198,18 @@ interface TabBodyProps {
   navigate: OwnerNavigate;
   store: KeyValueStore;
   now: () => Date;
+  role: ShopRole;
+  me: { name: string; id: string };
   historyRange: HistoryRange | null;
   onHistoryRange: (from: string, to: string) => void;
 }
 
-function TabBody({ tab, date, closingNo, api, shopId, shopName, navigate, store, now, historyRange, onHistoryRange }: TabBodyProps) {
-  if (tab === 'today') return <TodayScreen key={shopId} api={api} shopId={shopId} store={store} now={now} />;
+function TabBody({ tab, date, closingNo, api, shopId, shopName, navigate, store, now, role, me, historyRange, onHistoryRange }: TabBodyProps) {
+  if (tab === 'today') return <TodayScreen key={shopId} api={api} shopId={shopId} store={store} now={now} me={me} />;
   if (tab === 'history') {
     return date ? (
       // Not keyed by the closing: switching closings of one day keeps the loaded day.
-      <DayScreen key={shopId + date} api={api} shopId={shopId} date={date} closingNo={closingNo} navigate={navigate} now={now} />
+      <DayScreen key={shopId + date} api={api} shopId={shopId} date={date} closingNo={closingNo} navigate={navigate} now={now} canCorrect={can(role, 'correct')} />
     ) : (
       <HistoryScreen key={shopId} api={api} shopId={shopId} navigate={navigate} initialRange={historyRange} onRangeLoaded={onHistoryRange} />
     );
@@ -197,6 +217,6 @@ function TabBody({ tab, date, closingNo, api, shopId, shopName, navigate, store,
   if (tab === 'settings') {
     return <SettingsScreen key={shopId} api={api} shopId={shopId} shopName={shopName} navigate={navigate} store={store} now={now} />;
   }
-  if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} />;
+  if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} role={role} />;
   return <DevicesScreen api={api} shopId={shopId} shopName={shopName} />;
 }

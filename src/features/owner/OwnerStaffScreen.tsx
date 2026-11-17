@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { OwnerApi, StaffRow } from '../../data/remote/ownerApi';
 import { Card } from '../../ui/Card';
 import { Sheet } from '../../ui/Sheet';
+import { can } from './model/roles';
+import type { ShopRole } from './model/roles';
 import { checkName, isPin, PIN_LENGTH, STAFF_NAME_MAX } from './model/limits';
 import { nameProblemMessage, ownerErrorMessage } from './model/messages';
 import { formatClock, isLocked } from './model/time';
@@ -12,13 +14,14 @@ interface Props {
   api: OwnerApi;
   shopId: string;
   now: () => Date;
+  role: ShopRole;
 }
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; staff: StaffRow[] };
 
 const PIN_HINT = `Το PIN πρέπει να είναι ${PIN_LENGTH} ψηφία.`;
 
-function StaffEditor({ api, person, now, onChanged }: { api: OwnerApi; person: StaffRow; now: () => Date; onChanged: () => void }) {
+function StaffEditor({ api, person, now, role, onChanged }: { api: OwnerApi; person: StaffRow; now: () => Date; role: ShopRole; onChanged: () => void }) {
   const [mode, setMode] = useState<'view' | 'rename' | 'pin'>('view');
   const [text, setText] = useState('');
   const [confirmErase, setConfirmErase] = useState(false);
@@ -79,9 +82,11 @@ function StaffEditor({ api, person, now, onChanged }: { api: OwnerApi; person: S
           <button type="button" className="choice" onClick={() => { setText(person.name); setMode('rename'); }}>
             Μετονομασία
           </button>
-          <button type="button" className="choice" onClick={() => { erase.clear(); setConfirmErase(true); }}>
-            Οριστική διαγραφή
-          </button>
+          {can(role, 'eraseStaff') && (
+            <button type="button" className="choice" onClick={() => { erase.clear(); setConfirmErase(true); }}>
+              Οριστική διαγραφή
+            </button>
+          )}
         </div>
       )}
       {confirmErase && (
@@ -128,7 +133,7 @@ function StaffEditor({ api, person, now, onChanged }: { api: OwnerApi; person: S
   );
 }
 
-export function OwnerStaffScreen({ api, shopId, now }: Props) {
+export function OwnerStaffScreen({ api, shopId, now, role }: Props) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
@@ -170,7 +175,7 @@ export function OwnerStaffScreen({ api, shopId, now }: Props) {
         </Card>
       )}
       {load.status === 'ready' && load.staff.length === 0 && <p className="notice-soft">Δεν υπάρχει ακόμα προσωπικό.</p>}
-      {load.status === 'ready' && load.staff.map((p) => <StaffEditor key={p.id} api={api} person={p} now={now} onChanged={() => void reload()} />)}
+      {load.status === 'ready' && load.staff.map((p) => <StaffEditor key={p.id} api={api} person={p} now={now} role={role} onChanged={() => void reload()} />)}
       <Card title="Νέο άτομο">
         <form className="form" onSubmit={submit} noValidate>
           <input className="text-field" aria-label="Όνομα νέου ατόμου" placeholder="Όνομα" value={name} onChange={(e) => setName(e.target.value)} />

@@ -54,8 +54,8 @@ function setup(o: { days?: DayDetail[]; saveClosing?: Save; closingNo?: number }
   let id = 0;
   const newId = () => `n${++id}`;
   const api = fakeApi({ closingDay, ...(o.saveClosing ? { saveClosing: o.saveClosing } : {}) });
-  const view = render(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={o.closingNo} navigate={vi.fn()} now={NOW} newId={newId} />);
-  const go = (n: number) => view.rerender(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={n} navigate={vi.fn()} now={NOW} newId={newId} />);
+  const view = render(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={o.closingNo} navigate={vi.fn()} now={NOW} canCorrect newId={newId} />);
+  const go = (n: number) => view.rerender(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={n} navigate={vi.fn()} now={NOW} canCorrect newId={newId} />);
   return { api, closingDay, go };
 }
 

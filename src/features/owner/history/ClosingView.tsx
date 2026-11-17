@@ -35,6 +35,8 @@ export interface ClosingViewProps {
   /** The parent refetches the day. */
   onReload: () => void;
   now: () => Date;
+  /** Owner and manager only; the server refuses everyone else. */
+  canCorrect: boolean;
   newId?: () => string;
 }
 
@@ -46,7 +48,7 @@ const stampOf = (v: ClosingVersion): string =>
 const configOf = (day: DayDetail, id: string): unknown => (Object.hasOwn(day.configs, id) ? day.configs[id] : undefined);
 
 /** One closing of a history day: its versions, breakdown, change marks, Φάκελος and corrections. */
-export function ClosingView({ api, shopId, day, closing, editing, onEdit, onCancelEdit, onSaved, onReload, now, newId = randomId }: ClosingViewProps) {
+export function ClosingView({ api, shopId, day, closing, editing, onEdit, onCancelEdit, onSaved, onReload, now, canCorrect, newId = randomId }: ClosingViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [envelopeOpen, setEnvelopeOpen] = useState(false);
   const { versions, open } = closing;
@@ -74,7 +76,7 @@ export function ClosingView({ api, shopId, day, closing, editing, onEdit, onCanc
 
   /** «Επαναφορά»: an older version saved again as the newest (the versions in between stay in the log). */
   const revertible =
-    !isLive && current !== null && selected !== null && !isCurrent && shown !== null &&
+    canCorrect && !isLive && current !== null && selected !== null && !isCurrent && shown !== null &&
     selected.configId === current.configId && shown.inputs.schema === 2 &&
     JSON.stringify(shown.inputs) !== JSON.stringify(current.inputs);
   const revertKey = useMemo(() => newId(), [newId, selected?.id, current?.id]);
@@ -163,7 +165,7 @@ export function ClosingView({ api, shopId, day, closing, editing, onEdit, onCanc
       ) : (
         <Numbers shown={shown} diff={diff} onEnvelope={() => setEnvelopeOpen(true)} />
       )}
-      {shown !== null &&
+      {shown !== null && canCorrect &&
         (selected === null ? (
           <button type="button" className="btn btn-primary" onClick={onEdit}>
             Αποθήκευση ως κλείσιμο

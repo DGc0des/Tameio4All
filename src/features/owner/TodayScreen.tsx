@@ -14,12 +14,12 @@ import { deviceErrorMessage } from '../phone/model/messages';
 import { BottomBar } from '../register/BottomBar';
 import { deriveClosing, envelopeBlockReason } from '../register/derive';
 import { EnvelopeSheet } from '../register/EnvelopeSheet';
-import { OWNER_QUEUE_AUTHOR, changedSinceSubmit } from '../register/live/fields';
+import { changedSinceSubmit } from '../register/live/fields';
 import { useLiveClosing } from '../register/live/useLiveClosing';
 import { LiveClosingView } from '../register/LiveClosingView';
 import { CHANGED_SINCE_SUBMIT, CONNECTING_SUBMIT_REASON, INVALID_CONFIG_MESSAGE, PENDING_SUBMIT_REASON } from '../register/messages';
 import { ownerErrorMessage } from './model/messages';
-import { OWNER_PRESENCE_NAME, createTodayWriter } from './todayWriter';
+import { createTodayWriter } from './todayWriter';
 
 export interface TodayScreenProps {
   api: OwnerApi;
@@ -27,19 +27,20 @@ export interface TodayScreenProps {
   /** Must be a stable object (the live engine remounts when it changes). */
   store: KeyValueStore;
   now: () => Date;
+  /** The signed-in office person: presence name and queue author (`office:<uid>`). Must be a stable object. */
+  me: { name: string; id: string };
   newId?: () => string;
 }
 
-const OWNER = { name: OWNER_PRESENCE_NAME, id: OWNER_QUEUE_AUTHOR };
 const OWNER_AUTHOR = { kind: 'owner' } as const;
 const NO_HISTORY: SupplierHistory = {};
 
-/** The shop's open closing, live: same boxes, totals and Φάκελος as the register, edited as «Ιδιοκτήτης». No submit here. */
-export function TodayScreen({ api, shopId, store, now, newId = randomId }: TodayScreenProps) {
+/** The shop's open closing, live: same boxes, totals and Φάκελος as the register, edited as the signed-in office person. No submit here. */
+export function TodayScreen({ api, shopId, store, now, me, newId = randomId }: TodayScreenProps) {
   // The owner's browser never computes the business date: "the current day" is the date of the last snapshot a load returned.
   const [loadedDate, setLoadedDate] = useState<string | null>(null);
   const writer = useMemo(() => {
-    const inner = createTodayWriter(api, shopId);
+    const inner = createTodayWriter(api, shopId, me.name);
     return {
       ...inner,
       load: async () => {
@@ -48,9 +49,9 @@ export function TodayScreen({ api, shopId, store, now, newId = randomId }: Today
         return r;
       },
     };
-  }, [api, shopId]);
+  }, [api, shopId, me.name]);
   const [fatal, setFatal] = useState<DeviceError | null>(null);
-  const { state, draft: liveDraft, edit, flush, focus, resync, clearNotice, restart } = useLiveClosing(writer, store, shopId, OWNER, now, { onFatal: setFatal });
+  const { state, draft: liveDraft, edit, flush, focus, resync, clearNotice, restart } = useLiveClosing(writer, store, shopId, me, now, { onFatal: setFatal });
   // A cached snapshot of another day (startup, before the first load answered) is not shown: wait for the load, like the register.
   const staleDay = state.snapshot !== null && state.snapshot.businessDate !== loadedDate;
   const snapshot = staleDay ? null : state.snapshot;
