@@ -206,7 +206,8 @@ fieldset.card { min-width: 0; }
 .form-ok { margin: 8px 0 0; font-size: 14px; color: var(--accent-text); }
 .check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; }
 .check input { width: 22px; height: 22px; accent-color: var(--accent); }
-.tabs { display: flex; gap: 4px; margin: 0 12px; border-radius: 14px; padding: 4px; overflow-x: auto; }
+/* Fixed width: the history week widens .app to 1040px on large screens; the tab bar must not follow it. */
+.tabs { display: flex; gap: 4px; width: calc(100% - 24px); max-width: 456px; margin: 0 auto; border-radius: 14px; padding: 4px; overflow-x: auto; }
 .tabs button { flex: 1; border: 0; background: transparent; min-height: 44px; border-radius: 10px; white-space: nowrap; padding: 0 10px; font-size: 13px; color: var(--muted); }
 .tabs button[aria-current='page'] { background: var(--seg-on); color: var(--ink); font-weight: 600; }
 .history-row { display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: 44px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; color: var(--ink); font-size: 14px; }
