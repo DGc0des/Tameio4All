@@ -12,11 +12,24 @@ const maria: StaffRow = { id: 'm', name: 'ΜΑΡΙΑ', active: true, lockedUntil
 const type = (label: string, value: string, root: HTMLElement = document.body) =>
   fireEvent.change(within(root).getByLabelText(label), { target: { value } });
 
+describe('OwnerStaffScreen roles', () => {
+  it('a manager has no «Οριστική διαγραφή»; the owner has it', async () => {
+    const api = fakeApi({ listStaff: vi.fn(() => ok([maria])) });
+    const view = render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} role="manager" />);
+    await screen.findByText('ΜΑΡΙΑ');
+    expect(screen.getByRole('button', { name: 'Αλλαγή PIN' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Οριστική διαγραφή' })).toBeNull();
+    view.unmount();
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} role="owner" />);
+    expect(await screen.findByRole('button', { name: 'Οριστική διαγραφή' })).toBeTruthy();
+  });
+});
+
 describe('OwnerStaffScreen', () => {
   it('adds a staff member with a 6-digit PIN and reloads', async () => {
     const listStaff = vi.fn().mockReturnValueOnce(ok([])).mockReturnValue(ok([maria]));
     const api = fakeApi({ listStaff });
-    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} />);
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} role="owner" />);
     await screen.findByText(/Δεν υπάρχει ακόμα προσωπικό/);
     type('Όνομα νέου ατόμου', ' ΜΑΡΙΑ ');
     const pinInput = screen.getByLabelText('PIN νέου ατόμου') as HTMLInputElement;
@@ -39,7 +52,7 @@ describe('OwnerStaffScreen', () => {
     const locked = { ...maria, lockedUntil: '2026-09-29T10:10:00Z' };
     const listStaff = vi.fn().mockReturnValueOnce(ok([locked])).mockReturnValue(ok([maria]));
     const api = fakeApi({ listStaff });
-    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} />);
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} role="owner" />);
     const row = await screen.findByRole('group', { name: 'ΜΑΡΙΑ' });
     expect(row.textContent).toContain('Κλειδωμένος έως');
     fireEvent.click(within(row).getByRole('button', { name: 'Ξεκλείδωμα' }));
@@ -49,7 +62,7 @@ describe('OwnerStaffScreen', () => {
 
   it('changes a PIN, renames, and deactivates', async () => {
     const api = fakeApi({ listStaff: vi.fn(() => ok([maria])) });
-    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} />);
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} role="owner" />);
     const row = await screen.findByRole('group', { name: 'ΜΑΡΙΑ' });
     fireEvent.click(within(row).getByRole('button', { name: 'Αλλαγή PIN' }));
     expect((within(row).getByLabelText('Νέο PIN ΜΑΡΙΑ') as HTMLInputElement).maxLength).toBe(6);
@@ -72,7 +85,7 @@ describe('OwnerStaffScreen', () => {
     const noPin = { ...maria, hasPin: false };
     const listStaff = vi.fn().mockReturnValueOnce(ok([noPin, { ...maria, id: 'n', name: 'ΝΙΚΟΣ' }])).mockReturnValue(ok([maria, { ...maria, id: 'n', name: 'ΝΙΚΟΣ' }]));
     const api = fakeApi({ listStaff });
-    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} />);
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} role="owner" />);
     const row = await screen.findByRole('group', { name: 'ΜΑΡΙΑ' });
     expect(row.textContent).toContain('Χωρίς PIN — όρισε νέο');
     expect(screen.getByRole('group', { name: 'ΝΙΚΟΣ' }).textContent).not.toContain('Χωρίς PIN');
@@ -86,7 +99,7 @@ describe('OwnerStaffScreen', () => {
   it('network failure: busy clears, message shows, the button works again', async () => {
     const createStaff = vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch')).mockReturnValue(ok('x'));
     const api = fakeApi({ createStaff });
-    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} />);
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} role="owner" />);
     await screen.findByText(/Δεν υπάρχει ακόμα προσωπικό/);
     type('Όνομα νέου ατόμου', 'ΝΙΚΟΣ');
     type('PIN νέου ατόμου', '555555');
@@ -100,7 +113,7 @@ describe('OwnerStaffScreen', () => {
 
   it('shows the duplicate-name error from the server', async () => {
     const api = fakeApi({ createStaff: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: 'staff_name_taken' as const } })) });
-    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} />);
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} role="owner" />);
     await screen.findByText(/Δεν υπάρχει ακόμα προσωπικό/);
     type('Όνομα νέου ατόμου', 'ΜΑΡΙΑ');
     type('PIN νέου ατόμου', '123456');
@@ -111,7 +124,7 @@ describe('OwnerStaffScreen', () => {
   it('erases a cashier only after the confirmation sheet', async () => {
     const listStaff = vi.fn().mockReturnValueOnce(ok([maria])).mockReturnValue(ok([]));
     const api = fakeApi({ listStaff });
-    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} />);
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} role="owner" />);
     const card = await screen.findByRole('group', { name: 'ΜΑΡΙΑ' });
     fireEvent.click(within(card).getByRole('button', { name: 'Οριστική διαγραφή' }));
     const sheet = screen.getByRole('dialog');
@@ -131,7 +144,7 @@ describe('OwnerStaffScreen', () => {
 
   it('keeps the sheet open with the message when the erase fails', async () => {
     const api = fakeApi({ listStaff: vi.fn(() => ok([maria])), eraseStaff: vi.fn(() => fail<void>({ code: 'network' })) });
-    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} />);
+    render(<OwnerStaffScreen api={api} shopId={SHOP} now={NOW} role="owner" />);
     fireEvent.click(within(await screen.findByRole('group', { name: 'ΜΑΡΙΑ' })).getByRole('button', { name: 'Οριστική διαγραφή' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Διαγραφή' }));
     expect((await within(screen.getByRole('dialog')).findByRole('alert')).textContent).toContain('Δεν υπάρχει σύνδεση');

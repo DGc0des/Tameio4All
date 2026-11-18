@@ -6,6 +6,7 @@ import type { OwnerApi, ShopRow } from '../../data/remote/ownerApi';
 import { Card } from '../../ui/Card';
 import { Sheet } from '../../ui/Sheet';
 import { ownerErrorMessage } from './model/messages';
+import { landingTab, ROLE_LABEL } from './model/roles';
 import { ErrorText, OwnerHeader, type OwnerNavigate } from './OwnerUi';
 import { useAction } from './useAction';
 
@@ -48,7 +49,7 @@ function DeleteAccountSheet({ api, store, shops, onDeleted, onClose }: {
 
   const remove = async () => {
     if (!(await action.run(() => api.deleteAccount())).ok) return;
-    for (const s of shops) {
+    for (const s of shops.filter((x) => x.role === 'owner')) {
       clearShop(store, s.id);
       clearOwnerDraft(store, s.id);
     }
@@ -57,7 +58,7 @@ function DeleteAccountSheet({ api, store, shops, onDeleted, onClose }: {
 
   return (
     <Sheet title="Διαγραφή λογαριασμού" onClose={onClose}>
-      <p>Σβήνονται οριστικά ο λογαριασμός σου και όλα τα καταστήματά σου. Γράψε το email σου για επιβεβαίωση.</p>
+      <p>Σβήνονται οριστικά ο λογαριασμός σου και όλα τα καταστήματά σου. Η πρόσβασή σου σε καταστήματα άλλων τελειώνει. Γράψε το email σου για επιβεβαίωση.</p>
       <input
         className="text-field"
         aria-label="Email για επιβεβαίωση"
@@ -93,7 +94,7 @@ export function ShopsScreen({ api, store, navigate, autoOpen, onLoaded, onSignOu
       if (!r.ok) return setLoad({ status: 'error', message: ownerErrorMessage(r.error) });
       setLoad({ status: 'ready', shops: r.data });
       const only = r.data.length === 1 ? r.data[0] : undefined;
-      if (autoOpen && only) navigate({ name: 'shop', shopId: only.id, tab: 'settings' }, { replace: true });
+      if (autoOpen && only) navigate({ name: 'shop', shopId: only.id, tab: landingTab(only.role) }, { replace: true });
       onLoaded();
     });
     return () => {
@@ -132,8 +133,9 @@ export function ShopsScreen({ api, store, navigate, autoOpen, onLoaded, onSignOu
             <Card>
               {load.shops.length === 0 && <p className="notice-soft">Δεν έχεις ακόμα κατάστημα.</p>}
               {load.shops.map((s) => (
-                <button key={s.id} type="button" className="choice wide" onClick={() => navigate({ name: 'shop', shopId: s.id, tab: 'settings' })}>
+                <button key={s.id} type="button" className="choice wide" onClick={() => navigate({ name: 'shop', shopId: s.id, tab: landingTab(s.role) })}>
                   {s.name}
+                  {s.role !== 'owner' && <span className="badge">{ROLE_LABEL[s.role]}</span>}
                 </button>
               ))}
               <button type="button" className="btn btn-primary wide" onClick={() => navigate({ name: 'new' })}>

@@ -25,6 +25,8 @@ interface Props {
   navigate: OwnerNavigate;
   store: KeyValueStore;
   now: () => Date;
+  /** origin + pathname for invite links; defaults to the current page. */
+  redirectBase?: string;
 }
 
 interface Server {
@@ -37,7 +39,7 @@ type Load = { status: 'loading' } | { status: 'error'; message: string } | { sta
 
 const same = (a: ShopConfig | null, b: ShopConfig): boolean => a !== null && JSON.stringify(a) === JSON.stringify(b);
 
-export function SettingsScreen({ api, shopId, shopName, navigate, store, now }: Props) {
+export function SettingsScreen({ api, shopId, shopName, navigate, store, now, redirectBase = window.location.origin + window.location.pathname }: Props) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [draft, setDraft] = useState<{ config: ShopConfig; baseVersion: number } | null>(null);

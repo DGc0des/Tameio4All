@@ -60,7 +60,7 @@ const openSnap: Snapshot = {
 function setup(d: DayDetail | Promise<Result<DayDetail>> = day(), navigate = vi.fn()) {
   const closingDay = vi.fn(() => (d instanceof Promise ? d : ok(d)));
   const api = fakeApi({ closingDay });
-  render(<DayScreen api={api} shopId={SHOP} date={DATE} navigate={navigate} now={NOW} />);
+  render(<DayScreen api={api} shopId={SHOP} date={DATE} navigate={navigate} now={NOW} canCorrect />);
   return { api, closingDay, navigate };
 }
 const region = (name: string) => screen.getByRole('region', { name });
@@ -108,7 +108,7 @@ describe('DayScreen', () => {
     expect(milk.textContent).toContain('ΜΑΡΙΑ');
     const lemons = expenses.getByText('Λεμόνια').closest('li')!;
     expect(lemons.textContent).toContain(formatEuro(1200));
-    expect(lemons.textContent).toContain('Ιδιοκτήτης');
+    expect(lemons.textContent).toContain('Διαχείριση');
 
     const totals = within(region('Σύνολα'));
     expect(b.totals.length).toBe(juiceBarPreset.totals.length);
@@ -166,12 +166,19 @@ describe('DayScreen', () => {
     const stamp = '2026-11-09T12:32:00Z';
     const corrected = version('v3', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', createdAt: stamp, correctsId: 'v2' });
     setup(day({ versions: [corrected, v2, v1] }));
-    expect(await screen.findByText('Διορθώθηκε από ιδιοκτήτη · Δευ 09/11 14:32')).toBeTruthy();
+    expect(await screen.findByText('Διορθώθηκε · Ιδιοκτήτης · Δευ 09/11 14:32')).toBeTruthy();
     cleanup();
 
     const entered = version('v3', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', createdAt: stamp, correctsId: null });
     setup(day({ versions: [entered] }));
-    expect(await screen.findByText('Καταχωρήθηκε από ιδιοκτήτη · Δευ 09/11 14:32')).toBeTruthy();
+    expect(await screen.findByText('Καταχωρήθηκε · Ιδιοκτήτης · Δευ 09/11 14:32')).toBeTruthy();
+  });
+
+  it('a correction made by a manager names the manager (the server name), not the owner', async () => {
+    const corrected = version('v3', { kind: 'owner_correction', authorName: 'Νίκος', createdAt: '2026-11-09T12:32:00Z', correctsId: 'v2' });
+    setup(day({ versions: [corrected, v2, v1] }));
+    expect(await screen.findByText('Διορθώθηκε · Νίκος · Δευ 09/11 14:32')).toBeTruthy();
+    expect(screen.queryByText(/ιδιοκτήτη/)).toBeNull();
   });
 
   describe('owner corrections against the cashier original', () => {
@@ -224,7 +231,7 @@ describe('DayScreen', () => {
       let n = 0;
       const closingDay = vi.fn(() => ok(days[Math.min(n++, 1)]!));
       const saveClosing = vi.fn(() => ok({ closingId: 'v4', repeat: false }));
-      render(<DayScreen api={fakeApi({ closingDay, saveClosing })} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} newId={() => 'k1'} />);
+      render(<DayScreen api={fakeApi({ closingDay, saveClosing })} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} canCorrect newId={() => 'k1'} />);
       await loaded();
       expect(screen.queryByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' })).toBeNull();
       fireEvent.click(await screen.findByRole('button', { name: 'Προβολή' }));
@@ -247,7 +254,7 @@ describe('DayScreen', () => {
     it('a refused «Επαναφορά» shows the reason with «Φόρτωση νέας»', async () => {
       const saveClosing = vi.fn(() => fail<{ closingId: string; repeat: boolean }>({ code: 'closing_changed', currentId: 'v9' }));
       const closingDay = vi.fn(() => ok(day({ versions: [v3, v2, v1] })));
-      render(<DayScreen api={fakeApi({ closingDay, saveClosing })} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} />);
+      render(<DayScreen api={fakeApi({ closingDay, saveClosing })} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} canCorrect />);
       fireEvent.click(await screen.findByRole('button', { name: 'Προβολή' }));
       fireEvent.click(screen.getByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' }));
       const alert = await screen.findByRole('alert');
@@ -255,6 +262,19 @@ describe('DayScreen', () => {
       fireEvent.click(within(alert).getByRole('button', { name: 'Φόρτωση νέας' }));
       await waitFor(() => expect(closingDay).toHaveBeenCalledTimes(2));
     });
+  });
+
+  it('without canCorrect a past closing offers neither «Διόρθωση» nor «Επαναφορά»', async () => {
+    const v3 = version('v3', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', correctsId: 'v2', inputs: { ...currentInputs, channelCents: { wolt: 1 } } });
+    const closingDay = vi.fn(() => ok(day({ versions: [v3, v2, v1] })));
+    render(<DayScreen api={fakeApi({ closingDay })} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} canCorrect={false} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Προβολή' }));
+    expect(screen.queryByRole('button', { name: 'Διόρθωση' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' })).toBeNull();
+    cleanup();
+    render(<DayScreen api={fakeApi({ closingDay })} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} canCorrect />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Προβολή' }));
+    expect(screen.getByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' })).toBeTruthy();
   });
 
   it('an unreadable current version says «Δεν διαβάζεται», offers no «Διόρθωση», and older versions stay reachable', async () => {
@@ -307,7 +327,7 @@ describe('DayScreen', () => {
     const closingDay = vi.fn()
       .mockImplementationOnce(() => fail({ code: 'network' }))
       .mockImplementation(() => ok(day()));
-    render(<DayScreen api={fakeApi({ closingDay })} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} />);
+    render(<DayScreen api={fakeApi({ closingDay })} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} canCorrect />);
     expect((await screen.findByRole('alert')).textContent).toBe(ownerErrorMessage({ code: 'network' }));
     expect(screen.queryByText('Φόρτωση…')).toBeNull();
     expect(screen.getByRole('button', { name: '← Ιστορικό' })).toBeTruthy();
@@ -348,8 +368,8 @@ describe('DayScreen', () => {
     const pending: ((r: Result<DayDetail>) => void)[] = [];
     const closingDay = vi.fn(() => new Promise<Result<DayDetail>>((res) => pending.push(res)));
     const api = fakeApi({ closingDay });
-    const { rerender } = render(<DayScreen api={api} shopId={SHOP} date="2026-11-08" navigate={vi.fn()} now={NOW} />);
-    rerender(<DayScreen api={api} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} />);
+    const { rerender } = render(<DayScreen api={api} shopId={SHOP} date="2026-11-08" navigate={vi.fn()} now={NOW} canCorrect />);
+    rerender(<DayScreen api={api} shopId={SHOP} date={DATE} navigate={vi.fn()} now={NOW} canCorrect />);
     expect(pending).toHaveLength(2);
     await act(async () => {
       pending[1]!({ ok: true, data: day() });
@@ -376,8 +396,8 @@ describe('DayScreen with several closings', () => {
     const navigate = vi.fn();
     const closingDay = vi.fn(() => ok(d));
     const api = fakeApi({ closingDay });
-    const view = render(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={closingNo} navigate={navigate} now={NOW} />);
-    const go = (n: number) => view.rerender(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={n} navigate={navigate} now={NOW} />);
+    const view = render(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={closingNo} navigate={navigate} now={NOW} canCorrect />);
+    const go = (n: number) => view.rerender(<DayScreen api={api} shopId={SHOP} date={DATE} closingNo={n} navigate={navigate} now={NOW} canCorrect />);
     return { navigate, closingDay, api, go };
   };
 
@@ -393,7 +413,19 @@ describe('DayScreen with several closings', () => {
     show(day({ closingsPlanned: 3 }));
     await loaded();
     expect(within(region('Σύνολο ημέρας')).getByText('1 από 3 κλεισίματα')).toBeTruthy();
+    expect(within(region('Σύνολο ημέρας')).getByRole('note').textContent).toBe('Λείπουν 2 κλεισίματα — το σύνολο ημέρας δεν είναι πλήρες.');
     expect(screen.getByRole('button', { name: '1ο' })).toBeTruthy();
+  });
+
+  it('a complete day and today have no missing warning', async () => {
+    show(three());
+    await screen.findByText('Υποβλήθηκε 21:30 · ΓΙΩΤΑ');
+    expect(within(region('Σύνολο ημέρας')).queryByRole('note')).toBeNull();
+    cleanup();
+    show(day({ closingsPlanned: 3, today: DATE, liveClosingNo: 1 }));
+    await loaded();
+    expect(within(region('Σύνολο ημέρας')).getByText('1 από 3 κλεισίματα')).toBeTruthy();
+    expect(within(region('Σύνολο ημέρας')).queryByRole('note')).toBeNull();
   });
 
   it('a 3-closing separate day: the day sum, «3 από 3 κλεισίματα», three buttons, the highest closing shown', async () => {
@@ -461,7 +493,7 @@ describe('DayScreen with several closings', () => {
     const c2fix = version('c2fix', { kind: 'owner_correction', authorName: 'Ιδιοκτήτης', createdAt: '2026-11-10T08:00:00Z', correctsId: 'c2', inputs: inputsOf(5) });
     const saveClosing = vi.fn(() => ok({ closingId: 'c2new', repeat: false }));
     const d = three({ closings: [{ closingNo: 1, versions: [c1], open: null }, { closingNo: 2, versions: [c2fix, c2], open: null }, { closingNo: 3, versions: [c3], open: null }] });
-    render(<DayScreen api={fakeApi({ closingDay: vi.fn(() => ok(d)), saveClosing })} shopId={SHOP} date={DATE} closingNo={2} navigate={vi.fn()} now={NOW} newId={() => 'k2'} />);
+    render(<DayScreen api={fakeApi({ closingDay: vi.fn(() => ok(d)), saveClosing })} shopId={SHOP} date={DATE} closingNo={2} navigate={vi.fn()} now={NOW} canCorrect newId={() => 'k2'} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Προβολή' }));
     fireEvent.click(screen.getByRole('button', { name: 'Επαναφορά αυτής της έκδοσης' }));
     await waitFor(() => expect(saveClosing).toHaveBeenCalledWith(SHOP, {
@@ -473,16 +505,33 @@ describe('DayScreen with several closings', () => {
 describe('ShopLayout day route', () => {
   it('renders the day screen (not the list) for tab=history with a date', async () => {
     const api = fakeApi({
-      listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί' }])),
+      listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])),
       closingDay: vi.fn(() => ok(day())),
     });
     render(
       <ShopLayout api={api} shopId={SHOP} tab="history" date={DATE} navigate={vi.fn()} store={memoryStore()} now={NOW}
-        email="o@test.gr" onSignOut={vi.fn()} onExit={vi.fn()} />,
+        email="o@test.gr" userId="u1" onSignOut={vi.fn()} onExit={vi.fn()} />,
     );
     expect(await screen.findByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
     await waitFor(() => expect(api.closingDay).toHaveBeenCalledWith(SHOP, DATE));
     expect(api.listClosings).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['accountant', false],
+    ['manager', true],
+    ['owner', true],
+  ] as const)('%s on a past history day: «Διόρθωση» shown = %s', async (role, shown) => {
+    const api = fakeApi({
+      listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί', role, myName: 'Νίκος' }])),
+      closingDay: vi.fn(() => ok(day())),
+    });
+    render(
+      <ShopLayout api={api} shopId={SHOP} tab="history" date={DATE} navigate={vi.fn()} store={memoryStore()} now={NOW}
+        email="o@test.gr" userId="u1" onSignOut={vi.fn()} onExit={vi.fn()} />,
+    );
+    expect(await screen.findByText('Υποβλήθηκε 21:42 · ΜΑΡΙΑ')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Διόρθωση' }) !== null).toBe(shown);
   });
 
   it('hands the route closing number to the day screen', async () => {
@@ -490,10 +539,10 @@ describe('ShopLayout day route', () => {
       { closingNo: 1, versions: [version('a1', { authorName: 'ΑΛΕΞΗΣ', createdAt: '2026-11-09T09:10:00Z' })], open: null },
       { closingNo: 2, versions: [v2], open: null },
     ];
-    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί' }])), closingDay: vi.fn(() => ok(day({ closingsPlanned: 2, closings }))) });
+    const api = fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'Μαγαζί', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])), closingDay: vi.fn(() => ok(day({ closingsPlanned: 2, closings }))) });
     render(
       <ShopLayout api={api} shopId={SHOP} tab="history" date={DATE} closingNo={1} navigate={vi.fn()} store={memoryStore()} now={NOW}
-        email="o@test.gr" onSignOut={vi.fn()} onExit={vi.fn()} />,
+        email="o@test.gr" userId="u1" onSignOut={vi.fn()} onExit={vi.fn()} />,
     );
     expect(await screen.findByText('Υποβλήθηκε 11:10 · ΑΛΕΞΗΣ')).toBeTruthy();
   });

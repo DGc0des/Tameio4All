@@ -7,7 +7,7 @@ import { deriveClosing } from '../../../src/features/register/derive';
 import { draftFromFields } from '../../../src/features/register/live/merge';
 import { WRONG_DAY_NOTICE } from '../../../src/features/register/live/syncEngine';
 import { CHANGED_SINCE_SUBMIT } from '../../../src/features/register/messages';
-import { loadEntryMode, saveSnapshot } from '../../../src/data/local/openClosing';
+import { loadEntryMode, savePending, saveSnapshot } from '../../../src/data/local/openClosing';
 import { memoryStore } from '../../../src/data/local/storage';
 import type { LiveHandlers } from '../../../src/data/remote/live';
 import type { Snapshot } from '../../../src/features/register/live/fields';
@@ -24,6 +24,8 @@ const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   id: 'oc-1', businessDate: '2026-11-07', configId: 'c1', config: juiceBarPreset, revision: 0, closingNo: 1, closingsPlanned: 1, cashMode: 'separate' as const, lastSubmit: null, fields: {}, ...over,
 });
 
+const ME = { name: "Ιδιοκτήτης", id: "owner" };
+
 function setup(over: Parameters<typeof fakeApi>[0] = {}, store = memoryStore(), newId: () => string = () => 'id-1') {
   const channels: FakeLive[] = [];
   const api = fakeApi({
@@ -35,7 +37,7 @@ function setup(over: Parameters<typeof fakeApi>[0] = {}, store = memoryStore(), 
     }),
     ...over,
   });
-  const view = render(<TodayScreen api={api} shopId={SHOP} store={store} now={() => new Date(2026, 10, 7, 22, 0)} newId={newId} />);
+  const view = render(<TodayScreen api={api} shopId={SHOP} store={store} now={() => new Date(2026, 10, 7, 22, 0)} me={ME} newId={newId} />);
   return { api, store, channels, ...view };
 }
 /** Waits for the closing to render. */
@@ -97,6 +99,43 @@ describe('TodayScreen', () => {
     expect(api.live).toHaveBeenCalledWith(SHOP, { name: 'Ιδιοκτήτης' }, expect.anything());
     unmount();
     expect(channels[0]!.close).toHaveBeenCalled();
+  });
+
+  it('names the presence with me.name and sends only the queue of me.id', async () => {
+    const store = memoryStore();
+    const edit = (author: string) => ({ author, key: 'd:10000' as const, value: { text: '7', mode: 'amount' as const }, businessDate: '2026-11-07', closingNo: 1, baseVersion: null, queuedOffline: false, seq: 1 });
+    savePending(store, SHOP, 'office:u2', [edit('office:u2')]);
+    const channels: FakeLive[] = [];
+    const api = fakeApi({
+      todayClosing: vi.fn(() => ok(snap())),
+      live: vi.fn((_s: string, _m: { name: string }, h: LiveHandlers) => { const l = fakeLive(h); channels.push(l); return l; }),
+    });
+    render(<TodayScreen api={api} shopId={SHOP} store={store} now={() => new Date(2026, 10, 7, 22, 0)} me={{ name: 'Νίκος', id: 'office:u1' }} />);
+    await loaded();
+    act(() => channels[0]!.emitStatus('live'));
+    await waitFor(() => expect(api.todayClosing).toHaveBeenCalledTimes(2));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.live).toHaveBeenCalledWith(SHOP, { name: 'Νίκος' }, expect.anything());
+    expect(api.setTodayField).not.toHaveBeenCalled();
+  });
+
+  it('sends exactly the stored items of me.id (office:u1), never another office person\'s', async () => {
+    const store = memoryStore();
+    const item = (author: string, text: string, key: 'd:10000' | 'd:5000') => ({ author, key, value: { text, mode: 'amount' as const }, businessDate: '2026-11-07', closingNo: 1, baseVersion: null, queuedOffline: false, seq: 1 });
+    savePending(store, SHOP, 'office:u1', [item('office:u1', '11', 'd:10000')]);
+    savePending(store, SHOP, 'office:u2', [item('office:u2', '22', 'd:5000')]);
+    const channels: FakeLive[] = [];
+    const api = fakeApi({
+      todayClosing: vi.fn(() => ok(snap())),
+      live: vi.fn((_s: string, _m: { name: string }, h: LiveHandlers) => { const l = fakeLive(h); channels.push(l); return l; }),
+    });
+    render(<TodayScreen api={api} shopId={SHOP} store={store} now={() => new Date(2026, 10, 7, 22, 0)} me={{ name: 'Νίκος', id: 'office:u1' }} />);
+    await loaded();
+    act(() => channels[0]!.emitStatus('live'));
+    await waitFor(() => expect(api.setTodayField).toHaveBeenCalledTimes(1));
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(api.setTodayField).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api.setTodayField).mock.calls[0]!.slice(0, 5)).toEqual([SHOP, '2026-11-07', 1, 'd:10000', { text: '11', mode: 'amount' }]);
   });
 
   it('remembers the entry mode per shop on this device', async () => {
@@ -349,7 +388,7 @@ describe('TodayScreen', () => {
 
 describe('ShopLayout today tab', () => {
   it('has «Σήμερα» as the first tab', async () => {
-    render(<ShopLayout api={fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'JJ' }])) })} shopId={SHOP} tab="today" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" onSignOut={vi.fn()} onExit={vi.fn()} />);
+    render(<ShopLayout api={fakeApi({ listShops: vi.fn(() => ok([{ id: SHOP, name: 'JJ', role: 'owner' as const, myName: 'Ιδιοκτήτης' }])) })} shopId={SHOP} tab="today" navigate={vi.fn()} store={memoryStore()} now={() => new Date()} email="o@t.gr" userId="u1" onSignOut={vi.fn()} onExit={vi.fn()} />);
     const nav = await screen.findByRole('navigation', { name: 'Ενότητες καταστήματος' });
     const tabs = nav.querySelectorAll('button');
     expect(tabs[0]!.textContent).toBe('Σήμερα');

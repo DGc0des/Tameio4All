@@ -23,11 +23,11 @@ Node 22.12+ or 24+.
 ## Key folders
 - `src/core/` — pure money logic (integer cents, `evaluateTotals`, `planEnvelope`); purity enforced by a test
 - `src/features/register/` — register model (`draft.ts`, `derive.ts`) + `live/` shared-closing sync engine
-- `src/features/owner/` — owner area (tabs Σήμερα · Ιστορικό · Ρυθμίσεις · Προσωπικό · Συσκευές), `history/`
+- `src/features/owner/` — owner area (tabs Σήμερα · Ιστορικό · Ρυθμίσεις · Προσωπικό · Συσκευές, filtered by role since stage 6: owner / manager / accountant; invites at `#/owner/invite/<token>`), `history/`
 - `src/features/phone/` — phone gate reducer, join, sign-in
 - `src/data/local/` — only localStorage code · `src/data/remote/` — only supabase-js code
 - `src/app/` — App, hash router, theme, dates, join key · `src/ui/` — primitives
-- `supabase/migrations/` — DB source of truth (32 files; the 2 stage-5 ones applied to dev 2026-11-17) · `supabase/tests/` — SQL security tests
+- `supabase/migrations/` — DB source of truth (34 files; the 2 stage-5 ones applied to dev 2026-11-17; the 2 stage-6 ones `…000003_shop_roles`/`…000004_office_names` applied to dev 2026-11-17, SQL 010–200 pass) · `supabase/tests/` — SQL security tests
 - `docs/superpowers/{specs,plans}/` — design specs and stage plans · `docs/legal/` — breach procedure, processing record
 
 ## Docs map (project root)

@@ -12,7 +12,8 @@ import {
 } from '../../register/live/fields';
 import type { ClosingVersion, DayDetail, HistoryClosing, HistoryDay, HistoryList } from './types';
 
-export const OWNER_NAME = 'Ιδιοκτήτης';
+/** An expense line with `addedBy {kind:'owner'}` was added from the office side (owner or manager). */
+export const OFFICE_NAME = 'Διαχείριση';
 export const UNKNOWN_AUTHOR = '—';
 
 export interface TotalLine { id: string; label: string; cents: Cents }
@@ -85,7 +86,7 @@ export function breakdown(config: unknown, inputs: unknown, staffNames: Record<s
     cents: e.cents,
     author:
       e.addedBy === undefined ? UNKNOWN_AUTHOR
-      : e.addedBy.kind === 'owner' ? OWNER_NAME
+      : e.addedBy.kind === 'owner' ? OFFICE_NAME
       : Object.hasOwn(staffNames, e.addedBy.id) ? staffNames[e.addedBy.id] ?? UNKNOWN_AUTHOR
       : UNKNOWN_AUTHOR,
   }));
@@ -258,6 +259,14 @@ export function summarizeDay(day: HistoryDay, configs: Record<string, unknown>):
     result: combineDay(day.cashMode, results), done: results.length,
     planned: Math.max(day.closingsPlanned, day.closings.length), hasUnsubmitted,
   };
+}
+
+/**
+ * Planned closings a finished day never got submitted: `planned − done` for a day before `today` (the server's), else 0
+ * (today can still get its closings). A 1-closing plan whose closing was submitted gives 0.
+ */
+export function missingClosings(date: string, today: string, s: Pick<DaySummary, 'done' | 'planned'>): number {
+  return date < today ? Math.max(0, s.planned - s.done) : 0;
 }
 
 /** The day result of a day detail: each closing's current version (unsubmitted closings excluded), through summarizeDay. */

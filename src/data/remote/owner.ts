@@ -1,11 +1,13 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { parseJoinKey } from '../../app/joinKey';
+import { parseInviteToken } from '../../app/inviteToken';
+import { isMemberRole, isShopRole } from '../../features/owner/model/roles';
 import { MAX_CLOSINGS_PER_DAY } from '../../features/owner/model/limits';
 import { isCashMode } from '../../features/register/live/fields';
 import { mapError, type OwnerError } from './errors';
 import { parseDayDetail, parseHistoryList } from './history';
 import { openShopChannel, parseFieldAck, parseSnapshot, parseStaleCurrent } from './live';
-import type { DeviceRow, OwnerApi, Result, SessionInfo, ShopRow, StaffRow } from './ownerApi';
+import type { DeviceRow, InviteInfo, MemberRow, OwnerApi, Result, SessionInfo, ShopRow, StaffRow } from './ownerApi';
 
 /**
  * supabase-js's auth responses are a success/failure union whose `data` shape differs per branch
@@ -37,6 +39,16 @@ const keyResult = (r: Result<unknown>): Result<string> => {
   return key === null ? { ok: false, error: BAD_RESPONSE } : { ok: true, data: key };
 };
 
+/** An invite-token payload: anything parseInviteToken refuses is a bad response. */
+const tokenResult = (r: Result<unknown>): Result<string> => {
+  if (!r.ok) return r;
+  const t = typeof r.data === 'string' ? parseInviteToken(r.data) : null;
+  return t === null ? { ok: false, error: BAD_RESPONSE } : { ok: true, data: t };
+};
+
+const isRec = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+const strOrNull = (x: unknown): string | null | undefined => (x === null ? null : typeof x === 'string' ? x : undefined);
+
 const done = (r: Result<unknown>): Result<void> => (r.ok ? { ok: true, data: undefined } : r);
 
 /** RLS hides rows the caller doesn't own, so an update that touched nothing means "not yours". */
@@ -44,7 +56,7 @@ const oneRow = (r: Result<unknown[] | null>): Result<void> =>
   !r.ok ? r : (r.data?.length ?? 0) > 0 ? { ok: true, data: undefined } : { ok: false, error: { code: 'not_owner' } };
 
 const toInfo = (s: Session | null): SessionInfo | null =>
-  s ? { email: s.user.email ?? null, anonymous: s.user.is_anonymous === true } : null;
+  s ? { email: s.user.email ?? null, userId: s.user.id ?? null, anonymous: s.user.is_anonymous === true } : null;
 
 /** en-CA formats as YYYY-MM-DD. */
 const ATHENS_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Athens' });
@@ -83,8 +95,59 @@ export function createOwnerApi(client: SupabaseClient): OwnerApi {
       }
     },
     async listShops() {
-      const r = await run(client.from('shops').select('id, name').order('created_at'));
-      return r.ok ? { ok: true, data: (r.data ?? []) as ShopRow[] } : r;
+      const r = await run(client.rpc('my_shops'));
+      if (!r.ok) return r;
+      if (r.data !== null && !Array.isArray(r.data)) return { ok: false, error: BAD_RESPONSE };
+      const rows: ShopRow[] = [];
+      for (const x of (r.data ?? []) as unknown[]) {
+        if (isRec(x) && typeof x.id === 'string' && typeof x.name === 'string' && isShopRole(x.role) && typeof x.my_name === 'string') {
+          rows.push({ id: x.id, name: x.name, role: x.role, myName: x.my_name });
+        }
+      }
+      return { ok: true, data: rows };
+    },
+    inviteMember: async (shopIds, email, name, role) =>
+      tokenResult(await run(client.rpc('owner_invite_member', { p_shops: shopIds, p_email: email, p_name: name, p_role: role }))),
+    async listMembers(shopId) {
+      const r = await run(client.rpc('owner_list_members', { p_shop: shopId }));
+      if (!r.ok) return r;
+      if (r.data !== null && !Array.isArray(r.data)) return { ok: false, error: BAD_RESPONSE };
+      const rows: MemberRow[] = [];
+      for (const x of (r.data ?? []) as unknown[]) {
+        if (!isRec(x)) continue;
+        const email = strOrNull(x.email);
+        const expiresAt = strOrNull(x.invite_expires_at);
+        const acceptedAt = strOrNull(x.accepted_at);
+        const status = x.status;
+        if (typeof x.id === 'string' && typeof x.display_name === 'string' && isMemberRole(x.role)
+            && (status === 'pending' || status === 'expired' || status === 'active')
+            && email !== undefined && expiresAt !== undefined && acceptedAt !== undefined) {
+          rows.push({ id: x.id, email, displayName: x.display_name, role: x.role, status, expiresAt, acceptedAt });
+        }
+      }
+      return { ok: true, data: rows };
+    },
+    setMemberRole: async (memberId, role) => done(await run(client.rpc('owner_set_member_role', { p_member: memberId, p_role: role }))),
+    removeMember: async (memberId) => done(await run(client.rpc('owner_remove_member', { p_member: memberId }))),
+    reissueInvite: async (memberId) => tokenResult(await run(client.rpc('owner_reissue_invite', { p_member: memberId }))),
+    async inviteInfo(token) {
+      const r = await run(client.rpc('invite_info', { p_token: token }));
+      if (!r.ok) return r;
+      const j = r.data;
+      if (isRec(j) && Array.isArray(j.shops) && isMemberRole(j.role) && typeof j.display_name === 'string'
+          && typeof j.email === 'string' && typeof j.expires_at === 'string'
+          && j.shops.every((s): s is { id: string; name: string } => isRec(s) && typeof s.id === 'string' && typeof s.name === 'string')) {
+        const shops = (j.shops as { id: string; name: string }[]).map((s): { id: string; name: string } => ({ id: s.id, name: s.name }));
+        const data: InviteInfo = { shops, role: j.role, displayName: j.display_name, email: j.email, expiresAt: j.expires_at };
+        return { ok: true, data };
+      }
+      return { ok: false, error: BAD_RESPONSE };
+    },
+    async acceptInvite(token) {
+      const r = await run(client.rpc('accept_shop_invite', { p_token: token }));
+      if (!r.ok) return r;
+      if (Array.isArray(r.data) && r.data.every((x) => typeof x === 'string')) return { ok: true, data: r.data as string[] };
+      return { ok: false, error: BAD_RESPONSE };
     },
     createShop: (name, config) => run(client.rpc('create_shop', { p_name: name, p_config: config })),
     renameShop: async (shopId, name) => oneRow(await run(client.from('shops').update({ name }).eq('id', shopId).select('id'))),

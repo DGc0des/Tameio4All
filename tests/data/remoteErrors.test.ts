@@ -25,6 +25,12 @@ describe('mapError', () => {
     }
   });
 
+  it('maps the stage 6 member and invite errors', () => {
+    for (const code of ['too_many_members', 'already_member', 'already_owner', 'bad_member', 'invite_invalid', 'invite_expired', 'invite_wrong_email', 'invite_unconfirmed'] as const) {
+      expect(mapError({ message: code, code: '22023' })).toEqual({ code });
+    }
+  });
+
   it('maps the shop deletion confirmation error', () => {
     expect(mapError({ message: 'confirm_mismatch', code: '22023' })).toEqual({ code: 'confirm_mismatch' });
   });

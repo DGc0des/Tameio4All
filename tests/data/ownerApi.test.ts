@@ -318,4 +318,79 @@ describe('createOwnerApi', () => {
       expect((calls[0]![2] as Record<string, unknown>).p_closing_no).toBe(3);
     });
   });
+
+  describe('roles, members and invites', () => {
+    const SHOP = '11111111-1111-4111-8111-111111111111';
+    const TOKEN = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+    it('listShops reads my_shops and drops rows with an unknown role', async () => {
+      const { api, calls } = fake({ data: [
+        { id: 'a', name: 'A', role: 'owner', my_name: 'Ιδιοκτήτης' },
+        { id: 'b', name: 'B', role: 'manager', my_name: 'Νίκος' },
+        { id: 'c', name: 'C', role: 'janitor', my_name: 'X' },
+        { id: 5, name: 'D', role: 'owner', my_name: 'X' },
+      ], error: null });
+      const r = await api.listShops();
+      expect(calls[0]).toEqual(['rpc', 'my_shops']);
+      expect(r).toEqual({ ok: true, data: [
+        { id: 'a', name: 'A', role: 'owner', myName: 'Ιδιοκτήτης' },
+        { id: 'b', name: 'B', role: 'manager', myName: 'Νίκος' },
+      ] });
+    });
+
+    it('inviteMember sends the arguments and checks the token', async () => {
+      const { api, calls } = fake({ data: TOKEN, error: null });
+      expect(await api.inviteMember([SHOP], 'a@b.gr', 'Νίκος', 'manager')).toEqual({ ok: true, data: TOKEN });
+      expect(calls[0]).toEqual(['rpc', 'owner_invite_member', { p_shops: [SHOP], p_email: 'a@b.gr', p_name: 'Νίκος', p_role: 'manager' }]);
+      const bad = fake({ data: 'short', error: null });
+      expect(await bad.api.inviteMember([SHOP], 'a@b.gr', 'N', 'manager')).toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
+    });
+
+    it('listMembers maps rows and drops malformed ones', async () => {
+      const { api, calls } = fake({ data: [
+        { id: 'm1', email: 'a@b.gr', display_name: 'Α', role: 'accountant', status: 'pending', invite_expires_at: '2026-11-20T00:00:00Z', accepted_at: null },
+        { id: 'm2', email: null, display_name: 'Β', role: 'manager', status: 'active', invite_expires_at: null, accepted_at: '2026-11-01T00:00:00Z' },
+        { id: 'm3', email: 'x', display_name: 'Γ', role: 'owner', status: 'active', invite_expires_at: null, accepted_at: null },
+        { id: 'm4', email: 'x', display_name: 'Δ', role: 'manager', status: 'weird', invite_expires_at: null, accepted_at: null },
+      ], error: null });
+      const r = await api.listMembers(SHOP);
+      expect(calls[0]).toEqual(['rpc', 'owner_list_members', { p_shop: SHOP }]);
+      expect(r).toEqual({ ok: true, data: [
+        { id: 'm1', email: 'a@b.gr', displayName: 'Α', role: 'accountant', status: 'pending', expiresAt: '2026-11-20T00:00:00Z', acceptedAt: null },
+        { id: 'm2', email: null, displayName: 'Β', role: 'manager', status: 'active', expiresAt: null, acceptedAt: '2026-11-01T00:00:00Z' },
+      ] });
+      const nonArray = fake({ data: {}, error: null });
+      expect(await nonArray.api.listMembers(SHOP)).toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
+    });
+
+    it('setMemberRole, removeMember and reissueInvite call their functions', async () => {
+      const a = fake({ data: null, error: null });
+      expect(await a.api.setMemberRole('m1', 'accountant')).toEqual({ ok: true, data: undefined });
+      expect(a.calls[0]).toEqual(['rpc', 'owner_set_member_role', { p_member: 'm1', p_role: 'accountant' }]);
+      const b = fake({ data: null, error: null });
+      expect(await b.api.removeMember('m1')).toEqual({ ok: true, data: undefined });
+      expect(b.calls[0]).toEqual(['rpc', 'owner_remove_member', { p_member: 'm1' }]);
+      const c = fake({ data: TOKEN.toLowerCase(), error: null });
+      expect(await c.api.reissueInvite('m1')).toEqual({ ok: true, data: TOKEN });
+      expect(c.calls[0]).toEqual(['rpc', 'owner_reissue_invite', { p_member: 'm1' }]);
+    });
+
+    it('inviteInfo maps the payload and refuses a malformed one', async () => {
+      const good = { shops: [{ id: 'a', name: 'A' }], role: 'manager', display_name: 'Ν', email: 'a@b.gr', expires_at: '2026-11-20T00:00:00Z' };
+      const { api, calls } = fake({ data: good, error: null });
+      expect(await api.inviteInfo(TOKEN)).toEqual({ ok: true, data: { shops: [{ id: 'a', name: 'A' }], role: 'manager', displayName: 'Ν', email: 'a@b.gr', expiresAt: '2026-11-20T00:00:00Z' } });
+      expect(calls[0]).toEqual(['rpc', 'invite_info', { p_token: TOKEN }]);
+      for (const data of [null, { ...good, role: 'owner' }, { ...good, shops: null }, { ...good, shops: [{ id: 1 }] }, { ...good, email: 3 }]) {
+        expect(await fake({ data, error: null }).api.inviteInfo(TOKEN)).toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
+      }
+    });
+
+    it('acceptInvite returns shop ids and maps server errors', async () => {
+      const { api, calls } = fake({ data: ['a', 'b'], error: null });
+      expect(await api.acceptInvite(TOKEN)).toEqual({ ok: true, data: ['a', 'b'] });
+      expect(calls[0]).toEqual(['rpc', 'accept_shop_invite', { p_token: TOKEN }]);
+      expect(await fake({ data: 'x', error: null }).api.acceptInvite(TOKEN)).toEqual({ ok: false, error: { code: 'unknown', detail: 'bad_response' } });
+      expect(await fake({ data: null, error: { message: 'invite_expired' } }).api.acceptInvite(TOKEN)).toEqual({ ok: false, error: { code: 'invite_expired' } });
+    });
+  });
 });

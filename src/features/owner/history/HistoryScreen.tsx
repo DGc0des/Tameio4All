@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDaysIso, formatDayMonthLongEl, formatTimeEl, formatWeekRangeEl, formatWeekdayEl, weekStartIso } from '../../../app/dates';
-import { closingsDoneLabel } from '../../../app/closingLabel';
+import { closingsDoneLabel, missingClosingsLabel } from '../../../app/closingLabel';
 import { formatEuro } from '../../../core/money';
 import type { OwnerApi } from '../../../data/remote/ownerApi';
 import { ownerErrorMessage } from '../model/messages';
 import type { OwnerNavigate } from '../OwnerUi';
-import { summarizeDay, summarizeOpen, weekCells, type DaySummary, type Summary, type WeekCell } from './model';
+import { missingClosings, summarizeDay, summarizeOpen, weekCells, type DaySummary, type Summary, type WeekCell } from './model';
 import type { HistoryList } from './types';
 
 type Shown = { list: HistoryList; monday: string };
@@ -183,9 +183,10 @@ function DayCard({ cell, list, today, navigate, shopId }: { cell: WeekCell; list
   const multi = day !== undefined && (day.closingsPlanned > 1 || day.closings.length > 1);
   const submittedEntries = day?.closings.flatMap((c) => (c.status === 'submitted' ? [c] : [])) ?? [];
   const latest = submittedEntries[submittedEntries.length - 1];
-  const unsubmittedNo = info?.hasUnsubmitted ? [...(day?.closings ?? [])].reverse().find((c) => c.status === 'unsubmitted')?.closingNo : undefined;
+  // A finished multi-closing day with closings never submitted (opened or never started) gets a warning.
+  const missing = info !== null && multi ? missingClosings(cell.date, today, info) : 0;
   return (
-    <button type="button" className={cell.kind === 'unsubmitted' ? 'week-card is-unsubmitted' : 'week-card'} onClick={open}>
+    <button type="button" className={cell.kind === 'unsubmitted' || missing > 0 ? 'week-card is-unsubmitted' : 'week-card'} onClick={open}>
       {head}
       {summary === null ? (
         <span className="week-note">{multi && cell.kind === 'submitted' ? '—' : 'Δεν διαβάζεται'}</span>
@@ -209,7 +210,7 @@ function DayCard({ cell, list, today, navigate, shopId }: { cell: WeekCell; list
           <>
             <span>{`${latest.current.authorName} · ${formatTimeEl(latest.current.createdAt)}`}</span>
             {latest.current.kind === 'owner_correction' ? <span className="badge">διορθωμένο</span> : latest.versionCount > 1 ? <span className="badge">{latest.versionCount} υποβολές</span> : null}
-            {unsubmittedNo !== undefined && <span className="badge">{`Δεν υποβλήθηκε το ${unsubmittedNo}ο`}</span>}
+            {missing > 0 && <span className="badge is-warn">{missingClosingsLabel(missing)}</span>}
           </>
         ) : (
           <span>Δεν υποβλήθηκε</span>

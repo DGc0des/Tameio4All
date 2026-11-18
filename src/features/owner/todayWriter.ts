@@ -4,7 +4,8 @@ import type { OwnerApi, Result } from '../../data/remote/ownerApi';
 import type { Writer } from '../register/live/syncEngine';
 import { ownerErrorMessage } from './model/messages';
 
-export const OWNER_PRESENCE_NAME = 'Ιδιοκτήτης';
+/** The pending-edit queue author of an office-side person (owner, manager): per login, so two people in one browser never send each other's edits. */
+export const officeQueueAuthor = (userId: string): string => `office:${userId}`;
 
 /**
  * An owner error the engine handles keeps its code; every other one is fatal (`unknown`), and its
@@ -22,7 +23,7 @@ const mapFail = <T,>(r: Extract<Result<unknown>, { ok: false }>): DResult<T> => 
  * carries the day it was typed on (the snapshot's), so an edit made on yesterday's screen is `wrong_day`
  * (the engine drops it, shows the day-change notice and resyncs) instead of landing on today's closing.
  */
-export function createTodayWriter(api: OwnerApi, shopId: string): Writer {
+export function createTodayWriter(api: OwnerApi, shopId: string, presenceName: string): Writer {
   return {
     load: async () => {
       const r = await api.todayClosing(shopId);
@@ -34,6 +35,6 @@ export function createTodayWriter(api: OwnerApi, shopId: string): Writer {
       if ('stale' in r.data) return { ok: false, error: { code: 'stale', current: r.data.stale } };
       return { ok: true, data: r.data };
     },
-    live: (h) => api.live(shopId, { name: OWNER_PRESENCE_NAME }, h),
+    live: (h) => api.live(shopId, { name: presenceName }, h),
   };
 }

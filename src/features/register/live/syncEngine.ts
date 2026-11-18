@@ -27,7 +27,7 @@ import { applyServerField, draftFromFields, fieldLabel, revisionGap } from './me
  *   (last write to reach the server wins).
  * - The draft shows the pending value of a key (highest seq) over the snapshot until it is acknowledged,
  *   including while in flight; broadcasts only update the snapshot (older/equal versions are ignored).
- * - The queue is per author (`EngineState.author`: the cashier's staff id or OWNER_QUEUE_AUTHOR). The
+ * - The queue is per author (`EngineState.author`: the cashier's staff id, or `office:<uid>` for an office-side person). The
  *   engine holds, shows and sends only its author's items — they go out with that person's credentials;
  *   other people's items stay in storage, hidden (savePending keeps them).
  * - Revision (what Υποβολή sends) follows the +1 rule (`applyServerField`): an ack or broadcast numbered
@@ -71,7 +71,7 @@ export interface LiveState {
 
 export interface EngineState {
   snapshot: Snapshot | null;
-  /** Whose queue this is (staff id or OWNER_QUEUE_AUTHOR). */
+  /** Whose queue this is (staff id, or `office:<uid>` for an office-side person). */
   author: string;
   /** This author's edits not yet acknowledged (other authors' stored items are never loaded here). */
   pending: PendingEdit[];

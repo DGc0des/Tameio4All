@@ -1,6 +1,7 @@
 import type { ShopConfig } from '../../core/config';
 import type { DayDetail, HistoryList, SaveClosingArgs } from '../../features/owner/history/types';
 import type { CashMode, FieldAck, FieldKey, ServerField, Snapshot } from '../../features/register/live/fields';
+import type { MemberRole, ShopRole } from '../../features/owner/model/roles';
 import type { OwnerError } from './errors';
 import type { LiveChannel, LiveHandlers } from './live';
 
@@ -8,6 +9,8 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: OwnerError }
 
 export interface SessionInfo {
   email: string | null;
+  /** The auth user id (session.user.id). */
+  userId: string | null;
   /** true for a paired phone's session — an owner sign-in in this browser would unpair it. */
   anonymous: boolean;
 }
@@ -15,6 +18,28 @@ export interface SessionInfo {
 export interface ShopRow {
   id: string;
   name: string;
+  /** The caller's role in this shop. */
+  role: ShopRole;
+  /** How the shop calls the caller («Ιδιοκτήτης» for the owner, the member's display name otherwise); made by the server. */
+  myName: string;
+}
+
+export interface MemberRow {
+  id: string;
+  email: string | null;
+  displayName: string;
+  role: MemberRole;
+  status: 'pending' | 'expired' | 'active';
+  expiresAt: string | null;
+  acceptedAt: string | null;
+}
+
+export interface InviteInfo {
+  shops: { id: string; name: string }[];
+  role: MemberRole;
+  displayName: string;
+  email: string;
+  expiresAt: string;
 }
 
 export interface ConfigRow {
@@ -66,6 +91,16 @@ export interface OwnerApi {
   updatePassword(password: string): Promise<Result<void>>;
   signOut(): Promise<void>;
   listShops(): Promise<Result<ShopRow[]>>;
+  /** Invites a collaborator to one or more of the caller's shops; resolves to the invite token (32 characters). */
+  inviteMember(shopIds: string[], email: string, name: string, role: MemberRole): Promise<Result<string>>;
+  listMembers(shopId: string): Promise<Result<MemberRow[]>>;
+  setMemberRole(memberId: string, role: MemberRole): Promise<Result<void>>;
+  removeMember(memberId: string): Promise<Result<void>>;
+  /** A new token for a pending or expired invite. */
+  reissueInvite(memberId: string): Promise<Result<string>>;
+  inviteInfo(token: string): Promise<Result<InviteInfo>>;
+  /** Accepts the invite; resolves to the accepted shop ids. */
+  acceptInvite(token: string): Promise<Result<string[]>>;
   createShop(name: string, config: ShopConfig): Promise<Result<string>>;
   renameShop(shopId: string, name: string): Promise<Result<void>>;
   latestConfig(shopId: string): Promise<Result<ConfigRow | null>>;

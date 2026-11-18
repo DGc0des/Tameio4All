@@ -8,7 +8,7 @@ import { draftFromFields } from '../../../../src/features/register/live/merge';
 import type { HistoryDay, HistoryList } from '../../../../src/features/owner/history/types';
 import { denomKey, expenseKey, expenseMetaValue, textValue, type Snapshot } from '../../../../src/features/register/live/fields';
 import {
-  OWNER_NAME, UNKNOWN_AUTHOR, applyLocalEdit, breakdown, openInputs, snapshotFromInputs, combineDay, summarizeDay, summarizeInputs, summarizeOpen, weekCells,
+  OFFICE_NAME, UNKNOWN_AUTHOR, applyLocalEdit, breakdown, openInputs, snapshotFromInputs, combineDay, missingClosings, summarizeDay, summarizeInputs, summarizeOpen, weekCells,
 } from '../../../../src/features/owner/history/model';
 
 const config = juiceBarPreset;
@@ -59,7 +59,8 @@ describe('breakdown', () => {
   });
   it('resolves authors', () => {
     const b = breakdown(config, inputs2, { [S1]: 'ΜΑΡΙΑ' })!;
-    expect(b.expenses.map((e) => e.author)).toEqual(['ΜΑΡΙΑ', OWNER_NAME]);
+    expect(b.expenses.map((e) => e.author)).toEqual(['ΜΑΡΙΑ', OFFICE_NAME]);
+    expect(OFFICE_NAME).toBe('Διαχείριση');
     expect(breakdown(config, inputs2, {})!.expenses[0]!.author).toBe(UNKNOWN_AUTHOR);
     expect(breakdown(config, inputs1, {})!.expenses[0]!.author).toBe(UNKNOWN_AUTHOR);
   });
@@ -255,5 +256,14 @@ describe('combineDay and summarizeDay', () => {
   it('an unknown config makes the result null without throwing', () => {
     const day: HistoryDay = { businessDate: '2026-11-10', cashMode: 'separate', closingsPlanned: 1, closings: [{ closingNo: 1, status: 'submitted', current: cur('a', inp({ '10000': 3 }, 850)), versionCount: 1 }] };
     expect(summarizeDay(day, {}).result).toBeNull();
+  });
+});
+
+describe('missingClosings', () => {
+  it('counts planned − done only for a day before today', () => {
+    expect(missingClosings('2026-11-10', '2026-11-11', { done: 1, planned: 3 })).toBe(2);
+    expect(missingClosings('2026-11-10', '2026-11-11', { done: 3, planned: 3 })).toBe(0);
+    expect(missingClosings('2026-11-11', '2026-11-11', { done: 1, planned: 3 })).toBe(0);
+    expect(missingClosings('2026-11-10', '2026-11-11', { done: 0, planned: 2 })).toBe(2);
   });
 });

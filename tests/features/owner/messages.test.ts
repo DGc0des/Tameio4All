@@ -22,6 +22,9 @@ const OWNER_ERRORS: Record<OwnerError['code'], OwnerError> = {
   draft_changed: { code: 'draft_changed' }, bad_closing_plan: { code: 'bad_closing_plan' }, wrong_closing: { code: 'wrong_closing' },
   too_many_shops: { code: 'too_many_shops' }, too_many_staff: { code: 'too_many_staff' }, too_many_versions: { code: 'too_many_versions' },
   confirm_mismatch: { code: 'confirm_mismatch' },
+  too_many_members: { code: 'too_many_members' }, already_member: { code: 'already_member' }, already_owner: { code: 'already_owner' },
+  bad_member: { code: 'bad_member' }, invite_invalid: { code: 'invite_invalid' }, invite_expired: { code: 'invite_expired' },
+  invite_wrong_email: { code: 'invite_wrong_email' }, invite_unconfirmed: { code: 'invite_unconfirmed' },
   unknown: { code: 'unknown', detail: 'x' },
 };
 const greek = /[Ͱ-Ͽ]/;
@@ -49,6 +52,17 @@ describe('messages', () => {
     expect(ownerErrorMessage({ code: 'too_many_shops' })).toBe('Έφτασες το όριο των 20 καταστημάτων.');
     expect(ownerErrorMessage({ code: 'too_many_staff' })).toBe('Έφτασες το όριο των 100 ατόμων σε αυτό το κατάστημα.');
     expect(ownerErrorMessage({ code: 'too_many_versions' })).toBe('Πάρα πολλές αλλαγές ρυθμίσεων σήμερα. Δοκίμασε ξανά αύριο.');
+  });
+
+  it('words the member and invite errors', () => {
+    expect(ownerErrorMessage({ code: 'too_many_members' })).toBe('Έφτασες το όριο των 20 συνεργατών σε αυτό το κατάστημα.');
+    expect(ownerErrorMessage({ code: 'already_member' })).toBe('Αυτό το email έχει ήδη πρόσβαση ή πρόσκληση σε αυτό το κατάστημα.');
+    expect(ownerErrorMessage({ code: 'already_owner' })).toBe('Είσαι ο ιδιοκτήτης αυτού του καταστήματος.');
+    expect(ownerErrorMessage({ code: 'bad_member' })).toBe('Έλεγξε το όνομα, το email και τον ρόλο.');
+    expect(ownerErrorMessage({ code: 'invite_invalid' })).toBe('Η πρόσκληση δεν ισχύει πια. Ζήτα νέα από τον ιδιοκτήτη.');
+    expect(ownerErrorMessage({ code: 'invite_expired' })).toBe('Η πρόσκληση έληξε. Ζήτα νέα από τον ιδιοκτήτη.');
+    expect(ownerErrorMessage({ code: 'invite_wrong_email' })).toBe('Η πρόσκληση είναι για άλλο email. Συνδέσου με το email της πρόσκλησης.');
+    expect(ownerErrorMessage({ code: 'invite_unconfirmed' })).toBe('Επιβεβαίωσε πρώτα το email σου από το μήνυμα που σου στείλαμε.');
   });
 
   it('words the closing plan errors', () => {
