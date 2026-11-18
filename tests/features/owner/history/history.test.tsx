@@ -188,6 +188,26 @@ describe('HistoryScreen week view', () => {
       expect(cashLine(r)).toContain(formatEuro(-170000));
       expect(within(r).getByText('2 από 3 κλεισίματα')).toBeTruthy();
       expect(within(r).queryByText(/Δεν υποβλήθηκε/)).toBeNull();
+      // a past day with a closing never started is flagged
+      expect(within(r).getByText('Λείπει 1 κλείσιμο')).toBeTruthy();
+      expect(r.className).toContain('is-unsubmitted');
+    });
+
+    it('a complete multi-closing day has no missing warning', async () => {
+      setup(list([multi({ closingsPlanned: 2, closings: [v(1, 1), v(2, 2)] })]));
+      await screen.findByText(RANGE);
+      const r = card('2026-11-10');
+      expect(within(r).getByText('2 από 2 κλεισίματα')).toBeTruthy();
+      expect(within(r).queryByText(/Λείπ/)).toBeNull();
+      expect(r.className).not.toContain('is-unsubmitted');
+    });
+
+    it('today with closings still to come has no missing warning', async () => {
+      setup(list([multi({ businessDate: TODAY, closings: [v(1, 1)] })]));
+      await screen.findByText(RANGE);
+      const r = card(TODAY);
+      expect(within(r).getByText('1 από 3 κλεισίματα')).toBeTruthy();
+      expect(within(r).queryByText(/Λείπ/)).toBeNull();
     });
 
     it('a separate day with an unreadable closing shows «—» and still the done count', async () => {
@@ -211,6 +231,7 @@ describe('HistoryScreen week view', () => {
         expect(within(r).getByText(label).parentElement!.textContent).toContain(euro);
       }
       expect(within(r).getByText('1 από 3 κλεισίματα')).toBeTruthy();
+      expect(within(r).getByText('Λείπουν 2 κλεισίματα')).toBeTruthy();
       expect(within(r).queryByText(/Δεν υποβλήθηκε/)).toBeNull();
     });
 
@@ -223,11 +244,11 @@ describe('HistoryScreen week view', () => {
       expect(within(r).queryByText(/κλεισίματα/)).toBeNull();
     });
 
-    it('an unsubmitted tail shows «Δεν υποβλήθηκε το 3ο»', async () => {
+    it('an unsubmitted tail counts as missing', async () => {
       setup(list([multi({ closings: [v(1, 1), v(2, 2), { closingNo: 3, status: 'unsubmitted', open: { ...openSnap('2026-11-10'), closingNo: 3 } }] })]));
       await screen.findByText(RANGE);
       const r = card('2026-11-10');
-      expect(within(r).getByText('Δεν υποβλήθηκε το 3ο')).toBeTruthy();
+      expect(within(r).getByText('Λείπει 1 κλείσιμο')).toBeTruthy();
       expect(within(r).getByText('2 από 3 κλεισίματα')).toBeTruthy();
     });
 

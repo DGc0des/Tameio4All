@@ -413,7 +413,19 @@ describe('DayScreen with several closings', () => {
     show(day({ closingsPlanned: 3 }));
     await loaded();
     expect(within(region('Σύνολο ημέρας')).getByText('1 από 3 κλεισίματα')).toBeTruthy();
+    expect(within(region('Σύνολο ημέρας')).getByRole('note').textContent).toBe('Λείπουν 2 κλεισίματα — το σύνολο ημέρας δεν είναι πλήρες.');
     expect(screen.getByRole('button', { name: '1ο' })).toBeTruthy();
+  });
+
+  it('a complete day and today have no missing warning', async () => {
+    show(three());
+    await screen.findByText('Υποβλήθηκε 21:30 · ΓΙΩΤΑ');
+    expect(within(region('Σύνολο ημέρας')).queryByRole('note')).toBeNull();
+    cleanup();
+    show(day({ closingsPlanned: 3, today: DATE, liveClosingNo: 1 }));
+    await loaded();
+    expect(within(region('Σύνολο ημέρας')).getByText('1 από 3 κλεισίματα')).toBeTruthy();
+    expect(within(region('Σύνολο ημέρας')).queryByRole('note')).toBeNull();
   });
 
   it('a 3-closing separate day: the day sum, «3 από 3 κλεισίματα», three buttons, the highest closing shown', async () => {

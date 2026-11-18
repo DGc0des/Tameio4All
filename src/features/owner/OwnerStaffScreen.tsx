@@ -4,6 +4,7 @@ import { Card } from '../../ui/Card';
 import { Sheet } from '../../ui/Sheet';
 import { can } from './model/roles';
 import type { ShopRole } from './model/roles';
+import { MembersCard } from './settings/MembersCard';
 import { checkName, isPin, PIN_LENGTH, STAFF_NAME_MAX } from './model/limits';
 import { nameProblemMessage, ownerErrorMessage } from './model/messages';
 import { formatClock, isLocked } from './model/time';
@@ -15,6 +16,9 @@ interface Props {
   shopId: string;
   now: () => Date;
   role: ShopRole;
+  /** Needed only by the «Συνεργάτες» card, which the owner sees below the staff list. */
+  shopName?: string;
+  redirectBase?: string;
 }
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; staff: StaffRow[] };
@@ -133,7 +137,7 @@ function StaffEditor({ api, person, now, role, onChanged }: { api: OwnerApi; per
   );
 }
 
-export function OwnerStaffScreen({ api, shopId, now, role }: Props) {
+export function OwnerStaffScreen({ api, shopId, now, role, shopName, redirectBase }: Props) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
@@ -187,6 +191,9 @@ export function OwnerStaffScreen({ api, shopId, now, role }: Props) {
           <ErrorText state={add.state} />
         </form>
       </Card>
+      {can(role, 'manageMembers') && shopName !== undefined && redirectBase !== undefined && (
+        <MembersCard api={api} shopId={shopId} shopName={shopName} redirectBase={redirectBase} />
+      )}
     </>
   );
 }

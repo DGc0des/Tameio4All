@@ -261,6 +261,14 @@ export function summarizeDay(day: HistoryDay, configs: Record<string, unknown>):
   };
 }
 
+/**
+ * Planned closings a finished day never got submitted: `planned − done` for a day before `today` (the server's), else 0
+ * (today can still get its closings). A 1-closing plan whose closing was submitted gives 0.
+ */
+export function missingClosings(date: string, today: string, s: Pick<DaySummary, 'done' | 'planned'>): number {
+  return date < today ? Math.max(0, s.planned - s.done) : 0;
+}
+
 /** The day result of a day detail: each closing's current version (unsubmitted closings excluded), through summarizeDay. */
 export function summarizeDetail(day: DayDetail): DaySummary {
   const closings: HistoryClosing[] = [];

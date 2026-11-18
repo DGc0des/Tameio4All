@@ -221,6 +221,6 @@ function TabBody({ tab, date, closingNo, api, shopId, shopName, navigate, store,
   if (tab === 'settings') {
     return <SettingsScreen key={shopId} api={api} shopId={shopId} shopName={shopName} navigate={navigate} store={store} now={now} redirectBase={redirectBase} />;
   }
-  if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} role={role} />;
+  if (tab === 'staff') return <OwnerStaffScreen api={api} shopId={shopId} now={now} role={role} shopName={shopName} redirectBase={redirectBase} />;
   return <DevicesScreen api={api} shopId={shopId} shopName={shopName} />;
 }

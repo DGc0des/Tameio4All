@@ -9,7 +9,6 @@ import { configErrorMessage, configErrorSection, ownerErrorMessage, type Setting
 import { applySettings, isEditableConfig, type SettingsAction } from '../model/settingsDraft';
 import { ErrorText, type OwnerNavigate } from '../OwnerUi';
 import { useAction } from '../useAction';
-import { MembersCard } from './MembersCard';
 import { DangerZoneCard } from './DangerZoneCard';
 import { ClosingPlanCard } from './ClosingPlanCard';
 import { DayChangeCard } from './DayChangeCard';
@@ -230,7 +229,6 @@ export function SettingsScreen({ api, shopId, shopName, navigate, store, now, re
           <ErrorText state={publish.state} />
         </>
       )}
-      <MembersCard api={api} shopId={shopId} shopName={shopName} redirectBase={redirectBase} />
       <DangerZoneCard api={api} shopId={shopId} shopName={shopName} navigate={navigate} store={store} />
 
 

@@ -573,8 +573,10 @@ payloads ships with them (the old parsers cannot read the new `list`/`day` shape
   `separate` = per total, the sum over the closings (so a float subtracted in a total is subtracted once per closing),
   expenses summed; `null` («—») when any closing is unreadable or the closings do not share one `config_id`. Done/planned
   = submitted count / `max(closings_planned, number of closings)` («N από M κλεισίματα»). The week card shows the day
-  result (a day with no submitted closing shows its newest open one), «N από M» and «Δεν υποβλήθηκε το Nο» for a multi-closing
-  day; `DayScreen` shows «Σύνολο ημέρας» and the closing pills when the day has (or plans) more than one closing.
+  result (a day with no submitted closing shows its newest open one), «N από M» for a multi-closing day; a **past** multi-closing day with
+  `done < planned` (`missingClosings`, model.ts: 0 for today) gets the warning badge «Λείπει 1 κλείσιμο»/«Λείπουν N κλεισίματα»
+  (`missingClosingsLabel`) and the outlined card; `DayScreen` shows «Σύνολο ημέρας» (with the same warning: «… — το σύνολο
+  ημέρας δεν είναι πλήρες.») and the closing pills when the day has (or plans) more than one closing.
 - **Corrections per closing.** `owner_save_closing(…, closing_no)` locks, guards and inserts per closing; `CorrectionEditor`
   and «Επαναφορά» send the shown closing's number, «Σήμερα» the snapshot's. Only the live closing needs the live revision
   and authors and records `last_submit`. Read from the SQL, not tested: a «Καταχώρηση αλλαγών» that lands just after a

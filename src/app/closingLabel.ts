@@ -14,3 +14,8 @@ export function closingOfLabel(no: number, planned: number): string {
 export function closingsDoneLabel(done: number, planned: number): string {
   return `${done} από ${planned} κλεισίματα`;
 }
+
+/** 1 → «Λείπει 1 κλείσιμο», 2 → «Λείπουν 2 κλεισίματα». */
+export function missingClosingsLabel(missing: number): string {
+  return missing === 1 ? 'Λείπει 1 κλείσιμο' : `Λείπουν ${missing} κλεισίματα`;
+}
