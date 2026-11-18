@@ -603,7 +603,7 @@ payloads ships with them (the old parsers cannot read the new `list`/`day` shape
   - the history payload shapes (above) ↔ `parseHistoryList`/`parseDayDetail` (`history.ts`).
 
 ### Shop roles (stage 6)
-**Status: migrations written, NOT applied to dev; SQL tests 190/200 not run; nothing viewed in a browser.** Spec
+**Status: migrations applied to dev 2026-11-17 (`shop_roles` 20261117215157, `office_names` 20261117215259, from the repo files after a check that every re-created body equals its latest source apart from the role guard / name expression); SQL tests 010–200 all pass on dev (each pasted through the connector with comment lines stripped; realtime partitions present and the realtime blocks of 080/090/170/200 made to raise instead of skip, so none skipped). Nothing viewed in a browser; the «Confirm email» setting not checked.** Spec
 `docs/superpowers/specs/2026-11-17-shop-roles-design.md`, plan `docs/superpowers/plans/2026-11-17-stage-6-shop-roles.md`,
 migrations `20261117000003_shop_roles` and `20261117000004_office_names`.
 **Deploy rule:** apply `…000003` and `…000004` together, before the client ships (the client's `listShops` needs

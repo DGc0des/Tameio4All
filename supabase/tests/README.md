@@ -92,7 +92,7 @@ the manager's) and every owner-only call refused (`not_owner` / 0 rows / no `clo
 expiry, `owner_list_members` statuses and `owner_reissue_invite`; removal cutting access at once and a re-invite making
 a new row; grants (T9); M's `owner_delete_account` tombstoning every row of M (T8, the last block). Back-dating, email
 confirmation changes and row checks run as postgres. Uses member M `…c1` (confirmed), N `…c2` (confirmed in T3 for one
-call, then from T6), stranger `…51`, phones `…d1` (A1), `…d2` (A2). **Written 2026-11-17, not yet run anywhere**
+call, then from T6), stranger `…51`, phones `…d1` (A1), `…d2` (A2). **Written 2026-11-17; run on dev 2026-11-17 after both stage-6 migrations, passes**
 (no local database); after applying the migration also re-run 020, 050, 080, 100, 110, 120, 160, 170, 180 (owner
 functions and policies were re-created).
 
@@ -129,6 +129,5 @@ in `owner_get_open_closing` (`updated_by_name`), the `current` of a stale answer
 manager's live `owner_save_closing`, `author_name` of the manager's, the cashier's and an owner correction in
 `owner_get_closing_day`; the `field` and `submitted` broadcasts (T5, read from `realtime.messages`, skipped without a
 partition); removal keeping the name, a re-invite as «Νίκος Π.» renaming the earlier rows (the old row is back-dated:
-a transaction shares one `now()`), and account deletion showing `Διαγραμμένος συνεργάτης <8 hex>`. Written, **not run**
-(no local database; to be applied and run on dev with the migration).
+a transaction shares one `now()`), and account deletion showing `Διαγραμμένος συνεργάτης <8 hex>`. **Run on dev 2026-11-17, passes** (with the stage-6 migrations applied; partitions present, T5 not skipped). After both stage-6 migrations every file 010–200 was run on dev the same day and all pass.
 

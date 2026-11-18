@@ -5,6 +5,12 @@ updated: 2026-11-17
 
 Newest first. Back to [[index]].
 
+## 2026-11-17 — stage 6 applied to dev
+- `shop_roles` and `office_names` applied to dev via the connector (re-created bodies checked against their latest
+  sources first). SQL 010–200 all pass on dev (realtime blocks forced to raise instead of skip; partitions present).
+- Advisors: health clean; security only the accepted kinds; performance → L114 (no index on `shop_members.user_id`).
+- Still open: «Confirm email» setting, browser/real-device invite round trip, deployed client must be this branch.
+
 ## 2026-11-17 — stage 6: shop roles (built, reviewed, final fix wave; NOT applied)
 - `stage-6-roles`: manager/accountant roles per shop, email-bound invite links, role guards in every owner function/policy,
   office names from SQL (`private.office_name`). Migrations `…000003_shop_roles` + `…000004_office_names` written, NOT applied.

@@ -27,7 +27,7 @@ Node 22.12+ or 24+.
 - `src/features/phone/` — phone gate reducer, join, sign-in
 - `src/data/local/` — only localStorage code · `src/data/remote/` — only supabase-js code
 - `src/app/` — App, hash router, theme, dates, join key · `src/ui/` — primitives
-- `supabase/migrations/` — DB source of truth (34 files; the 2 stage-5 ones applied to dev 2026-11-17; the 2 stage-6 ones `…000003_shop_roles`/`…000004_office_names` NOT applied) · `supabase/tests/` — SQL security tests
+- `supabase/migrations/` — DB source of truth (34 files; the 2 stage-5 ones applied to dev 2026-11-17; the 2 stage-6 ones `…000003_shop_roles`/`…000004_office_names` applied to dev 2026-11-17, SQL 010–200 pass) · `supabase/tests/` — SQL security tests
 - `docs/superpowers/{specs,plans}/` — design specs and stage plans · `docs/legal/` — breach procedure, processing record
 
 ## Docs map (project root)

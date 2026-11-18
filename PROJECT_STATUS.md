@@ -10,7 +10,7 @@
 - [ ] Stage 3 — owner closing history and corrections («Ιστορικό» tab: closings as an append-only version log, range list, day detail with versions + Φάκελος, owner corrections saved as new versions with conflict handling, filing an unsubmitted day): code complete, merged to `main`; «Ιστορικό» is a week view (Mon–Sun, three cards per row on wide screens); SQL 010–110 all pass on dev (run whole in the SQL editor on 2026-11-11, after the three stage-3 migrations); pending the manual browser check (see Not verified)
 - [ ] Stage 4 — store link entry (a permanent store link / QR / code replaces the single-use pairing code; name + PIN on the phone; silent re-join with the stored key; owner «Αφαίρεση» and «Νέος σύνδεσμος»): code complete, merged to `main`; migrations `…0003_today_save_and_submit_revision` and `20261112000001_store_join_keys` applied to dev on 2026-11-11; SQL run: 010–120 all pass on dev (2026-11-11, after both migrations; 010 via the connector, 020–120 in the dashboard SQL editor, run by the user); pending the real-device check (see Not verified). **The deployed client must be the stage-4 build: the old pairing calls no longer exist on dev.**
 - [ ] Stage 5 — multiple closings per day (closings numbered 1..6, the live closing = the highest, an explicit «Έναρξη Nου κλεισίματος» by a cashier, cash mode `separate`/`running`, plan pinned per day, history/corrections/suggestions per closing, the day result in the history model): code complete on branch `stage-5-multi-closing` (head `affc2d6` before the docs commit); migrations `20261117000001_multi_closing` + `20261117000002_multi_closing_history` **applied to dev 2026-11-17** (versions 20261117004655 / 20261117004755); SQL tests 170, 180, 080, 090, 100, 110, 130, 160 pass on dev; nothing seen in a browser or on a phone (see Not verified). **Deploy this branch's client together with the applied schema** (the history payload shapes changed).
-- [ ] Stage 6 — shop roles (per-shop `manager` and `accountant` next to the owner; email-bound invite links `#/owner/invite/<token>`, accepted by the invited account; «Συνεργάτες» card in «Ρυθμίσεις»; tabs and actions by role; every owner-side function and table policy guarded by role in SQL; office-side names (the manager's name, not «Ιδιοκτήτης») in fields, versions and `last_submit`; per-person «Σήμερα» queue `office:<uid>`): code complete on branch `stage-6-roles`; migrations `20261117000003_shop_roles` + `20261117000004_office_names` **written, NOT applied**; SQL tests 190/200 written, not run; Vitest 1020/1020, typecheck and build clean; nothing viewed in a browser (see Not verified). **Apply both migrations together, before the client ships.**
+- [ ] Stage 6 — shop roles (per-shop `manager` and `accountant` next to the owner; email-bound invite links `#/owner/invite/<token>`, accepted by the invited account; «Συνεργάτες» card in «Ρυθμίσεις»; tabs and actions by role; every owner-side function and table policy guarded by role in SQL; office-side names (the manager's name, not «Ιδιοκτήτης») in fields, versions and `last_submit`; per-person «Σήμερα» queue `office:<uid>`): code complete on branch `stage-6-roles`; migrations `20261117000003_shop_roles` + `20261117000004_office_names` applied to dev 2026-11-17 (`shop_roles` 20261117215157, `office_names` 20261117215259, from the repo files after a check that every re-created body equals its latest source apart from the role guard / name expression); SQL tests 010–200 all pass on dev (each pasted through the connector with comment lines stripped; realtime partitions present and the realtime blocks of 080/090/170/200 made to raise instead of skip, so none skipped); Vitest 1020/1020, typecheck and build clean; nothing viewed in a browser (see Not verified). **Apply both migrations together, before the client ships.**
 - [ ] Plan 5 — closings, suggestions, PWA, deploy (closing history landed in stage 3)
 
 ## Product decisions
@@ -341,6 +341,11 @@ below is applied to dev (2026-11-17) and its SQL tests pass; the two-session con
 | L112 | In `running` mode an owner correction of closing 1's expenses does not reach the lines already copied into closing 2 (declined by the final review: each closing is its own record) | By design for now | open — accepted |
 | L113 | Accepted server asymmetries: the day detail reports `closings_planned = greatest(1, count)` for a day without a closing-1 open closing (the list reports the count); `owner_save_closing` accepts a first filing of a non-live closing of today that has fields and no version, but no read path offers it | Documented in CLAUDE.md | open — accepted |
 
+## Stage 6 findings (shop roles)
+| ID | Issue | Fix | Status |
+|---|---|---|---|
+| L114 | Performance advisor (2026-11-17, after applying stage 6): `shop_members_user_id_fkey` has no covering index. The only index with `user_id` is the partial unique `(shop_id, user_id)`, so `my_shops`, `private.shop_role` lookups by user and the `on delete set null` on auth-user deletion scan by `user_id`. Harmless at ≤ 20 live rows per shop | A plain index on `shop_members (user_id)` in a later migration | open |
+
 ## Field report 2026-11-16 (live closing offline while typing)
 
 | ID | Issue | Fix | Status |
@@ -379,10 +384,11 @@ https://github.com/DGc0des/Tameio4All/actions/runs/36388814893
 CI now runs the production build (`npm run build`) as well, after test.
 
 ## Not verified
-- Stage 6 (shop roles). NOT verified (nothing of it has run against a database):
-  - Migrations `20261117000003_shop_roles` and `20261117000004_office_names` not applied anywhere; SQL tests 190 and 200
-    never run (written only); SQL tests 010–180 not re-run against the new function bodies; security/performance
-    advisors not checked.
+- Stage 6 (shop roles). Applied to dev 2026-11-17; SQL tests 010–200 all pass there. Advisors after applying: health
+  clean; security only the existing accepted kinds (the new member/invite RPCs under «authenticated can execute SECURITY
+  DEFINER», `shop_members` under «RLS enabled, no policy» = no client table access by design); performance one new INFO,
+  L114. Still NOT verified:
+  - The deployed (Vercel) client: it must be this branch's build now that `my_shops` and the role guards are live on dev.
   - Nothing viewed in a browser: shop list with role badges, tabs per role, «Συνεργάτες» card, InviteScreen.
   - The real invite round trip: the email link opened on a phone, signup, the confirmation email, then «Αποδοχή»;
     the pending invite resumed after a password login in another browser.
